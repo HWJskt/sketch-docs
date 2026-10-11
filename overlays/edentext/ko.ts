@@ -126,7 +126,7 @@ const ko: Messages = {
   caption: { title: '캡션 삽입', category: '종류', categories: { figure: '그림', table: '표' }, label: '이름표', separator: '구분 기호', text: '캡션', position: '위치', above: '개체 위', below: '개체 아래' },
   ribbon: {
     tabs: { file: '파일', home: '홈', insert: '삽입', layout: '쪽 설정', references: '참조', review: '검토', view: '보기', tableDesign: '표 디자인', tableLayout: '표 배치', pictureFormat: '그림 서식', shapeFormat: '도형 서식', headerFooter: '머리말 및 꼬리말' },
-    saveAs: '다른 이름으로 저장…', saveAsHint: '브라우저 다운로드 설정에서 “다운로드 전에 각 파일의 저장 위치 확인”을 켜세요.', collapse: '리본 접기', expand: '리본 펼치기', search: '검색', searchNoResults: '일치하는 명령이 없습니다.', export: '내보내기', find: '찾기', replace: '바꾸기',
+    saveAs: '다른 이름으로 저장…', saveAsHint: '브라우저 다운로드 설정에서 “다운로드 전에 각 파일의 저장 위치 확인”을 켜세요.', collapse: '리본 접기', expand: '리본 펼치기', search: '메뉴검색', searchNoResults: '일치하는 명령이 없습니다.', export: '내보내기', find: '찾기', replace: '바꾸기',
     groups: { clipboard: '클립보드', font: '글자', paragraph: '문단', pages: '쪽', tables: '표', illustrations: '그림', links: '링크', headerFooter: '머리말 및 꼬리말', text: '텍스트', symbols: '기호', pageSetup: '쪽 설정', toc: '차례', notes: '각주', citations: '인용 및 참고 문헌', index: '찾아보기', revisions: '변경 내용 추적', markup: '변경 표시', proofing: '언어 교정', language: '언어', show: '표시', debug: '디버그', tableDecor: '배경 및 테두리', tableOptions: '표 스타일 옵션', rowsColumns: '행 및 열', merge: '합치기', cellSize: '셀 크기', tableData: '데이터', arrange: '배치', shapeStyles: '도형 스타일', accessibility: '접근성', captions: '캡션', editing: '편집', close: '닫기' },
     case: { title: '대소문자 바꾸기', none: '입력한 대로', upper: '대문자', lower: '소문자', capitalize: '각 단어 첫 글자를 대문자로', smallCaps: '작은 대문자' },
     emphasis: { title: '강조점', none: '없음', dotBelow: '아래 점', dotAbove: '위 점', circle: '빈 원', disc: '검정 원', accent: '강조 부호' },

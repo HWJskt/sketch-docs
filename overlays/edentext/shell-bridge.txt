@@ -13,7 +13,8 @@ $effect(() => {
   if (window.parent !== window && window.parent.location.origin === location.origin) window.parent.sketchShell?.wordState(state);
 });
 onMount(() => {
-  const api = { state: productState };
+  const api = { state: productState, about: () => { aboutOpen = true; } };
+  if (window.parent !== window && window.parent.sketchShell) document.documentElement.classList.add('sketch-hosted');
   window.sketchWord = api;
   return () => { if (window.sketchWord === api) delete window.sketchWord; };
 });

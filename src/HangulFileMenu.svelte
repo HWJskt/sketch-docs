@@ -1,8 +1,8 @@
 <script lang="ts">
     import type { HangulFormat } from './hangulFiles';
-    let { ownerDocument, ready, busy, hasDocument, supported, onNew, onOpen, onSave, onExit }: {
+    let { ownerDocument, ready, busy, hasDocument, supported, onNew, onOpen, onSave, onPrint }: {
         ownerDocument: Document; ready: boolean; busy: boolean; hasDocument: boolean; supported: boolean;
-        onNew: () => void; onOpen: () => void; onSave: (asNew: boolean, format?: HangulFormat) => void; onExit: () => void;
+        onNew: () => void; onOpen: () => void; onSave: (asNew: boolean, format?: HangulFormat) => void; onPrint: () => void;
     } = $props();
     let opened = $state(false);
     function run(action: () => void) { opened = false; action(); }
@@ -62,6 +62,6 @@
         <button class="md-item" onclick={() => run(() => onSave(true, 'hwpx'))} disabled={!ready || !hasDocument || busy || !supported}>다른 이름으로 저장 (.hwpx)</button>
         <button class="md-item" onclick={() => run(() => onSave(true, 'hwp'))} disabled={!ready || !hasDocument || busy || !supported}>다른 이름으로 저장 (.hwp)</button>
         <div class="md-sep"></div>
-        <button class="md-item" onclick={() => run(onExit)} disabled={busy}>문서 형식 선택</button>
+        <button class="md-item" onclick={() => run(onPrint)} disabled={!ready || !hasDocument || busy}>인쇄…</button>
     </div>
 </details>

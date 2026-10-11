@@ -70,7 +70,7 @@
                 ownerDocument: doc,
                 get ready() { return ready; }, get busy() { return busy; },
                 get hasDocument() { return hasDocument; }, supported,
-                onNew: create, onOpen: open, onSave: save, onExit: exit,
+                onNew: create, onOpen: open, onSave: save, onPrint: print,
             } });
             ready = true;
             message = '새 문서를 만들거나 HWP/HWPX 파일을 여세요.';
@@ -156,10 +156,12 @@
         } catch (error) { report(error); }
         finally { busy = false; }
     }
-    function exit() {
-        if (busy || (!embedded && !canReplace())) return;
-        if (onExit) onExit();
-        else window.location.assign(homeUrl);
+    async function print() {
+        if (busy || !ready || !bridge || !hasDocument) return;
+        busy = true;
+        try { await bridge.print(); message = '인쇄 창을 닫았습니다.'; }
+        catch (error) { report(error); }
+        finally { busy = false; }
     }
     function leaving(event: BeforeUnloadEvent) {
         if (busy || bridge?.dirty()) { event.preventDefault(); event.returnValue = ''; }

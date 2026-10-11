@@ -1,7 +1,57 @@
 // Product-owned extension, appended only to the generated pinned Studio copy.
+import {
+  appendPrintStyle as edentextAppendPrintStyle,
+  appendSvgPage as edentextAppendSvgPage,
+  createPrintPage as edentextCreatePrintPage,
+  pdfPrintTitle as edentextPrintTitle,
+} from '@/command/print-pages';
+import {
+  createPrintSurface as edentextCreatePrintSurface,
+  waitForPrintSurfaceReady as edentextWaitForPrintSurface,
+} from '@/command/print-surface';
+
 const edentextReady = initPromise.then(() => {
   if (!rendererInitialized) throw new Error(rendererInitializationError || 'Renderer initialization failed');
 });
+let edentextPrinting = false;
+async function edentextPrint(): Promise<void> {
+  if (edentextPrinting) throw new Error('이미 인쇄를 준비하고 있습니다.');
+  edentextPrinting = true;
+  let surface: Awaited<ReturnType<typeof edentextCreatePrintSurface>> | undefined;
+  const originalTitle = document.title;
+  try {
+    await edentextReady;
+    if (!wasm.borrowDocumentHandle()) throw new Error('인쇄할 문서가 없습니다.');
+    inputHandler?.flushDeferredPaginationIfNeeded('host-print', false);
+    if (inputHandler?.hasDeferredPaginationPending()) {
+      throw new Error('인쇄 전 쪽 나누기를 완료하지 못했습니다. 다시 시도하세요.');
+    }
+    // Snapshot every page under the same metrics, restoring the editor before yielding.
+    const pages = wasm.withPortableMetrics(() => Array.from({ length: wasm.pageCount }, (_, i) =>
+      edentextCreatePrintPage(wasm.renderPageSvgWithProfile(i, 'print'), wasm.getPageInfo(i), i),
+    ));
+    if (!pages.length) throw new Error('인쇄할 쪽이 없습니다.');
+    const title = edentextPrintTitle(wasm.fileName);
+    surface = await edentextCreatePrintSurface();
+    const printDocument = surface.document;
+    printDocument.documentElement.lang = 'ko';
+    printDocument.head.replaceChildren();
+    const charset = printDocument.createElement('meta');
+    charset.setAttribute('charset', 'UTF-8');
+    printDocument.head.append(charset);
+    printDocument.title = title;
+    edentextAppendPrintStyle(printDocument, pages);
+    printDocument.body.replaceChildren();
+    for (const page of pages) edentextAppendSvgPage(printDocument, printDocument.body, page);
+    await edentextWaitForPrintSurface(surface);
+    document.title = title;
+    surface.window.print();
+  } finally {
+    document.title = originalTitle;
+    surface?.dispose();
+    edentextPrinting = false;
+  }
+}
 function edentextVersion() {
   if (!documentAgent || !wasm.borrowDocumentHandle()) throw new Error('No active document');
   wasm.onBeforeExport?.();
@@ -12,6 +62,7 @@ function edentextVersion() {
   ready: edentextReady,
   state: edentextVersion,
   dirty: () => documentState.isDirty(),
+  print: edentextPrint,
   async create() {
     await edentextReady;
     const info = wasm.createNewDocument();

@@ -32,7 +32,7 @@
         row.before(wrapper); wrapper.append(row);
         const mode = active;
         const instance = mount(EditorControls, {target: wrapper, props: {
-            mode, getBlocked: () => blocked,
+            mode, getBlocked: () => blocked, getName: () => mode === 'hwp' ? hangulStatus.name : '',
             onSwitch: switchMode, onAbout: () => about = true,
         }});
         mountedControls.set(mode, {doc, instance});
@@ -105,7 +105,7 @@
         {/if}
     </div>
 </div>
-<AboutProduct bind:open={about} />
+<AboutProduct bind:open={about} onEdenText={active === 'word' && wordStatus.ready ? () => frame?.contentWindow?.sketchWord?.about() : undefined} />
 
 <style>
     .editor-shell {height:100dvh;display:flex;flex-direction:column;background:#fff;color:#263547;font-family:system-ui,sans-serif;overflow:hidden;position:relative}

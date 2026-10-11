@@ -1,10 +1,11 @@
 <script lang="ts">
-    let { mode, getBlocked, onSwitch, onAbout }: {
-        mode: 'word' | 'hwp'; getBlocked: () => boolean;
+    let { mode, getBlocked, onSwitch, onAbout, getName = () => '' }: {
+        getName?: () => string; mode: 'word' | 'hwp'; getBlocked: () => boolean;
         onSwitch: (mode: 'word' | 'hwp') => unknown; onAbout: () => void;
     } = $props();
 </script>
-<header class="product-header" aria-label="Sketch Docs">
+<header class:with-name={!!getName()} class="product-header" aria-label="Sketch Docs">
+    {#if getName()}<span class="product-document-name" title={getName()} aria-label="현재 파일 이름">{getName()}</span>{/if}
     <nav aria-label="편집기 선택">
         <button class:chosen={mode === 'word'} aria-label="Word" aria-pressed={mode === 'word'} disabled={getBlocked()} onclickcapture={() => { if(mode !== 'word') onSwitch('word'); }} title="Word 편집기 · DOCX 및 ODT">W</button>
         <button class:chosen={mode === 'hwp'} aria-label="한글" aria-pressed={mode === 'hwp'} disabled={getBlocked()} onclickcapture={() => { if(mode !== 'hwp') onSwitch('hwp'); }} title="한글 편집기 · HWP 및 HWPX">한</button>

@@ -9,6 +9,7 @@ export interface HangulBridge {
     ready: Promise<void>;
     state(): DocumentVersion;
     dirty(): boolean;
+    print(): Promise<void>;
     create(): Promise<DocumentVersion>;
     open(bytes: Uint8Array, name: string): Promise<DocumentVersion>;
     export(format: HangulFormat): HangulArtifact;

@@ -28,6 +28,13 @@ try {
   page.on('request', request => {
     if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== origin) external.add(request.url());
   });
+  await page.addInitScript(() => {
+    if (location.pathname.endsWith('/rhwp/print.html')) {
+      window.print = () => {
+        parent.__printed = { html: document.documentElement.outerHTML, title: document.title, pages: document.querySelectorAll('body > div').length };
+      };
+    }
+  });
   await page.goto(origin);
   await page.getByRole('link', { name: /Word 문서/ }).waitFor();
   assert.equal(await page.locator('.tiptap').count(), 0, 'chooser has no active editor');
@@ -59,6 +66,10 @@ try {
     console.log('Word engine reloads offline under the root service worker');
   }
   assert.equal(await word.locator('.ribbon-tab-file').textContent(), '파일');
+  assert.equal(await word.locator('.rb-logo-btn:visible, .ribbon-tabs > .lang-wrap:visible, .ribbon-tabs > .appearance-wrap:visible').count(), 0);
+  assert.equal(await word.locator('.doc-name input').count(), 0);
+  assert.match(await word.getByRole('combobox').first().getAttribute('placeholder'), /^메뉴검색/);
+
   await editor.click();
   await page.keyboard.insertText('루트 Word 저장 검증 ABC 123');
   await page.keyboard.press('Enter');
@@ -89,6 +100,13 @@ try {
   const documentXml = strFromU8(unzipSync(new Uint8Array(wordBytes))['word/document.xml']);
   assert(documentXml.includes('루트 Word 저장 검증 ABC 123'));
   assert(documentXml.includes('표 D'));
+  assert.equal(await word.locator('.ribbon-tabs .doc-name-label').textContent(), 'root-word');
+  await page.locator('.engine:not([hidden]) iframe').contentFrame().getByRole('button', {name:'프로그램 정보 및 라이선스',exact:true}).click();
+  await page.getByRole('dialog').waitFor();
+  assert((await page.getByRole('dialog').textContent()).includes('Steffen Becker'));
+  await page.getByRole('button', {name:'EdenText 정보',exact:true}).click();
+  await word.getByRole('link', {name:/GitHub/}).waitFor();
+  await page.keyboard.press('Escape');
   console.log('Word iframe: Korean menu, DOCX default and text/table bytes verified');
   await word.locator('.ribbon-tab-file').click();
   assert.equal(await word.locator('[data-cmd="saveAsHwpx"], [data-cmd="saveAsHwp"]').count(), 0, 'Word offers no Hangul Save As formats');
@@ -110,7 +128,7 @@ try {
   assert.equal(await switchHangul.getAttribute('aria-pressed'), 'true');
   assert.equal(new URL(page.url()).pathname, '/hwp.html');
   const hangulBounds = await header.boundingBox();
-  assert.equal(hangulBounds.x, headerBounds.x);
+  assert.equal(hangulBounds.x + hangulBounds.width, headerBounds.x + headerBounds.width);
   assert(hangulBounds.y < 40 && headerBounds.y < 40);
   assert.equal(await wordElement.evaluate(el => el.parentElement.inert), true);
 
@@ -161,6 +179,27 @@ try {
   await frame.locator('[data-row="1"][data-col="1"]').click();
   await frame.waitForFunction(() => window.edentextHost.dirty());
   const retainedHangul = xml(await exportHwpx());
+  assert.equal(await frame.getByRole('button', {name:'문서 형식 선택',exact:true}).count(), 0);
+  const commandCatalog = await frame.evaluate(() => window.rhwpStudio.automation.listCommands());
+  assert(commandCatalog.some(command => command.label.includes('표') && typeof command.enabled === 'boolean'));
+  console.log('Hangul searchable command catalog:', commandCatalog.length);
+  const beforePrint = await frame.evaluate(() => window.edentextHost.state());
+  await action('인쇄…');
+  await frame.waitForFunction(() => !!window.__printed);
+  await status('인쇄 창을 닫았습니다').waitFor();
+  const printed = await frame.evaluate(() => window.__printed);
+  assert(printed.html.includes('<svg') && /<(path|text)\b/.test(printed.html), 'print uses document SVG including glyphs');
+  const printPreview = await browser.newPage({viewport:{width:900,height:1200}});
+  try {
+    await printPreview.setContent(printed.html);
+    assert.equal(await printPreview.locator('svg').count(), 1);
+    await printPreview.screenshot({path:'/tmp/sketch-hangul-print.png'});
+    await printPreview.pdf({path:'/tmp/sketch-hangul-print.pdf',preferCSSPageSize:true});
+  } finally { await printPreview.close(); }
+  assert(!printed.html.includes('product-header'), 'editor chrome is not printed');
+  assert.deepEqual(await frame.evaluate(() => window.edentextHost.state()), beforePrint, 'print preserves dirty and revision');
+  assert.equal(await frame.locator('#rhwp-print-surface').count(), 0, 'print frame is cleaned up');
+
   await switchWord.click();
   assert.equal(await editor.textContent(), retainedWord);
   assert.equal(await switchWord.getAttribute('aria-pressed'), 'true');
@@ -265,10 +304,12 @@ try {
   });
   await action('다른 이름으로 저장 (.hwpx)');
   await status('copy.hwpx 저장 완료').waitFor();
+  assert.equal(await frame.locator('.product-document-name').textContent(), 'copy.hwpx');
   await frame.locator('textarea').focus();
   await page.keyboard.insertText(' 사본수정');
   await action('저장');
   await status('copy.hwpx 저장 완료').waitFor();
+  assert.equal(await frame.locator('.product-document-name').textContent(), 'copy.hwpx');
   const files = await page.evaluate(async () => ({
     original: Array.from(new Uint8Array(await (await window.__original.getFile()).arrayBuffer())),
     copy: Array.from(new Uint8Array(await (await window.__copy.getFile()).arrayBuffer())),

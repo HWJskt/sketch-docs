@@ -1,3 +1,4 @@
+import { customizeWord } from '../overlays/edentext/product-ui.mjs';
 import { packageSource } from './package-source.mjs';
 import { build } from 'vite';
 import { cp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
@@ -76,6 +77,7 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
     async function ${name}ProductOperation(${args}) {`);
   }
   await writeFile(wordApp, app);
+  await customizeWord(word, exact);
   const conversion = join(word, 'src/lib/export/hangul.ts');
   await writeFile(conversion, exact(await readFile(conversion, 'utf8'), "'./rhwp/index.html?chrome=embed'", "'../../rhwp/index.html?chrome=embed'"));
   let html = await readFile(join(word, 'index.html'), 'utf8');

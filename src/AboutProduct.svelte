@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    let { open = $bindable(false) }: { open?: boolean } = $props();
+    let { open = $bindable(false), onEdenText }: { open?: boolean; onEdenText?: () => void } = $props();
     interface Release { sourceBytes: number; version: string; generatedAt: string; sourceUrl: string; licenseUrl: string; noticesUrl: string; upstreams: { edentext: {commit:string}; hop:{commit:string}; rhwp:{version:string;commit:string} } }
     let dialog = $state<HTMLDialogElement>();
     let release = $state<Release>();
@@ -32,6 +32,11 @@
             <p class="license">AGPL-3.0-only · 오픈 소스</p>
             <a class="source" href={release.sourceUrl} download>↓ 이 버전의 소스 다운로드 ({Math.ceil(release.sourceBytes / 1024 / 1024)} MB)</a>
             <div class="links"><a href={release.licenseUrl} target="_blank" rel="noopener">프로그램 라이선스</a><a href={release.noticesUrl} target="_blank" rel="noopener">오픈소스 및 타사 라이선스</a></div>
+            <div class="upstream-notice">
+                <p>EdenText · Copyright © 2026 Steffen Becker</p>
+                <a href="https://github.com/stffnb/edentext" target="_blank" rel="noopener">EdenText 원본 저장소</a>
+                {#if onEdenText}<button onclick={() => { open = false; onEdenText(); }}>EdenText 정보</button>{/if}
+            </div>
             <details>
                 <summary>구성요소와 수정 정보</summary>
                 <p>EdenText · AGPL-3.0-only · {release.upstreams.edentext.commit.slice(0,8)}</p>
@@ -53,6 +58,7 @@
     h1 {font-size:36px;margin:0;color:#476d93;letter-spacing:-1px}h1 span {color:#2b7a6d}.tagline {font-size:17px;margin:10px 0}.description,.version,.license {font-size:14px;color:#697383}.version{margin-bottom:4px}.license{margin-top:4px}
     .source {display:block;margin:22px auto 16px;padding:11px 14px;border:1px solid #bacbda;border-radius:7px;text-decoration:none;color:#284d73;background:#f2f7fc;font-weight:600;font-size:15px}.source:hover{background:#e5eef7}
     .links {display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:center;font-size:13px}.links a{color:#566576;text-underline-offset:3px}
+    .upstream-notice {font-size:12px;margin-top:18px}.upstream-notice p{margin:6px}.upstream-notice a,.upstream-notice button{color:#566576}.upstream-notice button{margin-left:12px;border:0;background:none;text-decoration:underline;cursor:pointer;font:inherit}
     details {text-align:left;margin-top:22px;font-size:12px;color:#647082;border-top:1px solid #e3e7ed;padding-top:14px}summary{cursor:pointer}details p{line-height:1.6}.terms{font-size:11px;line-height:1.7;color:#778292;margin:18px 0 0}
     :focus-visible{outline:2px solid #356bb0;outline-offset:3px}
 </style>
