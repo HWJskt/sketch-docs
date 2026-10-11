@@ -13,6 +13,54 @@ import {
 const edentextReady = initPromise.then(() => {
   if (!rendererInitialized) throw new Error(rendererInitializationError || 'Renderer initialization failed');
 });
+interface EdentextDocumentSnapshot {
+  name: string;
+  dirty: boolean;
+  epoch: number;
+  hasDocument: boolean;
+}
+function edentextSnapshot(): EdentextDocumentSnapshot {
+  return {
+    name: wasm.fileName,
+    dirty: documentState.isDirty(),
+    epoch: wasm.documentGeneration,
+    hasDocument: wasm.hasLoadedDocument(),
+  };
+}
+const edentextStateListeners = new Set<(state: EdentextDocumentSnapshot) => void>();
+let edentextLastSnapshot = edentextSnapshot();
+function edentextDeliverState(listener: (state: EdentextDocumentSnapshot) => void, state: EdentextDocumentSnapshot) {
+  try {
+    listener({ ...state });
+  } catch (error) {
+    // A host display failure must not interrupt the engine's document transaction.
+    console.error('[edentext-host] 문서 상태 구독 처리 실패:', error);
+  }
+}
+function edentextPublishState() {
+  const next = edentextSnapshot();
+  const previous = edentextLastSnapshot;
+  if (next.name === previous.name && next.dirty === previous.dirty
+    && next.epoch === previous.epoch && next.hasDocument === previous.hasDocument) return;
+  edentextLastSnapshot = next;
+  for (const listener of edentextStateListeners) edentextDeliverState(listener, next);
+}
+const edentextPreviousNameHook = wasm.onFileNameChanged;
+wasm.onFileNameChanged = (name: string) => {
+  try {
+    edentextPreviousNameHook?.call(wasm, name);
+  } finally {
+    edentextPublishState();
+  }
+};
+eventBus.on('document-dirty-changed', edentextPublishState);
+eventBus.on('document-swapped', edentextPublishState);
+function edentextSubscribe(listener: (state: EdentextDocumentSnapshot) => void): () => void {
+  if (typeof listener !== 'function') throw new TypeError('문서 상태 구독에는 함수가 필요합니다.');
+  edentextStateListeners.add(listener);
+  edentextDeliverState(listener, edentextSnapshot());
+  return () => { edentextStateListeners.delete(listener); };
+}
 let edentextPrinting = false;
 async function edentextPrint(): Promise<void> {
   if (edentextPrinting) throw new Error('이미 인쇄를 준비하고 있습니다.');
@@ -61,6 +109,8 @@ function edentextVersion() {
 (window as any).edentextHost = {
   ready: edentextReady,
   state: edentextVersion,
+  snapshot: edentextSnapshot,
+  subscribe: edentextSubscribe,
   dirty: () => documentState.isDirty(),
   print: edentextPrint,
   async create() {

@@ -32,7 +32,7 @@
         row.before(wrapper); wrapper.append(row);
         const mode = active;
         const instance = mount(EditorControls, {target: wrapper, props: {
-            mode, getBlocked: () => blocked, getName: () => mode === 'hwp' ? hangulStatus.name : '',
+            mode, getBlocked: () => blocked, getName: () => mode === 'hwp' ? hangulStatus.name : '', getDirty: () => mode === 'hwp' && hangulStatus.dirty,
             onSwitch: switchMode, onAbout: () => about = true,
         }});
         mountedControls.set(mode, {doc, instance});

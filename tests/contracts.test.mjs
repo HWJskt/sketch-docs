@@ -58,3 +58,21 @@ test('failed writing aborts the stream and retains the previous file', async () 
   assert.deepEqual(handle.events, ['create', 'write', 'abort']);
   assert.equal(await (await handle.getFile()).text(), 'original');
 });
+
+
+test('file shortcuts use native Mac and Windows modifiers, including Korean keyboard codes', async () => {
+  const { fileShortcut, shortcutLabel } = await import('../src/hangulShortcuts.ts');
+  for (const mac of [true, false]) {
+    const base = {key:'ㄴ',code:'KeyS',metaKey:mac,ctrlKey:!mac,shiftKey:false,altKey:false,isComposing:false};
+    assert.equal(fileShortcut(base, mac), 'save');
+    assert.equal(fileShortcut({...base,shiftKey:true}, mac), 'saveAs');
+    assert.equal(fileShortcut({...base,code:'KeyO'}, mac), 'open');
+    assert.equal(fileShortcut({...base,code:'KeyP'}, mac), 'print');
+    assert.equal(fileShortcut({...base,isComposing:true}, mac), null);
+    assert.equal(fileShortcut({...base,altKey:true}, mac), null);
+    assert.equal(fileShortcut({...base,metaKey:!mac,ctrlKey:mac}, mac), null);
+  }
+  assert.equal(shortcutLabel('save', true), '⌘S');
+  assert.equal(shortcutLabel('saveAs', true), '⌘⇧S');
+  assert.equal(shortcutLabel('open', false), 'Ctrl+O');
+});

@@ -15,7 +15,10 @@
 
     let frame: HTMLIFrameElement;
     let fileMenu: ReturnType<typeof mount> | undefined;
-    onDestroy(() => { if (fileMenu) void unmount(fileMenu); });
+    let unsubscribeState: (() => void) | undefined;
+    let documentEpoch: number | undefined;
+    let dirty = $state(false);
+    onDestroy(() => { unsubscribeState?.(); if (fileMenu) void unmount(fileMenu); });
     let bridge: HangulBridge | undefined;
     let ready = $state(false);
     let busy = $state(false);
@@ -36,7 +39,7 @@
     export function getState(): EditorStatus {
         return { ready, busy, dirty: hasDocument && !!bridge?.dirty(), name };
     }
-    $effect(() => { onState?.({ready, busy, dirty: false, name}); });
+    $effect(() => { onState?.({ready, busy, dirty, name}); });
     export async function openDocument(file: HangulInput | undefined = undefined): Promise<boolean> {
         await initialization;
         if (!ready || busy || !bridge) throw new Error('한글 편집기가 아직 준비되지 않았습니다.');
@@ -58,6 +61,17 @@
         try {
             bridge = bridgeFrom(frame);
             await bridge.ready;
+            unsubscribeState?.();
+            documentEpoch = undefined;
+            unsubscribeState = bridge.subscribe(state => {
+                if (documentEpoch !== undefined && state.epoch !== documentEpoch) {
+                    target = original = null; targetHash = '';
+                }
+                documentEpoch = state.epoch;
+                name = state.name || '새 문서';
+                dirty = state.dirty;
+                hasDocument = state.hasDocument;
+            });
             if (fileMenu) await unmount(fileMenu);
             const doc = frame.contentDocument!;
             const edit = doc.querySelector('#menu-bar > [data-menu="edit"]');

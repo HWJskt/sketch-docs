@@ -35,6 +35,7 @@ export async function customizeWord(word, exact) {
   }
   const ribbonPath = join(word, 'src/lib/components/ribbon/Ribbon.svelte');
   let ribbon = readOnlyName(await readFile(ribbonPath, 'utf8'), false);
+  ribbon = replaceOne(ribbon, /          <button data-cmd="about"[\s\S]*?<\/button>\n/, '');
   ribbon = exact(ribbon, '</style>', `
   :global(.sketch-hosted .ribbon-tabs > .rb-logo-btn),
   :global(.sketch-hosted .ribbon-tabs > .lang-wrap),

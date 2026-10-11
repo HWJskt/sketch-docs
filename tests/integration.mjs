@@ -20,8 +20,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(60000);
   const errors = [], dialogs = [], external = new Set();
+  let cancelExit = false, exitPrompts = 0;
   page.on('pageerror', error => errors.push(String(error)));
   page.on('dialog', async dialog => {
+    if (dialog.type() === 'beforeunload' && cancelExit) { exitPrompts++; await dialog.dismiss(); return; }
     if (dialog.type() === 'confirm' || dialog.type() === 'beforeunload') await dialog.accept();
     else { dialogs.push(dialog.message()); await dialog.dismiss(); }
   });
@@ -112,12 +114,17 @@ try {
   assert.equal(await word.locator('[data-cmd="saveAsHwpx"], [data-cmd="saveAsHwp"]').count(), 0, 'Word offers no Hangul Save As formats');
   assert.equal(await word.locator('[data-cmd="saveAsDocx"]').count(), 1);
   assert.equal(await word.locator('[data-cmd="saveAsOdt"]').count(), 1);
+  assert.equal(await word.locator('[data-cmd="about"]').count(), 0, 'About is available through the shared information button');
+  assert.equal(await word.locator('.ribbon-tab-file').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
 
   await page.keyboard.press('Escape');
   const header = page.locator('.engine:not([hidden]) iframe').contentFrame().locator('.product-header');
   const switchWord = header.getByRole('button', {name:'Word', exact:true});
   const switchHangul = header.getByRole('button', {name:'한글', exact:true});
   const headerBounds = await header.boundingBox();
+  const buttonRects = () => header.locator('button').evaluateAll(buttons => buttons.map(button => {const r=button.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};}));
+  const wordButtonRects = await buttonRects();
+  assert.equal(await word.locator('.sketch-menu-row').evaluate(el => el.getBoundingClientRect().height),36);
   await page.screenshot({path:'/tmp/sketch-docs-word-compact.png'});
   assert.equal((await wordElement.boundingBox()).y, 0, 'Word iframe recovers the extra header height');
 
@@ -129,13 +136,24 @@ try {
   assert.equal(new URL(page.url()).pathname, '/hwp.html');
   const hangulBounds = await header.boundingBox();
   assert.equal(hangulBounds.x + hangulBounds.width, headerBounds.x + headerBounds.width);
-  assert(hangulBounds.y < 40 && headerBounds.y < 40);
+  assert.deepEqual(await buttonRects(), wordButtonRects, 'all three button rectangles are identical across editors');
+  assert.equal(await header.locator('..').evaluate(el => el.getBoundingClientRect().height),36);
+  assert.equal(1440 - (wordButtonRects[2].x + wordButtonRects[2].width),10, 'info right padding adds 4px to previous 6px');
   assert.equal(await wordElement.evaluate(el => el.parentElement.inert), true);
 
   const status = text => page.getByRole('status').filter({ hasText: text });
   await status('새 문서입니다').waitFor();
   const frame = await (await page.locator('iframe[title="한글 문서 편집기"]').elementHandle()).contentFrame();
   assert(frame, 'native engine frame is present');
+  const toggle = frame.locator('#toolbox-basic-toggle');
+  const nameRect = await header.locator('.product-document-meta').boundingBox();
+  const toggleRect = await toggle.boundingBox();
+  assert(toggleRect.x >= nameRect.x + nameRect.width, 'Hangul collapse follows the file name');
+  assert(toggleRect.x + toggleRect.width <= wordButtonRects[0].x, 'collapse precedes editor selection');
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
   const menu = async () => {
     const details = frame.locator('.product-file-menu');
     if (!await details.evaluate(el => el.open)) await details.locator('summary').click();
@@ -163,6 +181,9 @@ try {
   await frame.waitForFunction(() => !document.querySelector('[data-menu="edit"]').classList.contains('open'));
   assert.equal(await frame.locator('.product-file-menu select').count(), 0, 'formats are separate menu actions');
   const saveItems = frame.locator('.product-file-dropdown button');
+  const undoShortcut = await frame.locator('[data-cmd="edit:undo"] .md-shortcut').first().textContent();
+  const saveShortcut = await frame.getByRole('button',{name:'저장',exact:true}).locator('.md-shortcut').textContent();
+  assert.equal(saveShortcut,undoShortcut.replace('Z','S'),'File menu follows native OS shortcut notation');
   const boxes = await saveItems.evaluateAll(items => items.map(el => { const r=el.getBoundingClientRect(); return {x:r.x,y:r.y,height:r.height}; }));
   for (let i=1;i<boxes.length;i++) assert(boxes[i].x === boxes[0].x && boxes[i].y >= boxes[i-1].y + boxes[i-1].height, 'File actions form one vertical column');
   assert.equal(await frame.locator('.product-file-dropdown button').first().evaluate(el => {
@@ -183,8 +204,10 @@ try {
   const commandCatalog = await frame.evaluate(() => window.rhwpStudio.automation.listCommands());
   assert(commandCatalog.some(command => command.label.includes('표') && typeof command.enabled === 'boolean'));
   console.log('Hangul searchable command catalog:', commandCatalog.length);
+  await frame.locator('.product-document-dirty').waitFor();
   const beforePrint = await frame.evaluate(() => window.edentextHost.state());
-  await action('인쇄…');
+  await frame.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+p');
   await frame.waitForFunction(() => !!window.__printed);
   await status('인쇄 창을 닫았습니다').waitFor();
   const printed = await frame.evaluate(() => window.__printed);
@@ -209,6 +232,12 @@ try {
   await page.keyboard.press('ControlOrMeta+Shift+z');
   assert.equal(await editor.textContent(), retainedWord);
   assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', {cancelable:true}))), true, 'hidden Hangul and Word changes prevent unload');
+  cancelExit = true;
+  const beforeExit = page.url();
+  await page.goto(origin).catch(error => { assert.match(String(error), /ERR_ABORTED/); });
+  assert.equal(exitPrompts, 1, 'real navigation opens browser unsaved changes prompt');
+  assert.equal(page.url(), beforeExit, 'cancelling exit retains the editing session');
+  cancelExit = false;
   await page.goBack();
   await switchHangul.waitFor();
   assert.equal(await switchHangul.getAttribute('aria-pressed'), 'true');
@@ -248,6 +277,7 @@ try {
     assert(exported.version.revision > 0);
     if (format === 'hwp') assert.deepEqual(exported.bytes.slice(0, 8), [208, 207, 17, 224, 161, 177, 26, 225]);
     await frame.evaluate(async ({ bytes, format }) => window.edentextHost.open(new Uint8Array(bytes), 'roundtrip.' + format), { bytes: exported.bytes, format });
+    await frame.waitForFunction(format => document.querySelector('.product-document-name')?.textContent === 'roundtrip.' + format, format);
     const section = xml(await exportHwpx());
     assert(section.includes('한글 편집 검증 ABC 123'), format + ' retains text');
     assert(section.includes('rowCnt="2"') && section.includes('colCnt="2"'), format + ' retains 2x2 table');
@@ -275,11 +305,14 @@ try {
     window.__saved = await directory.getFileHandle('native.hwpx', { create: true });
     window.showSaveFilePicker = async () => window.__saved;
   });
-  await action('저장');
+  await frame.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+s');
   await status('native.hwpx 저장 완료').waitFor();
   const saved = await page.evaluate(async () => Array.from(new Uint8Array(await (await window.__saved.getFile()).arrayBuffer())));
   assert(xml(saved).includes('한글 편집 검증 ABC 123'));
   assert.equal(await frame.evaluate(() => window.edentextHost.dirty()), false);
+  await frame.locator('.product-document-dirty').waitFor({state:'hidden'});
+  assert.equal(await frame.locator('.product-document-name').textContent(),'native.hwpx');
   await page.evaluate(async () => {
     const stream = await window.__saved.createWritable(); await stream.write('external change'); await stream.close();
   });
@@ -293,7 +326,8 @@ try {
     window.showOpenFilePicker = async () => [window.__original];
     window.showSaveFilePicker = async () => window.__original;
   }, saved);
-  await action('열기…');
+  await frame.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+o');
   await status('파일을 열었습니다').waitFor();
   await action('저장');
   await status('원본과 다른 파일').waitFor();
@@ -302,11 +336,14 @@ try {
     window.__copy = await directory.getFileHandle('copy.hwpx', { create: true });
     window.showSaveFilePicker = async () => window.__copy;
   });
-  await action('다른 이름으로 저장 (.hwpx)');
+  await frame.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+Shift+s');
   await status('copy.hwpx 저장 완료').waitFor();
   assert.equal(await frame.locator('.product-document-name').textContent(), 'copy.hwpx');
   await frame.locator('textarea').focus();
   await page.keyboard.insertText(' 사본수정');
+  await frame.locator('.product-document-dirty').waitFor();
+  assert.deepEqual(await buttonRects(),wordButtonRects,'filename and dirty label do not move any button');
   await action('저장');
   await status('copy.hwpx 저장 완료').waitFor();
   assert.equal(await frame.locator('.product-document-name').textContent(), 'copy.hwpx');

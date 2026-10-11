@@ -5,7 +5,10 @@ export interface HangulArtifact {
     contentLoss: { schemaVersion: number; outputFormat: HangulFormat; count: number; losses: unknown[] };
     version: DocumentVersion;
 }
+export interface HangulSnapshot { name: string; dirty: boolean; epoch: number; hasDocument: boolean }
 export interface HangulBridge {
+    snapshot(): HangulSnapshot;
+    subscribe(listener: (state: HangulSnapshot) => void): () => void;
     ready: Promise<void>;
     state(): DocumentVersion;
     dirty(): boolean;
