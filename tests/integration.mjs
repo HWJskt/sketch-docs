@@ -96,17 +96,22 @@ try {
   assert.equal(await word.locator('[data-cmd="saveAsOdt"]').count(), 1);
 
   await page.keyboard.press('Escape');
-  const switchWord = page.getByRole('button', {name:'Word', exact:true});
-  const switchHangul = page.getByRole('button', {name:'한글', exact:true});
-  const header = page.locator('.product-header');
+  const header = page.locator('.engine:not([hidden]) iframe').contentFrame().locator('.product-header');
+  const switchWord = header.getByRole('button', {name:'Word', exact:true});
+  const switchHangul = header.getByRole('button', {name:'한글', exact:true});
   const headerBounds = await header.boundingBox();
+  await page.screenshot({path:'/tmp/sketch-docs-word-compact.png'});
+  assert.equal((await wordElement.boundingBox()).y, 0, 'Word iframe recovers the extra header height');
+
   await editor.click();
   await page.keyboard.insertText(' 전환 보존');
   const retainedWord = await editor.textContent();
   await switchHangul.click();
   assert.equal(await switchHangul.getAttribute('aria-pressed'), 'true');
   assert.equal(new URL(page.url()).pathname, '/hwp.html');
-  assert.deepEqual(await header.boundingBox(), headerBounds);
+  const hangulBounds = await header.boundingBox();
+  assert.equal(hangulBounds.x, headerBounds.x);
+  assert(hangulBounds.y < 40 && headerBounds.y < 40);
   assert.equal(await wordElement.evaluate(el => el.parentElement.inert), true);
 
   const status = text => page.getByRole('status').filter({ hasText: text });
@@ -142,6 +147,9 @@ try {
   const saveItems = frame.locator('.product-file-dropdown button');
   const boxes = await saveItems.evaluateAll(items => items.map(el => { const r=el.getBoundingClientRect(); return {x:r.x,y:r.y,height:r.height}; }));
   for (let i=1;i<boxes.length;i++) assert(boxes[i].x === boxes[0].x && boxes[i].y >= boxes[i-1].y + boxes[i-1].height, 'File actions form one vertical column');
+  assert.equal(await frame.locator('.product-file-dropdown button').first().evaluate(el => {
+    const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+  }), true, 'File dropdown is actually painted outside its menu row');
   await page.screenshot({ path: '/tmp/edentext-hangul-file-menu.png' });
   await page.keyboard.press('Escape');
   const exportHwpx = () => frame.evaluate(() => Array.from(window.edentextHost.export('hwpx').bytes));
@@ -171,20 +179,25 @@ try {
   await word.evaluate(() => { window.showSaveFilePicker = () => new Promise((resolve,reject) => {window.__cancelPicker = () => reject(new DOMException('cancel', 'AbortError'));}); });
   await word.locator('.ribbon-tab-file').click();
   await word.locator('[data-cmd="saveAsDocx"]').click();
-  await page.waitForFunction(() => document.querySelector('.product-header nav button').disabled);
+  await word.waitForFunction(() => document.querySelector('.product-header nav button').disabled);
   assert(await switchHangul.isDisabled(), 'pending Word file operation blocks switching');
   await word.waitForFunction(() => typeof window.__cancelPicker === 'function');
   await word.evaluate(() => window.__cancelPicker());
-  await page.waitForFunction(() => !document.querySelector('.product-header nav button').disabled);
+  await word.waitForFunction(() => !document.querySelector('.product-header nav button').disabled);
   await switchHangul.click();
   assert.equal(xml(await exportHwpx()), retainedHangul);
-  await page.getByRole('button', {name:'프로그램 정보 및 라이선스',exact:true}).click();
+  await header.getByRole('button', {name:'프로그램 정보 및 라이선스',exact:true}).click();
   await page.getByRole('dialog').waitFor();
   await page.keyboard.press('Escape');
   await page.setViewportSize({width:390,height:844});
   const narrow = await header.boundingBox();
   assert(narrow.x >= 0 && narrow.x + narrow.width <= 390);
+  await menu();
+  assert.equal(await frame.locator('.product-file-dropdown button').first().evaluate(el => {
+    const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+  }), true, 'Narrow File dropdown escapes horizontal scrolling');
   await page.screenshot({path:'/tmp/sketch-docs-hangul-narrow.png'});
+  await page.keyboard.press('Escape');
   await page.setViewportSize({width:1440,height:1000});
   console.log('Shared header: text/table sessions, history, busy guard, About and narrow layout verified');
   for (const format of ['hwpx', 'hwp']) {
@@ -300,7 +313,7 @@ try {
     await draft.waitFor();
     await draft.click();
     await failurePage.keyboard.insertText('실패 후에도 보존');
-    await failurePage.getByRole('button',{name:'한글',exact:true}).click();
+    await failureWord.getByRole('button',{name:'한글',exact:true}).click();
     await failurePage.getByRole('status').filter({hasText:'한글 편집기를 불러오지 못했습니다'}).waitFor();
     await failurePage.getByRole('button',{name:'Word',exact:true}).click();
     assert((await draft.textContent()).includes('실패 후에도 보존'));

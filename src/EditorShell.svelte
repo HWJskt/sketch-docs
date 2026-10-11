@@ -1,5 +1,8 @@
 <script lang="ts">
-    import { onMount, tick, untrack } from 'svelte';
+    import { mount, unmount, onMount, onDestroy, tick, untrack } from 'svelte';
+    import EditorControls from './EditorControls.svelte';
+    import './editorHeader.css';
+    import headerCss from './editorHeader.css?raw';
     import HangulEditor from './HangulEditor.svelte';
     import AboutProduct from './AboutProduct.svelte';
     import { offlineReady } from './offline';
@@ -13,6 +16,30 @@
     let frame = $state.raw<HTMLIFrameElement>();
     let hangul = $state.raw<HangulEditor>();
     let initialFile = $state.raw<HangulInput | undefined>();
+    let controlsReady = $state(false);
+    const mountedControls = new Map<Mode, {doc: Document; instance: ReturnType<typeof mount>}>();
+    let disposed = false;
+    function placeControls() {
+        if (disposed) return;
+        const doc = active === 'word' ? frame?.contentDocument : hangul?.menuDocument();
+        const row = doc?.querySelector(active === 'word' ? '.ribbon-tabs' : '#menu-bar');
+        controlsReady = !!row;
+        if (!row || !doc || mountedControls.get(active)?.doc === doc) return;
+        const previous = mountedControls.get(active);
+        if (previous) void unmount(previous.instance);
+        const style = doc.createElement('style'); style.textContent = headerCss; doc.head.append(style);
+        const wrapper = doc.createElement('div'); wrapper.className = 'sketch-menu-row';
+        row.before(wrapper); wrapper.append(row);
+        const mode = active;
+        const instance = mount(EditorControls, {target: wrapper, props: {
+            mode, getBlocked: () => blocked,
+            onSwitch: switchMode, onAbout: () => about = true,
+        }});
+        mountedControls.set(mode, {doc, instance});
+    }
+    // mount owns an independent lifetime; do not parent it to this rerunning effect.
+    $effect(() => { void active; void wordStatus; void hangulStatus; void frame; void hangul; queueMicrotask(placeControls); });
+    onDestroy(() => { disposed = true; for (const {instance} of mountedControls.values()) void unmount(instance); });
     let about = $state(false);
     let notice = $state('');
     let wordStatus = $state<EditorStatus>({ready:false,busy:false,dirty:false,name:''});
@@ -63,14 +90,7 @@
 
 <svelte:window onbeforeunload={leaving} onpopstate={popstate} />
 <div class="editor-shell">
-    <header class="product-header" aria-label="Sketch Docs">
-        <nav aria-label="편집기 선택">
-            <button class:chosen={active === 'word'} aria-pressed={active === 'word'} disabled={blocked} onclick={() => { if(active !== 'word') switchMode('word'); }} title="Word 편집기 · DOCX 및 ODT"><span class="document-icon word" aria-hidden="true">W</span>Word</button>
-            <button class:chosen={active === 'hwp'} aria-pressed={active === 'hwp'} disabled={blocked} onclick={() => { if(active !== 'hwp') switchMode('hwp'); }} title="한글 편집기 · HWP 및 HWPX"><span class="document-icon hangul" aria-hidden="true">한</span>한글</button>
-        </nav>
-        <span class="brand">Sketch Docs</span>
-        <button class="info" aria-label="프로그램 정보 및 라이선스" title="프로그램 정보 및 라이선스" onclick={() => about = true}>ⓘ</button>
-    </header>
+    {#if !controlsReady}<EditorControls mode={active} getBlocked={() => blocked} onSwitch={switchMode} onAbout={() => about = true} />{/if}
     {#if notice}<div class="notice" role="status">{notice}</div>{/if}
     <div class="engines">
         {#if wordLoaded && onlineReady}
@@ -88,19 +108,9 @@
 <AboutProduct bind:open={about} />
 
 <style>
-    .editor-shell {height:100dvh;display:flex;flex-direction:column;background:#fff;color:#263547;font-family:system-ui,sans-serif;overflow:hidden}
-    .product-header {height:40px;flex:0 0 40px;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 10px;border-bottom:1px solid #d9dfe7;background:#f8fafc}
-    nav {display:flex;gap:4px;height:32px}
-    button {font:inherit;cursor:pointer;border:1px solid transparent;background:transparent;color:inherit;border-radius:5px}
-    nav button {display:flex;align-items:center;gap:7px;padding:3px 12px;font-size:13px}
-    nav button.chosen {background:#e8eff8;border-color:#9cb4d2;font-weight:700;box-shadow:inset 0 -2px #466d9b}
-    button:hover:enabled {background:#e8eef5} button:disabled {opacity:.55;cursor:wait}
-    .document-icon {width:18px;height:22px;display:grid;place-items:center;border-radius:2px 5px 2px 2px;color:#fff;font-size:12px;font-weight:700}
-    .word {background:#436d9e}.hangul {background:#28756b}
-    .brand {margin-left:auto;font-size:12px;color:#657185}.info {font-size:23px;width:30px;height:30px;line-height:24px}
-    button:focus-visible {outline:2px solid #356bb0;outline-offset:1px}
+    .editor-shell {height:100dvh;display:flex;flex-direction:column;background:#fff;color:#263547;font-family:system-ui,sans-serif;overflow:hidden;position:relative}
     .engines,.engine {flex:1;min-height:0;height:100%}.engines {position:relative}.engine[hidden] {display:none}
     iframe {display:block;width:100%;height:100%;border:0}
     .notice {font-size:12px;padding:6px 12px;background:#fff5da}
-    @media(max-width:420px){.brand {display:none}.info {margin-left:auto}nav button{padding-inline:9px}}
+
 </style>

@@ -32,6 +32,7 @@
 
     let initialized!: () => void;
     const initialization = new Promise<void>(resolve => { initialized = resolve; });
+    export function menuDocument() { return frame?.contentDocument; }
     export function getState(): EditorStatus {
         return { ready, busy, dirty: hasDocument && !!bridge?.dirty(), name };
     }

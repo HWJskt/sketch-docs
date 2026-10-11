@@ -1,0 +1,16 @@
+.sketch-menu-row {display:flex;align-items:center;flex:0 0 auto;min-width:0;background:var(--w-chrome,var(--color-bg-light,#f8fafc));color:var(--w-text,var(--color-text,#263547))}
+.sketch-menu-row > .ribbon-tabs,.sketch-menu-row > #menu-bar {flex:1 1 0;min-width:0;box-sizing:border-box}
+@media(max-width:600px){
+.sketch-menu-row > #menu-bar {overflow-x:auto;scrollbar-width:none}
+.sketch-menu-row #menu-bar > .menu-item > .menu-dropdown,
+.sketch-menu-row .product-file-dropdown {position:fixed;top:28px;left:8px}
+}
+.product-header {box-sizing:border-box;display:flex;align-items:center;gap:5px;padding:0 6px;height:28px;flex:0 0 112px;width:112px;color:inherit;font:13px system-ui,sans-serif}
+.product-header nav {display:flex;gap:2px}
+.product-header button {box-sizing:border-box;font:inherit;cursor:pointer;border:1px solid transparent;background:transparent;color:inherit;border-radius:4px;height:24px;min-width:26px;padding:0 5px;line-height:22px}
+.product-header button.chosen {background:#e8eff8;color:#284f79;border-color:#9cb4d2;font-weight:700;box-shadow:inset 0 -2px #466d9b}
+.product-header button:hover:enabled {background:#e8eef5;color:#284f79}
+.product-header button:disabled {opacity:.55;cursor:wait}
+.product-header button:focus-visible {outline:2px solid #356bb0;outline-offset:1px}
+.product-header .info {font-size:21px;margin-left:auto}
+.editor-shell > .product-header {position:absolute;right:0;top:0;z-index:2;background:#f8fafc}
