@@ -45,7 +45,7 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
   await cp(join(root, 'overlays/edentext/ko.ts'), join(word, 'src/lib/i18n/locales/ko.ts'));
   const product = join(word, 'src/product');
   await mkdir(product, { recursive: true });
-  for (const name of ['HangulEditor.svelte', 'hangulFiles.ts']) await cp(join(root, 'src', name), join(product, name));
+  for (const name of ['HangulEditor.svelte', 'HangulFileMenu.svelte', 'hangulFiles.ts']) await cp(join(root, 'src', name), join(product, name));
   await writeFile(join(word, 'src/lib/components/HangulWorkbench.svelte'), `<script lang="ts">\nimport HangulEditor from '../../product/HangulEditor.svelte';\nlet props = $props();\n</script>\n<HangulEditor {...props} startNew={true} engineUrl="../../rhwp/index.html?chrome=embed" homeUrl="../../" />\n`);
   const conversion = join(word, 'src/lib/export/hangul.ts');
   await writeFile(conversion, exact(await readFile(conversion, 'utf8'), "'./rhwp/index.html?chrome=embed'", "'../../rhwp/index.html?chrome=embed'"));
@@ -79,8 +79,8 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
   main += '\n' + await readFile(join(root, 'overlays/rhwp/host-bridge.txt'), 'utf8');
   await writeFile(mainPath, main);
   const studioHtml = await readFile(join(studio, 'index.html'), 'utf8');
-  if (!studioHtml.includes('data-menu="file"')) throw new Error('rhwp file menu selector changed');
-  await writeFile(join(studio, 'index.html'), exact(studioHtml, '</head>', '<style>.menu-item[data-menu="file"]{display:none!important}</style></head>'));
+  if (!studioHtml.includes('data-menu="file"') || !studioHtml.includes('data-menu="edit"')) throw new Error('rhwp file menu selector changed');
+  await writeFile(join(studio, 'index.html'), exact(studioHtml, '</head>', `<style>.menu-item[data-menu="file"]{display:none!important}\n${await readFile(join(root, 'overlays/rhwp/file-menu.css'), 'utf8')}</style></head>`));
   const vendor = join(hop, 'apps/studio-host/vendor/rhwp-core');
   await build({ configFile: false, root: studio, base: './', define: { __APP_VERSION__: JSON.stringify(lock.rhwp.version), __RHWP_DISABLE_EXTERNAL_WEBFONTS__: 'true', __RHWP_HWPCTRL__: 'false' }, resolve: { alias: { '@': join(studio, 'src'), '@wasm/rhwp.js': join(vendor, 'rhwp.js'), 'canvaskit-wasm': join(root, 'node_modules/canvaskit-wasm'), '@noble/hashes': join(root, 'node_modules/@noble/hashes') } }, build: { outDir: join(output, 'rhwp'), emptyOutDir: true, target: 'baseline-widely-available' } });
   await cp(join(rhwp, 'LICENSE'), join(output, 'rhwp/LICENSE-rhwp'));

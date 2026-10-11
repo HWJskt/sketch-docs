@@ -1,0 +1,11 @@
+#product-file-menu-host { flex: 0 0 auto; }
+.product-file-menu { position: relative; }
+.product-file-menu summary { list-style: none; }
+.product-file-menu summary::-webkit-details-marker { display: none; }
+.product-file-menu[open] summary { background: var(--ui-menu-open); color: var(--ui-text-on-accent); border-color: var(--ui-menu-open-border); }
+.product-file-menu[open] > .product-file-dropdown { display: block; }
+.product-file-dropdown { width: max-content; min-width: 240px; }
+.product-file-dropdown button.md-item { width: 100%; border: 0; border-radius: 0; background: transparent; font-family: inherit; text-align: left; }
+.product-file-dropdown button.md-item:hover:enabled { background: var(--ui-selected); }
+.product-file-dropdown button:disabled { color: var(--color-text-disabled); cursor: default; }
+.product-file-menu :focus-visible { outline: 2px solid var(--color-primary-dark); outline-offset: -2px; }

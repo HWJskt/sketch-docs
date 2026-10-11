@@ -17,7 +17,7 @@ npm run dev -- --port 5173 --strictPort
 
 - `/`: Word / 한글 선택
 - `/word.html`: 한국어 EdenText, 새 문서는 DOCX 기본 저장
-- `/hwp.html`: 한글 전용 엔진, 파일 메뉴에서 새 문서·열기·저장·다른 이름 저장·HWPX/HWP 선택
+- `/hwp.html`: 한글 전용 엔진, 편집 왼쪽의 파일 메뉴에서 새 문서·열기·저장·다른 이름으로 저장 (.hwpx)/(.hwp)
 
 Word 엔진을 직접 실행하는 위치는 `/engines/word/index.html`이다. 빌드된 엔진은 개발 서버에서도 명시적인 `index.html`로 연다.
 
@@ -53,7 +53,7 @@ npm run upstream:check -- --edentext origin/main --hop origin/main
 2. `git apply --check`와 연결 코드의 일치 지점 검사
 3. 우리 앱과 적용된 Word 엔진의 타입 검사
 4. 손실 보고·외부 변경·쓰기 실패 처리 단위 검사
-5. Chrome에서 한국어 Word/DOCX, Word→한글 변환, 한글 HWP/HWPX 저장·재열기, 원본 보호·사본 재저장 검사
+5. Chrome에서 한국어 Word/DOCX, Word 저장 메뉴에서 한글 형식 제외, 한글 파일 메뉴 위치·세로 배치와 HWP/HWPX 저장·재열기, 원본 보호·사본 재저장 검사
 
 호환되지 않는 업데이트는 검사 실패로 끝나고 기존 lock을 바꾸지 않는다. `artifacts/candidate-verified.json` 결과를 검토한 뒤 채택한다.
 
@@ -77,3 +77,5 @@ npm run verify
 분리 전 수정된 EdenText 저장소 전체는 `backups/edentext-custom-worktree/`, Git 이력은 `backups/edentext-custom-ff938e6e.bundle`, 커밋되지 않은 변경은 `backups/edentext-working-tree.patch`에 보존했다. 백업과 원본 클론은 루트 커밋에 포함하지 않는다.
 
 EdenText와 파생 변경은 AGPL-3.0 라이선스를 따른다. 배포 엔진에 각 원본 라이선스를 포함한다. 배포 시 대응 소스는 이 저장소의 코드·패치와 lock에 고정한 원본으로 재현할 수 있어야 한다.
+
+병원 내부 배포·로그인과 HOP/rhwp 라이선스 검토 및 배포 전 남은 고지 작업은 [라이선스 검토 기록](docs/validation/2026-10-11-licenses.md)을 참조한다. 현재 기능 검사 통과가 라이선스 배포 준비 완료를 의미하지 않는다.

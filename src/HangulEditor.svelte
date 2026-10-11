@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { mount, unmount, onDestroy } from 'svelte';
+    import HangulFileMenu from './HangulFileMenu.svelte';
     import { bridgeFrom, fingerprint, writeArtifact, type HangulBridge, type HangulFormat, type PickerWindow } from './hangulFiles';
     let { initialFile, onExit, startNew = true, engineUrl = './rhwp/index.html?chrome=embed', homeUrl = './' }: {
         initialFile?: { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null };
@@ -9,8 +11,8 @@
     } = $props();
 
     let frame: HTMLIFrameElement;
-    let menu: HTMLDetailsElement;
-    let menuOpen = $state(false);
+    let fileMenu: ReturnType<typeof mount> | undefined;
+    onDestroy(() => { if (fileMenu) void unmount(fileMenu); });
     let bridge: HangulBridge | undefined;
     let ready = $state(false);
     let busy = $state(false);
@@ -32,6 +34,20 @@
         try {
             bridge = bridgeFrom(frame);
             await bridge.ready;
+            if (fileMenu) await unmount(fileMenu);
+            const doc = frame.contentDocument!;
+            const edit = doc.querySelector('#menu-bar > [data-menu="edit"]');
+            if (!edit) throw new Error('한글 편집기의 메뉴 구성이 변경되었습니다.');
+            doc.querySelector('#product-file-menu-host')?.remove();
+            const host = doc.createElement('div');
+            host.id = 'product-file-menu-host';
+            edit.before(host);
+            fileMenu = mount(HangulFileMenu, { target: host, props: {
+                ownerDocument: doc,
+                get ready() { return ready; }, get busy() { return busy; },
+                get hasDocument() { return hasDocument; }, supported,
+                onNew: create, onOpen: open, onSave: save, onExit: exit,
+            } });
             ready = true;
             message = '새 문서를 만들거나 HWP/HWPX 파일을 여세요.';
             if (initialFile) {
@@ -63,7 +79,6 @@
         }
     }
     async function create() {
-        menuOpen = false;
         if (busy || !bridge || !canReplace()) return;
         busy = true;
         try {
@@ -77,7 +92,6 @@
         finally { busy = false; }
     }
     async function open() {
-        menuOpen = false;
         if (busy || !ready || !bridge || !supported || !canReplace()) return;
         busy = true;
         try {
@@ -95,9 +109,9 @@
         } catch (error) { report(error); }
         finally { busy = false; }
     }
-    async function save(asNew: boolean) {
-        menuOpen = false;
+    async function save(asNew: boolean, requestedFormat: HangulFormat = format) {
         if (busy || !ready || !bridge || !hasDocument || !supported) return;
+        format = requestedFormat;
         busy = true;
         try {
             const handle = asNew || !target || format !== targetFormat ? await pickers.showSaveFilePicker!({
@@ -119,52 +133,22 @@
         finally { busy = false; }
     }
     function exit() {
-        menuOpen = false;
         if (busy || !canReplace()) return;
         if (onExit) onExit();
         else window.location.assign(homeUrl);
-    }
-    function closeMenu(event: PointerEvent) {
-        if (menuOpen && event.target instanceof Node && !menu?.contains(event.target)) menuOpen = false;
-    }
-    function menuKey(event: KeyboardEvent) {
-        if (event.key === 'Escape' && menuOpen) {
-            menuOpen = false;
-            menu?.querySelector('summary')?.focus();
-        }
     }
     function leaving(event: BeforeUnloadEvent) {
         if (busy || bridge?.dirty()) { event.preventDefault(); event.returnValue = ''; }
     }
 </script>
 
-<svelte:window onbeforeunload={leaving} onpointerdown={closeMenu} onkeydown={menuKey} onblur={() => { menuOpen = false; }} />
+<svelte:window onbeforeunload={leaving} />
 <main class="hangul-editor">
-    <header>
-        <details bind:this={menu} bind:open={menuOpen}>
-            <summary>파일 <span aria-hidden="true">▾</span></summary>
-            <div class="file-menu">
-                <button onclick={create} disabled={!ready || busy}>새 문서</button>
-                <button onclick={open} disabled={!ready || busy || !supported}>열기…</button>
-                <hr />
-                <button onclick={() => save(false)} disabled={!ready || !hasDocument || busy || !supported}>저장</button>
-                <button onclick={() => save(true)} disabled={!ready || !hasDocument || busy || !supported}>다른 이름으로 저장…</button>
-                <label>저장 형식
-                    <select bind:value={format} disabled={busy}>
-                        <option value="hwpx">HWPX</option>
-                        <option value="hwp">HWP</option>
-                    </select>
-                </label>
-                <hr />
-                <button onclick={exit} disabled={busy}>문서 형식 선택</button>
-            </div>
-        </details>
-        <span class="document-name" title={name}>{name}</span>
-    </header>
     <section inert={busy || !ready} aria-label="한글 편집 영역">
         <iframe bind:this={frame} src={engineUrl} title="한글 문서 편집기" onload={loaded} allow="clipboard-read; clipboard-write"></iframe>
     </section>
     <footer role="status" aria-live="polite">
+        <span class="document-name" title={name}>{name}</span>
         <span>{busy ? '처리 중…' : message}</span>
         {#if !supported}<span>파일 열기·저장은 데스크톱 Chrome 또는 Edge에서 사용할 수 있습니다.</span>{/if}
     </footer>
@@ -172,21 +156,7 @@
 
 <style>
     .hangul-editor { width: 100%; height: 100dvh; min-height: 0; display: flex; flex-direction: column; font-family: system-ui, sans-serif; color: #243047; background: #f5f6f8; }
-    header { height: 38px; flex: 0 0 38px; display: flex; align-items: center; gap: 16px; padding: 0 14px; border-bottom: 1px solid #dce1e8; background: white; }
-    details { position: relative; flex-shrink: 0; }
-    summary { padding: 7px 12px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
-    summary::-webkit-details-marker { display: none; }
-    summary span { margin-left: 7px; color: #788397; }
-    summary:hover, details[open] summary { background: #edf2f8; }
-    .document-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-    .file-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 20; width: 235px; max-width: calc(100vw - 40px); padding: 6px; border: 1px solid #d4dce7; border-radius: 6px; background: white; box-shadow: 0 6px 20px #17233a20; }
-    button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: 3px; font: inherit; font-size: 13px; color: inherit; cursor: pointer; }
-    button:hover:enabled { background: #edf2f8; }
-    button:disabled { color: #929baa; cursor: default; }
-    button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid #356cc2; outline-offset: -2px; }
-    label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; font-size: 13px; }
-    select { padding: 4px 7px; border: 1px solid #d4dce7; border-radius: 3px; background: white; color: inherit; font: inherit; }
-    hr { border: 0; border-top: 1px solid #e5e9ef; margin: 5px 3px; }
+    .document-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     section { flex: 1; min-height: 0; }
     iframe { display: block; width: 100%; height: 100%; border: 0; }
     footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; min-height: 24px; padding: 4px 14px; box-sizing: border-box; border-top: 1px solid #dce1e8; font-size: 11px; line-height: 1.5; color: #5b6779; }

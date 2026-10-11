@@ -77,60 +77,10 @@ try {
   assert(documentXml.includes('루트 Word 저장 검증 ABC 123'));
   assert(documentXml.includes('표 D'));
   console.log('Word iframe: Korean menu, DOCX default and text/table bytes verified');
-  const checkConvertedWord = async bytes => {
-    const entries = unzipSync(new Uint8Array(bytes));
-    const section = strFromU8(entries['Contents/section0.xml']);
-    const header = strFromU8(entries['Contents/header.xml']);
-    assert(section.includes('루트 Word 저장 검증 ABC 123'));
-    for (const text of ['굵은 글자', '표 A', '표 B', '표 C', '표 D']) assert(section.includes(text), `converted text: ${text}`);
-    const structure = await word.evaluate(({ section, header }) => {
-      const parser = new DOMParser();
-      const body = parser.parseFromString(section, 'application/xml');
-      const head = parser.parseFromString(header, 'application/xml');
-      const all = (root, name) => Array.from(root.getElementsByTagNameNS('*', name));
-      const run = all(body, 'run').find(e => all(e, 't').some(t => t.textContent.includes('굵은 글자')));
-      const cp = all(head, 'charPr').find(e => e.getAttribute('id') === run?.getAttribute('charPrIDRef'));
-      return {
-        bold: !!cp && all(cp, 'bold').length > 0,
-        sizes: all(body, 'cellSz').map(e => ({ width: Number(e.getAttribute('width')), height: Number(e.getAttribute('height')) })),
-      };
-    }, { section, header });
-    assert.equal(structure.bold, true, 'bold run retains its referenced character style');
-    assert.equal(structure.sizes.length, 4);
-    assert.equal(structure.sizes[0].height, 96 * 75);
-    assert.equal(structure.sizes[2].height, 48 * 75);
-    assert(Math.abs(structure.sizes[1].width / structure.sizes[0].width - 3) < 0.001, 'column width ratio survives conversion');
-  };
-  for (const format of ['hwpx', 'hwp']) {
-    await word.evaluate(async format => {
-      const directory = await navigator.storage.getDirectory();
-      window.__saved = await directory.getFileHandle('converted-word.' + format, { create: true });
-      window.showSaveFilePicker = async () => window.__saved;
-    }, format);
-    await word.locator('.ribbon-tab-file').click();
-    await word.locator(`[data-cmd="saveAs${format === 'hwpx' ? 'Hwpx' : 'Hwp'}"]`).click();
-    await word.waitForFunction(format => document.querySelector('.doc-name-ext')?.textContent === '.' + format
-      && document.querySelector('.doc-name-input')?.value === 'converted-word'
-      && !document.querySelector('.hangul-saving') && !document.querySelector('.doc-dirty'), format);
-    assert.deepEqual(dialogs, [], 'conversion reports no loss or failure');
-    const converted = await word.evaluate(async () => Array.from(new Uint8Array(await (await window.__saved.getFile()).arrayBuffer())));
-    if (format === 'hwpx') await checkConvertedWord(converted);
-    else assert.deepEqual(converted.slice(0, 8), [208, 207, 17, 224, 161, 177, 26, 225]);
-    await word.evaluate(() => { window.showOpenFilePicker = async () => [window.__saved]; });
-    await word.locator('.ribbon-tab-file').click();
-    await word.locator('[data-cmd="open"]').click();
-    await word.getByRole('status').filter({ hasText: '파일을 열었습니다' }).waitFor();
-    const nativeFrame = await (await word.locator('iframe[title="한글 문서 편집기"]').elementHandle()).contentFrame();
-    assert(nativeFrame, 'converted file opens in the native overlay');
-    const reopened = await nativeFrame.evaluate(() => Array.from(window.edentextHost.export('hwpx').bytes));
-    await checkConvertedWord(reopened);
-    await word.locator('.hangul-editor header summary').click();
-    await word.getByRole('button', { name: '문서 형식 선택', exact: true }).click();
-    await word.locator('.hangul-editor').waitFor({ state: 'hidden' });
-    assert((await editor.textContent()).includes('루트 Word 저장 검증 ABC 123'), 'returning from native viewer retains Word document');
-  }
-  console.log('Word conversion: HWPX/HWP save, native reopen, bold, row heights and column widths verified');
-
+  await word.locator('.ribbon-tab-file').click();
+  assert.equal(await word.locator('[data-cmd="saveAsHwpx"], [data-cmd="saveAsHwp"]').count(), 0, 'Word offers no Hangul Save As formats');
+  assert.equal(await word.locator('[data-cmd="saveAsDocx"]').count(), 1);
+  assert.equal(await word.locator('[data-cmd="saveAsOdt"]').count(), 1);
 
   await page.goto(origin);
   await page.getByRole('link', { name: /한글 문서/ }).click();
@@ -139,10 +89,27 @@ try {
   const frame = await (await page.locator('iframe[title="한글 문서 편집기"]').elementHandle()).contentFrame();
   assert(frame, 'native engine frame is present');
   const menu = async () => {
-    const details = page.locator('.hangul-editor header details');
+    const details = frame.locator('.product-file-menu');
     if (!await details.evaluate(el => el.open)) await details.locator('summary').click();
   };
-  const action = async name => { await menu(); await page.getByRole('button', { name, exact: true }).click(); };
+  const action = async name => { await menu(); await frame.getByRole('button', { name, exact: true }).click(); };
+  const fileBox = await frame.locator('.product-file-menu summary').boundingBox();
+  const editBox = await frame.locator('[data-menu="edit"] > .menu-title').boundingBox();
+  assert(fileBox && editBox && fileBox.x + fileBox.width <= editBox.x + 1 && Math.abs(fileBox.y - editBox.y) < 2, 'File sits directly left of Edit on the same menu row');
+  await menu();
+  await page.keyboard.press('Escape');
+  await frame.waitForFunction(() => !document.querySelector('.product-file-menu').open);
+  await menu();
+  await frame.locator('[data-menu="edit"] > .menu-title').click();
+  await frame.waitForFunction(() => !document.querySelector('.product-file-menu').open);
+  await menu();
+  await frame.waitForFunction(() => !document.querySelector('[data-menu="edit"]').classList.contains('open'));
+  assert.equal(await frame.locator('.product-file-menu select').count(), 0, 'formats are separate menu actions');
+  const saveItems = frame.locator('.product-file-dropdown button');
+  const boxes = await saveItems.evaluateAll(items => items.map(el => { const r=el.getBoundingClientRect(); return {x:r.x,y:r.y,height:r.height}; }));
+  for (let i=1;i<boxes.length;i++) assert(boxes[i].x === boxes[0].x && boxes[i].y >= boxes[i-1].y + boxes[i-1].height, 'File actions form one vertical column');
+  await page.screenshot({ path: '/tmp/edentext-hangul-file-menu.png' });
+  await page.keyboard.press('Escape');
   const exportHwpx = () => frame.evaluate(() => Array.from(window.edentextHost.export('hwpx').bytes));
   await frame.locator('textarea').focus();
   await page.keyboard.insertText('한글 편집 검증 ABC 123');
@@ -214,7 +181,7 @@ try {
     window.__copy = await directory.getFileHandle('copy.hwpx', { create: true });
     window.showSaveFilePicker = async () => window.__copy;
   });
-  await action('다른 이름으로 저장…');
+  await action('다른 이름으로 저장 (.hwpx)');
   await status('copy.hwpx 저장 완료').waitFor();
   await frame.locator('textarea').focus();
   await page.keyboard.insertText(' 사본수정');
@@ -232,8 +199,7 @@ try {
     window.showSaveFilePicker = async () => window.__hwp;
   });
   await menu();
-  await page.getByLabel('저장 형식').selectOption('hwp');
-  await page.getByRole('button', { name: '다른 이름으로 저장…', exact: true }).click();
+  await frame.getByRole('button', { name: '다른 이름으로 저장 (.hwp)', exact: true }).click();
   await status('native.hwp 저장 완료').waitFor();
   const hwpSaved = await page.evaluate(async () => Array.from(new Uint8Array(await (await window.__hwp.getFile()).arrayBuffer())));
   assert.deepEqual(hwpSaved.slice(0, 8), [208, 207, 17, 224, 161, 177, 26, 225]);

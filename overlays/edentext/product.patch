@@ -464,19 +464,6 @@ index f7d040a9..aeb66f77 100644
            <hr />
            <button data-cmd="save" onclick={() => run(onSave)} disabled={!editor || pdfBusy}>
              <Icon name="save" size={16} />{t().app.save}
-@@ -385,6 +389,12 @@
-           <button data-cmd="saveAsDocx" onclick={() => run(() => onSaveAs?.('docx'))} disabled={!editor || pdfBusy}>
-             <Icon name="save" size={16} />{t().ribbon.saveAs} (.docx)
-           </button>
-+          <button data-cmd="saveAsHwpx" onclick={() => run(() => onSaveAs?.('hwpx'))} disabled={!editor || pdfBusy}>
-+            <Icon name="save" size={16} />{t().ribbon.saveAs} (.hwpx)
-+          </button>
-+          <button data-cmd="saveAsHwp" onclick={() => run(() => onSaveAs?.('hwp'))} disabled={!editor || pdfBusy}>
-+            <Icon name="save" size={16} />{t().ribbon.saveAs} (.hwp)
-+          </button>
-           <hr />
-           <button data-cmd="rasterPdf" onclick={() => run(onExportPdf)} disabled={pdfBusy}>
-             <Icon name="export" size={16} />{pdfBusy ? t().app.exporting : t().app.rasterPdf}
 diff --git a/src/lib/conversion/tiptapToHwpx.ts b/src/lib/conversion/tiptapToHwpx.ts
 new file mode 100644
 index 00000000..1d3a915b
