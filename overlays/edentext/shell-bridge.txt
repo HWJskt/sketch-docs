@@ -1,0 +1,19 @@
+// Sketch Docs host integration. Added only to the generated upstream copy.
+let productTasks = $state(0);
+function productState() {
+  return {
+    ready: !!editor,
+    busy: productTasks > 0 || !!busyTask || pdfBusy || hangulSaving,
+    dirty: documentHasFile ? !!editor && (!cleanDoc || !editor.state.doc.eq(cleanDoc) || restSum() !== cleanRest) : tick >= 0 && !!editor && editor.state.doc.content.size > 2,
+    name: documentName || '새 문서',
+  };
+}
+$effect(() => {
+  const state = productState();
+  if (window.parent !== window && window.parent.location.origin === location.origin) window.parent.sketchShell?.wordState(state);
+});
+onMount(() => {
+  const api = { state: productState };
+  window.sketchWord = api;
+  return () => { if (window.sketchWord === api) delete window.sketchWord; };
+});

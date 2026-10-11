@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EdenText — Word·한글 문서 편집기</title>
+    <title>Sketch Docs — Word·한글 문서 편집기</title>
     <meta
       name="description"
       content="Word와 한글 문서를 각 형식의 편집기로 작성하고 로컬 파일로 저장합니다."
@@ -38,7 +38,7 @@
   <body>
     <div id="app">
       <main id="start-screen">
-        <div class="start-brand">EDENTEXT · 문서 편집기</div>
+        <div class="start-brand">SKETCH DOCS · 문서 편집기</div>
         <h1>어떤 문서를 작성할까요?</h1>
         <p class="start-description">문서 형식을 선택하면 전용 편집기가 열립니다.</p>
         <nav class="start-options" aria-label="문서 형식 선택">
@@ -56,10 +56,11 @@
           </a>
         </nav>
         <p class="start-note">로컬 파일 열기와 저장은 데스크톱 Chrome·Edge에서 사용할 수 있습니다.</p>
+        <div id="product-about"></div>
         <noscript>문서를 편집하려면 JavaScript를 활성화해 주세요.</noscript>
       </main>
     </div>
     
-    <script type="module" src="/src/offline.ts"></script>
+    <script type="module" src="/src/home.ts"></script>
   </body>
 </html>

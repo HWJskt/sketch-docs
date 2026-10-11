@@ -1,3 +1,4 @@
+import { packageSource } from './package-source.mjs';
 import { build } from 'vite';
 import { cp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -45,8 +46,36 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
   await cp(join(root, 'overlays/edentext/ko.ts'), join(word, 'src/lib/i18n/locales/ko.ts'));
   const product = join(word, 'src/product');
   await mkdir(product, { recursive: true });
-  for (const name of ['HangulEditor.svelte', 'HangulFileMenu.svelte', 'hangulFiles.ts']) await cp(join(root, 'src', name), join(product, name));
+  for (const name of ['HangulEditor.svelte', 'HangulFileMenu.svelte', 'hangulFiles.ts', 'editorState.ts']) await cp(join(root, 'src', name), join(product, name));
   await writeFile(join(word, 'src/lib/components/HangulWorkbench.svelte'), `<script lang="ts">\nimport HangulEditor from '../../product/HangulEditor.svelte';\nlet props = $props();\n</script>\n<HangulEditor {...props} startNew={true} engineUrl="../../rhwp/index.html?chrome=embed" homeUrl="../../" />\n`);
+  const wordApp = join(word, 'src/App.svelte');
+  let app = await readFile(wordApp, 'utf8');
+  app = exact(app, '<script lang="ts">', '<script lang="ts">\nimport type {} from "./product/editorState";');
+  app = exact(app, '</script>', (await readFile(join(root, 'overlays/edentext/shell-bridge.txt'), 'utf8')) + '\n</script>');
+  app = exact(app, 'function openHangul() { nativeHangulFile = undefined; nativeHangulOpen = true; }', `function openHangul() {
+    if (window.parent !== window && window.parent.sketchShell) {
+      void window.parent.sketchShell.openHangul().catch(error => alert(String(error))); return;
+    }
+    nativeHangulFile = undefined; nativeHangulOpen = true;
+  }`);
+  app = exact(app, '      nativeHangulFile = { bytes, name: sourceName, handle };', `      if (window.parent !== window && window.parent.sketchShell) {
+        try { await window.parent.sketchShell.openHangul({ bytes, name: sourceName, handle }); }
+        catch (error) { alert(String(error)); }
+        return;
+      }
+      nativeHangulFile = { bytes, name: sourceName, handle };`);
+  for (const [name, args, call] of [
+    ['handleSave', '', ''], ['handleSaveAs', 'kind: DocumentFormat', 'kind'],
+    ['handleOpen', '', ''], ['handleOpenRecent', 'entry: RecentFile', 'entry'],
+  ]) {
+    app = exact(app, `async function ${name}(${args}) {`, `async function ${name}(${args}): Promise<void> {
+      productTasks++;
+      try { return await ${name}ProductOperation(${call}); }
+      finally { productTasks--; }
+    }
+    async function ${name}ProductOperation(${args}) {`);
+  }
+  await writeFile(wordApp, app);
   const conversion = join(word, 'src/lib/export/hangul.ts');
   await writeFile(conversion, exact(await readFile(conversion, 'utf8'), "'./rhwp/index.html?chrome=embed'", "'../../rhwp/index.html?chrome=embed'"));
   let html = await readFile(join(word, 'index.html'), 'utf8');
@@ -87,5 +116,6 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
   await cp(join(hop, 'LICENSE'), join(output, 'rhwp/LICENSE-hop'));
   await writeFile(join(output, 'provenance.json'), JSON.stringify({ ...lock, wasmSha256: createHash('sha256').update(await readFile(join(vendor, 'rhwp_bg.wasm'))).digest('hex') }, null, 2));
   await verifySources(lock);
+  await packageSource({ root, output, lock });
 }
 if (process.argv[1] === import.meta.filename) await buildEngines();

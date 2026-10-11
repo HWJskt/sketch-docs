@@ -1,13 +1,16 @@
 <script lang="ts">
     import { mount, unmount, onDestroy } from 'svelte';
+    import type { EditorStatus, HangulInput } from './editorState';
     import HangulFileMenu from './HangulFileMenu.svelte';
     import { bridgeFrom, fingerprint, writeArtifact, type HangulBridge, type HangulFormat, type PickerWindow } from './hangulFiles';
-    let { initialFile, onExit, startNew = true, engineUrl = './rhwp/index.html?chrome=embed', homeUrl = './' }: {
+    let { initialFile, onExit, startNew = true, engineUrl = './rhwp/index.html?chrome=embed', homeUrl = './', embedded = false, onState }: {
         initialFile?: { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null };
         onExit?: () => void;
         startNew?: boolean;
         engineUrl?: string;
         homeUrl?: string;
+        embedded?: boolean;
+        onState?: (state: EditorStatus) => void;
     } = $props();
 
     let frame: HTMLIFrameElement;
@@ -27,6 +30,26 @@
     const pickers = window as PickerWindow;
     const supported = !!pickers.showOpenFilePicker && !!pickers.showSaveFilePicker;
 
+    let initialized!: () => void;
+    const initialization = new Promise<void>(resolve => { initialized = resolve; });
+    export function getState(): EditorStatus {
+        return { ready, busy, dirty: hasDocument && !!bridge?.dirty(), name };
+    }
+    $effect(() => { onState?.({ready, busy, dirty: false, name}); });
+    export async function openDocument(file: HangulInput | undefined = undefined): Promise<boolean> {
+        await initialization;
+        if (!ready || busy || !bridge) throw new Error('한글 편집기가 아직 준비되지 않았습니다.');
+        if (!canReplace()) return false;
+        if (!file) { await create(true); return true; }
+        busy = true;
+        try {
+            await replaceDocument(() => bridge!.open(file.bytes, file.name));
+            hasDocument = true; name = file.name; original = file.handle; target = null;
+            format = /\.hwpx$/i.test(name) ? 'hwpx' : 'hwp';
+            message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
+            return true;
+        } finally { busy = false; }
+    }
     function report(error: unknown) {
         message = error instanceof Error && error.name === 'AbortError' ? '취소했습니다.' : String(error);
     }
@@ -60,7 +83,7 @@
                 message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
             } else if (startNew) await create();
         } catch (error) { report(error); }
-        finally { busy = false; }
+        finally { busy = false; initialized(); }
     }
     function canReplace() {
         return !hasDocument || !bridge?.dirty() || confirm('저장하지 않은 변경을 버리고 문서를 바꾸시겠습니까?');
@@ -78,8 +101,8 @@
             throw error;
         }
     }
-    async function create() {
-        if (busy || !bridge || !canReplace()) return;
+    async function create(confirmed = false) {
+        if (busy || !bridge || (!confirmed && !canReplace())) return;
         busy = true;
         try {
             await replaceDocument(() => bridge!.create());
@@ -133,7 +156,7 @@
         finally { busy = false; }
     }
     function exit() {
-        if (busy || !canReplace()) return;
+        if (busy || (!embedded && !canReplace())) return;
         if (onExit) onExit();
         else window.location.assign(homeUrl);
     }
@@ -143,7 +166,7 @@
 </script>
 
 <svelte:window onbeforeunload={leaving} />
-<main class="hangul-editor">
+<main class="hangul-editor" class:embedded>
     <section inert={busy || !ready} aria-label="한글 편집 영역">
         <iframe bind:this={frame} src={engineUrl} title="한글 문서 편집기" onload={loaded} allow="clipboard-read; clipboard-write"></iframe>
     </section>
@@ -156,6 +179,7 @@
 
 <style>
     .hangul-editor { width: 100%; height: 100dvh; min-height: 0; display: flex; flex-direction: column; font-family: system-ui, sans-serif; color: #243047; background: #f5f6f8; }
+    .hangul-editor.embedded { height: 100%; }
     .document-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     section { flex: 1; min-height: 0; }
     iframe { display: block; width: 100%; height: 100%; border: 0; }

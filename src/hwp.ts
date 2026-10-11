@@ -1,4 +1,3 @@
 import { mount } from 'svelte';
-import HangulEditor from './HangulEditor.svelte';
-import './offline';
-mount(HangulEditor, {target: document.getElementById('app')!, props: {startNew:true}});
+import EditorShell from './EditorShell.svelte';
+mount(EditorShell, { target: document.getElementById('app')!, props: { initialMode: 'hwp' } });

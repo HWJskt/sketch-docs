@@ -35,6 +35,6 @@ async function respond(request) {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith(new URL('./rhwp/', self.location.href).pathname)) return;
+  if (['./rhwp/', './legal/'].some(path => url.pathname.startsWith(new URL(path, self.location.href).pathname))) return;
   event.respondWith(respond(event.request));
 });

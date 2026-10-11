@@ -10,3 +10,4 @@ candidate-dist/
 artifacts/
 .venv-hwpx/
 .DS_Store
+public/legal/

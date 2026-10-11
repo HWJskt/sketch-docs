@@ -1,10 +1,10 @@
-# Word·한글 통합 웹 편집기
+# Sketch Docs
 
 이 저장소는 문서 형식 선택 화면, 편집기 연결, 한국어 설정과 파일 저장 메뉴를 관리한다. `source/edentext`, `source/hop`는 수정하지 않는 별도 Git 클론이다. 우리 변경은 `overlays/`와 `src/`에 있으며 빌드용 복사본에만 적용한다.
 
 저장소 구조·버전 관리·소스 제공·직원용 도메인에 관한 합의와 남은 결정은 [프로젝트 결정 기록](docs/project-decisions.md)에 정리한다.
 
-다음 UI 작업은 [공통 편집기 헤더와 프로그램 정보 화면 계획](docs/architecture/common-editor-header.md)을 따른다.
+공통 헤더·편집기 전환·프로그램 정보는 [설계 기록](docs/architecture/common-editor-header.md), 검증 결과는 [공통 셸 검증](docs/validation/2026-10-12-common-shell.md)에 정리한다.
 
 ## 실행
 
@@ -22,6 +22,8 @@ npm run dev -- --port 5173 --strictPort
 - `/`: Word / 한글 선택
 - `/word.html`: 한국어 EdenText, 새 문서는 DOCX 기본 저장
 - `/hwp.html`: 한글 전용 엔진, 편집 왼쪽의 파일 메뉴에서 새 문서·열기·저장·다른 이름으로 저장 (.hwpx)/(.hwp)
+
+공통 헤더의 Word/한글 버튼은 각각의 작성 중 문서와 저장 대상을 유지하며 전환한다. 새로고침 후 한글 복구는 지원하지 않는다. 첫 화면 하단과 편집 화면 오른쪽 ⓘ에서 Sketch Docs 정보·라이선스·해당 버전 소스 다운로드를 제공한다. 빌드 시 `public/legal/`에 약 153 MB의 소스 묶음과 고지를 생성하므로 배포할 때 `dist/legal/`도 함께 올린다. 소스의 `SOURCE-README.txt`에 오프라인 원본 복원 및 빌드 절차가 있다.
 
 Word 엔진을 직접 실행하는 위치는 `/engines/word/index.html`이다. 빌드된 엔진은 개발 서버에서도 명시적인 `index.html`로 연다.
 

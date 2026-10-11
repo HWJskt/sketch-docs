@@ -31,6 +31,19 @@ try {
   await page.goto(origin);
   await page.getByRole('link', { name: /Word 문서/ }).waitFor();
   assert.equal(await page.locator('.tiptap').count(), 0, 'chooser has no active editor');
+  await page.getByRole('button', { name: '프로그램 정보 · 라이선스 및 소스 코드' }).click();
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('link', { name: /이 버전의 소스 다운로드/ }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Sketch Docs' }).count(), 1);
+  const release = await (await page.request.get(origin + '/legal/release.json')).json();
+  assert.equal(release.name, 'Sketch Docs');
+  for (const url of [release.sourceUrl, release.licenseUrl, release.noticesUrl]) {
+    assert.equal((await page.request.head(new URL(url, origin).href)).status(), 200);
+  }
+  await page.screenshot({path:'/tmp/sketch-docs-about.png'});
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({state:'hidden'});
+  assert(await page.getByRole('button', { name: '프로그램 정보 · 라이선스 및 소스 코드' }).evaluate(el => el === document.activeElement));
   await page.getByRole('link', { name: /Word 문서/ }).click();
   const wordElement = page.locator('iframe[title="Word 문서 편집기"]');
   await wordElement.waitFor();
@@ -82,8 +95,20 @@ try {
   assert.equal(await word.locator('[data-cmd="saveAsDocx"]').count(), 1);
   assert.equal(await word.locator('[data-cmd="saveAsOdt"]').count(), 1);
 
-  await page.goto(origin);
-  await page.getByRole('link', { name: /한글 문서/ }).click();
+  await page.keyboard.press('Escape');
+  const switchWord = page.getByRole('button', {name:'Word', exact:true});
+  const switchHangul = page.getByRole('button', {name:'한글', exact:true});
+  const header = page.locator('.product-header');
+  const headerBounds = await header.boundingBox();
+  await editor.click();
+  await page.keyboard.insertText(' 전환 보존');
+  const retainedWord = await editor.textContent();
+  await switchHangul.click();
+  assert.equal(await switchHangul.getAttribute('aria-pressed'), 'true');
+  assert.equal(new URL(page.url()).pathname, '/hwp.html');
+  assert.deepEqual(await header.boundingBox(), headerBounds);
+  assert.equal(await wordElement.evaluate(el => el.parentElement.inert), true);
+
   const status = text => page.getByRole('status').filter({ hasText: text });
   await status('새 문서입니다').waitFor();
   const frame = await (await page.locator('iframe[title="한글 문서 편집기"]').elementHandle()).contentFrame();
@@ -127,6 +152,41 @@ try {
   await frame.locator('[data-row="1"][data-col="1"]').hover();
   await frame.locator('[data-row="1"][data-col="1"]').click();
   await frame.waitForFunction(() => window.edentextHost.dirty());
+  const retainedHangul = xml(await exportHwpx());
+  await switchWord.click();
+  assert.equal(await editor.textContent(), retainedWord);
+  assert.equal(await switchWord.getAttribute('aria-pressed'), 'true');
+  await editor.focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  assert(!(await editor.textContent()).includes('전환 보존'), 'Word undo history survives editor switches');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  assert.equal(await editor.textContent(), retainedWord);
+  assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', {cancelable:true}))), true, 'hidden Hangul and Word changes prevent unload');
+  await page.goBack();
+  await switchHangul.waitFor();
+  assert.equal(await switchHangul.getAttribute('aria-pressed'), 'true');
+  assert.equal(xml(await exportHwpx()), retainedHangul);
+  await page.goForward();
+  assert.equal(await switchWord.getAttribute('aria-pressed'), 'true');
+  await word.evaluate(() => { window.showSaveFilePicker = () => new Promise((resolve,reject) => {window.__cancelPicker = () => reject(new DOMException('cancel', 'AbortError'));}); });
+  await word.locator('.ribbon-tab-file').click();
+  await word.locator('[data-cmd="saveAsDocx"]').click();
+  await page.waitForFunction(() => document.querySelector('.product-header nav button').disabled);
+  assert(await switchHangul.isDisabled(), 'pending Word file operation blocks switching');
+  await word.waitForFunction(() => typeof window.__cancelPicker === 'function');
+  await word.evaluate(() => window.__cancelPicker());
+  await page.waitForFunction(() => !document.querySelector('.product-header nav button').disabled);
+  await switchHangul.click();
+  assert.equal(xml(await exportHwpx()), retainedHangul);
+  await page.getByRole('button', {name:'프로그램 정보 및 라이선스',exact:true}).click();
+  await page.getByRole('dialog').waitFor();
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({width:390,height:844});
+  const narrow = await header.boundingBox();
+  assert(narrow.x >= 0 && narrow.x + narrow.width <= 390);
+  await page.screenshot({path:'/tmp/sketch-docs-hangul-narrow.png'});
+  await page.setViewportSize({width:1440,height:1000});
+  console.log('Shared header: text/table sessions, history, busy guard, About and narrow layout verified');
   for (const format of ['hwpx', 'hwp']) {
     const exported = await frame.evaluate(format => {
       const a = window.edentextHost.export(format);
@@ -214,6 +274,38 @@ try {
   assert.deepEqual(hwpSaved.slice(0, 8), [208, 207, 17, 224, 161, 177, 26, 225]);
   await frame.evaluate(bytes => window.edentextHost.open(new Uint8Array(bytes), 'native.hwp'), hwpSaved);
   assert(xml(await exportHwpx()).includes('사본수정'));
+  await switchWord.click();
+  assert.equal(await editor.textContent(), retainedWord);
+  await word.locator('.ribbon-tab-file').click();
+  await word.locator('[data-cmd="save"]').click();
+  await word.waitForFunction(() => !window.sketchWord.state().busy && !window.sketchWord.state().dirty);
+  const preservedWordBytes = await word.evaluate(async () => Array.from(new Uint8Array(await (await window.__saved.getFile()).arrayBuffer())));
+  assert(strFromU8(unzipSync(new Uint8Array(preservedWordBytes))['word/document.xml']).includes('전환 보존'), 'Word saves to its original target after Hangul Save As');
+  await switchHangul.click();
+  assert(xml(await exportHwpx()).includes('사본수정'));
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Performance.enable');
+  const metrics = await cdp.send('Performance.getMetrics');
+  console.log('Both engines retained, JS heap bytes (excludes WASM/GPU):', metrics.metrics.find(m => m.name === 'JSHeapUsedSize')?.value);
+  await cdp.detach();
+  await page.screenshot({path:'/tmp/sketch-docs-hangul.png'});
+  const isolated = await browser.newContext();
+  try {
+    const failurePage = await isolated.newPage();
+    failurePage.setDefaultTimeout(30000);
+    await failurePage.route('**/rhwp/index.html?*', route => route.fulfill({contentType:'text/html',body:'<p>Engine unavailable</p>'}));
+    await failurePage.goto(origin + '/word.html');
+    const failureWord = failurePage.frameLocator('iframe[title="Word 문서 편집기"]');
+    const draft = failureWord.locator('.tiptap').first();
+    await draft.waitFor();
+    await draft.click();
+    await failurePage.keyboard.insertText('실패 후에도 보존');
+    await failurePage.getByRole('button',{name:'한글',exact:true}).click();
+    await failurePage.getByRole('status').filter({hasText:'한글 편집기를 불러오지 못했습니다'}).waitFor();
+    await failurePage.getByRole('button',{name:'Word',exact:true}).click();
+    assert((await draft.textContent()).includes('실패 후에도 보존'));
+    console.log('Hangul load failure preserves Word session');
+  } finally { await isolated.close(); }
   assert.deepEqual(errors, []);
   assert.deepEqual(dialogs, []);
   assert.deepEqual([...external], []);

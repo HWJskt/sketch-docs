@@ -35,7 +35,7 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   }
   execFileSync('npm', ['run', 'check'], { cwd: root, stdio: 'inherit' });
   execFileSync('npm', ['run', 'check'], { cwd: join(cache, 'word'), stdio: 'inherit' });
-  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs')], { cwd: root, stdio: 'inherit' });
+  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/source-package.test.mjs')], { cwd: root, stdio: 'inherit' });
   await build({ root, publicDir, build: { outDir, emptyOutDir: true } });
   execFileSync(process.execPath, [join(root, 'tests/integration.mjs')], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 180000 });
   if (await productHash() !== before) throw new Error('Product files changed during validation; rerun verification');
