@@ -4,6 +4,8 @@
 
 저장소 구조·버전 관리·소스 제공·직원용 도메인에 관한 합의와 남은 결정은 [프로젝트 결정 기록](docs/project-decisions.md)에 정리한다.
 
+다음 UI 작업은 [공통 편집기 헤더와 프로그램 정보 화면 계획](docs/architecture/common-editor-header.md)을 따른다.
+
 ## 실행
 
 Node 24.21.0과 데스크톱 Chrome을 검증에 사용한다. 루트에서 실행한다.

@@ -20,13 +20,34 @@
         const closeOthers = () => {
             doc.querySelectorAll<HTMLElement>('#menu-bar > .menu-item.open > .menu-title').forEach(el => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })));
         };
+        const summary = node.querySelector('summary')!;
+        const titles = Array.from(doc.querySelectorAll<HTMLElement>('#menu-bar > .menu-item:not([data-menu="file"]) > .menu-title'));
+        const enterFile = () => {
+            if (!doc.querySelector('#menu-bar > .menu-item.open')) return;
+            closeOthers();
+            node.open = true;
+            opened = true;
+        };
+        const enterNative = (event: MouseEvent) => {
+            if (!node.open) return;
+            node.open = false;
+            opened = false;
+            const title = event.currentTarget as HTMLElement;
+            if (!title.parentElement?.classList.contains('open')) {
+                title.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            }
+        };
         doc.addEventListener('pointerdown', pointer);
         doc.addEventListener('keydown', key, true);
-        node.querySelector('summary')!.addEventListener('click', closeOthers);
+        summary.addEventListener('click', closeOthers);
+        summary.addEventListener('mouseenter', enterFile);
+        titles.forEach(title => title.addEventListener('mouseenter', enterNative));
         return { destroy() {
             doc.removeEventListener('pointerdown', pointer);
             doc.removeEventListener('keydown', key, true);
-            node.querySelector('summary')!.removeEventListener('click', closeOthers);
+            summary.removeEventListener('click', closeOthers);
+            summary.removeEventListener('mouseenter', enterFile);
+            titles.forEach(title => title.removeEventListener('mouseenter', enterNative));
         } };
     }
 </script>

@@ -96,6 +96,15 @@ try {
   const fileBox = await frame.locator('.product-file-menu summary').boundingBox();
   const editBox = await frame.locator('[data-menu="edit"] > .menu-title').boundingBox();
   assert(fileBox && editBox && fileBox.x + fileBox.width <= editBox.x + 1 && Math.abs(fileBox.y - editBox.y) < 2, 'File sits directly left of Edit on the same menu row');
+  await frame.locator('[data-menu="edit"] > .menu-title').click();
+  await frame.locator('.product-file-menu summary').hover();
+  await frame.waitForFunction(() => document.querySelector('.product-file-menu').open && !document.querySelector('[data-menu="edit"]').classList.contains('open'));
+  await frame.locator('.product-file-dropdown button').first().hover();
+  assert.equal(await frame.locator('.product-file-menu').evaluate(el => el.open), true, 'moving into File submenu keeps it open');
+  await frame.locator('[data-menu="insert"] > .menu-title').hover();
+  await frame.waitForFunction(() => !document.querySelector('.product-file-menu').open && document.querySelector('[data-menu="insert"]').classList.contains('open'));
+  await frame.locator('.product-file-menu summary').hover();
+  await frame.waitForFunction(() => document.querySelector('.product-file-menu').open && !document.querySelector('[data-menu="insert"]').classList.contains('open'));
   await menu();
   await page.keyboard.press('Escape');
   await frame.waitForFunction(() => !document.querySelector('.product-file-menu').open);
