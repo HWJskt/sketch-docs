@@ -1,0 +1,1001 @@
+diff --git a/src/App.svelte b/src/App.svelte
+index 6fe1fa66..f550dd3e 100644
+--- a/src/App.svelte
++++ b/src/App.svelte
+@@ -1,4 +1,5 @@
+ <script lang="ts">
++  import HangulWorkbench from './lib/components/HangulWorkbench.svelte';
+   import { onMount, tick as domUpdated, untrack } from 'svelte';
+   import { cubicOut } from 'svelte/easing';
+   import type { Content, Editor } from '@tiptap/core';
+@@ -12,6 +13,7 @@
+   import type { TiptapNode } from 'odf-kit';
+   import { exportPdf, printPdf, printRaster } from './lib/export/pdf';
+   import { supportsFsAccess, saveDocument, openOdt, allowWrite } from './lib/export/saveFile';
++  import { fingerprint, writeArtifact, type PickerWindow, type HangulFormat } from './lib/rhwpWorkbench';
+   import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, getHandle, type RecentFile } from './lib/storage/recentFiles';
+   import { isProtected, decryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
+   import { convertUnsupportedImages } from './lib/import/imageFormats';
+@@ -86,7 +88,6 @@
+   import { OPEN_THESAURUS_EVENT } from './lib/spell/thesaurus';
+   import StyleManagerDialog from './lib/components/StyleManagerDialog.svelte';
+   import NoteOptionsDialog from './lib/components/NoteOptionsDialog.svelte';
+-  import SaveFormatDialog from './lib/components/SaveFormatDialog.svelte';
+   import { t, locale } from './lib/i18n/i18n.svelte';
+   import { fnv1a } from './lib/utils/hash';
+   import { withShortcut } from './lib/i18n/shortcut';
+@@ -730,6 +731,10 @@
+   }
+   let fileInput: HTMLInputElement | null = $state(null);
+   let pdfBusy = $state(false);
++  let hangulSaving = $state(false);
++  let nativeHangulOpen = $state(false);
++  let nativeHangulFile = $state.raw<{ bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null } | undefined>();
++  function openHangul() { nativeHangulFile = undefined; nativeHangulOpen = true; }
+   // What the status bar's spinner names; a layout left running after it keeps the name.
+   let busyTask = $state<BusyTask | null>(null);
+   let busyProgress = $state<number | null>(null);
+@@ -754,7 +759,6 @@
+     });
+   });
+   let exportMenuOpen = $state(false);
+-  let saveFormatOpen = $state(false);
+ 
+   // The editable zones as one section — section 1 of the export.
+   function hfSetOfState(): HfSet {
+@@ -856,7 +860,7 @@
+     fileHandle = null;
+     fileModified = 0;
+     saveDocFile(null);
+-    documentFormat = 'odt';
++    documentFormat = 'docx';
+     documentHasFile = false;
+     docPassword = null;
+     passwordLost = false;
+@@ -968,7 +972,12 @@
+   }
+ 
+   async function applyImport(bytes: Uint8Array, handle: FileSystemFileHandle | null, sourceName?: string) {
+-    if (!editor) return;
++    if (!editor || hangulSaving) return;
++    if (sourceName && /\.(hwp|hwpx)$/i.test(sourceName)) {
++      nativeHangulFile = { bytes, name: sourceName, handle };
++      nativeHangulOpen = true;
++      return;
++    }
+     try {
+       // Before anything reads the archive: an encrypted file is not one yet.
+       let password: string | null = null;
+@@ -1215,6 +1224,7 @@
+   }
+ 
+   async function buildBytes(kind: DocumentFormat, json: TiptapNode): Promise<Uint8Array> {
++    if (kind === 'hwp' || kind === 'hwpx') throw new Error('한글 전용 저장 경로를 사용하세요.');
+     if (kind === 'docx') {
+       const { buildDocx } = await import('./lib/export/docx');
+       return buildDocx(editor ? withRenderedBoxHeights(editor.view) as TiptapNode : json, ...exportArgs());
+@@ -1224,11 +1234,11 @@
+   }
+ 
+   async function handleSave() {
+-    if (!editor) return;
++    if (!editor || hangulSaving) return;
++    if (documentFormat === 'hwp' || documentFormat === 'hwpx') return handleHangulSave(documentFormat, fileHandle);
+     exportMenuOpen = false;
+-    // A document with no file behind it has no format yet: ask, the way saving an
+-    // untitled document does everywhere else, and let Save As do the rest.
+-    if (!fileHandle && !documentHasFile) { saveFormatOpen = true; return; }
++    // Word mode starts new documents in DOCX; opened files retain their format.
++    if (!fileHandle && !documentHasFile) return handleSaveAs('docx');
+     if (!(await ensurePassword())) return;
+     const json = editor.getJSON() as TiptapNode;
+     try {
+@@ -1261,7 +1271,8 @@
+   // Save As is one entry per format: the format has to be settled before the bytes are
+   // built (a download cannot read a name back), and it is the document's from then on.
+   async function handleSaveAs(kind: DocumentFormat) {
+-    if (!editor) return;
++    if (!editor || hangulSaving) return;
++    if (kind === 'hwp' || kind === 'hwpx') return handleHangulSave(kind);
+     exportMenuOpen = false;
+     if (!(await ensurePassword())) return;
+     const json = editor.getJSON() as TiptapNode;
+@@ -1280,6 +1291,60 @@
+     }
+   }
+ 
++  async function handleHangulSave(kind: HangulFormat, existing: FileSystemFileHandle | null = null) {
++    if (!editor || hangulSaving) return;
++    exportMenuOpen = false;
++    if (!fsSupported) { alert('HWP/HWPX 저장은 데스크톱 Chrome 또는 Edge에서 사용할 수 있습니다.'); return; }
++    if (docPassword || loadDocProtected()) { alert('암호 보호 문서는 현재 HWP/HWPX로 변환할 수 없습니다.'); return; }
++    if ([headerDoc, footerDoc, headerFirstDoc, footerFirstDoc, headerEvenDoc, footerEvenDoc].some(d => !hfIsEmpty(d)) || extraHfSections.length) {
++      alert('머리말·꼬리말·여러 구역의 한글 변환은 아직 지원하지 않습니다.'); return;
++    }
++    if (pageDecor.background || pageDecor.border || pageDecor.watermark || pageRtl || lineNumbering.on || lineGrid.on || foldMarksOn ||
++        JSON.stringify(pageNumbering) !== JSON.stringify(DEFAULT_PAGE_NUMBERING) ||
++        JSON.stringify(styleSheet()) !== JSON.stringify(builtinStyleSheet()) || embeddedFonts().length) {
++      alert('페이지 장식·쓰기 방향·줄 번호/격자·사용자 스타일·내장 글꼴의 한글 변환은 아직 지원하지 않습니다.'); return;
++    }
++    hangulSaving = true;
++    const source = editor;
++    const savedDoc = source.state.doc;
++    const savedRest = restSum();
++    try {
++      const name = suggestedFilenameDocx(source.getJSON() as TiptapNode).replace(/\.docx$/i, '.' + kind);
++      const target = existing ?? await (window as PickerWindow).showSaveFilePicker!({
++        suggestedName: name,
++        types: [{ description: '한글 문서', accept: { 'application/octet-stream': ['.' + kind] } }],
++      });
++      if (!target.name.toLowerCase().endsWith('.' + kind)) throw new Error('저장 형식과 파일 확장자가 일치해야 합니다.');
++      if (existing && !(await allowWrite(existing))) throw new Error('파일 쓰기 권한이 없습니다. 다른 이름으로 저장하세요.');
++      const before = await target.getFile();
++      if (existing && fileModified && before.lastModified !== fileModified) throw new Error('파일이 외부에서 변경되었습니다. 다른 이름으로 저장하세요.');
++      const expectedHash = await fingerprint(before);
++      const { buildHangul } = await import('./lib/export/hangul');
++      const dims = pageDimsCm(pageFormat, pageOrientation);
++      const artifact = await buildHangul(savedDoc.toJSON(), kind, {
++        pageWidthMm: dims.w * 10, pageHeightMm: dims.h * 10,
++        marginsMm: { top: pageMargins.top * 10, bottom: pageMargins.bottom * 10, left: pageMargins.left * 10, right: pageMargins.right * 10 },
++      });
++      if (editor !== source || source.state.doc !== savedDoc || restSum() !== savedRest) throw new Error('변환 중 문서가 변경되었습니다. 다시 저장하세요.');
++      await writeArtifact(target, artifact, expectedHash);
++      const modified = (await target.getFile()).lastModified;
++      const unchanged = editor === source && source.state.doc === savedDoc && restSum() === savedRest;
++      if (editor !== source) return;
++      fileHandle = target;
++      documentFormat = kind;
++      documentHasFile = true;
++      documentName = target.name.replace(/\.(hwp|hwpx)$/i, '');
++      fileModified = modified;
++      if (unchanged) markSaved();
++      try {
++        recentFiles = await rememberRecentFile(target.name, target);
++        await bindFile();
++      } catch { alert('파일은 저장했지만 최근 파일 목록을 갱신하지 못했습니다.'); }
++    } catch (error) {
++      if ((error as DOMException)?.name !== 'AbortError') reportLoadFailure(t().dialogs.couldNotSave, error);
++    } finally { hangulSaving = false; }
++  }
++
+   // A template in the document's own format (.ott, or .dotx for a .docx document). It
+   // is never bound as the current file, exactly as opening one isn't.
+   async function handleSaveTemplate() {
+@@ -1487,6 +1552,7 @@
+       // has one (both word processors' key for it) and only otherwise finds the next
+       // match, which is what the extension leaves unhandled.
+       if (e.defaultPrevented) return;
++      if (hangulSaving || nativeHangulOpen) return;
+       // Drafting needs the body editor; without the assistant the key is the browser's.
+       if (aiEnabled() && !hfActive && matchesEvent(e, DEFAULT_SHORTCUTS.aiDraft)) {
+         e.preventDefault();
+@@ -1544,7 +1610,7 @@
+ 
+ <!-- The ribbon docks in flow, so only the modern island needs the editor's top
+      padding to clear an overlay. -->
+-<main style="--toolbar-overlay-h: {chromeMode === 'ribbon' ? 0 : toolbarRegionH}px">
++<main inert={hangulSaving || nativeHangulOpen} style="--toolbar-overlay-h: {chromeMode === 'ribbon' ? 0 : toolbarRegionH}px">
+   {#snippet toolbarScrollbar()}
+     {#if tbOverflow > 0}
+       <div
+@@ -1614,6 +1680,7 @@
+       onOpen={handleOpen}
+       onSave={handleSave}
+       onSaveAs={handleSaveAs}
++      onOpenHangul={openHangul}
+       onSaveTemplate={handleSaveTemplate}
+       recentFiles={recentFiles}
+       onOpenRecent={(id) => { const f = recentFiles.find((r) => r.id === id); if (f) void handleOpenRecent(f); }}
+@@ -1734,6 +1801,9 @@
+               <button class="theme-option" onclick={() => handleSaveAs('docx')} role="menuitem">
+                 <span>{t().ribbon.saveAs} (.docx)</span>
+               </button>
++              <button class="theme-option" onclick={() => handleSaveAs('hwpx')} role="menuitem"><span>{t().ribbon.saveAs} (.hwpx)</span></button>
++              <button class="theme-option" onclick={() => handleSaveAs('hwp')} role="menuitem"><span>{t().ribbon.saveAs} (.hwp)</span></button>
++              <button class="theme-option" onclick={openHangul} role="menuitem"><span>한글 문서 열기 / 새 문서</span></button>
+               <button class="theme-option" onclick={handleExportPdf} disabled={pdfBusy} role="menuitem">
+                 <span>{pdfBusy ? t().app.exporting : t().app.rasterPdf}</span>
+                 <span class="theme-option-hint">{t().app.rasterHint}</span>
+@@ -1915,7 +1985,7 @@
+   <input
+     bind:this={fileInput}
+     type="file"
+-    accept=".odt,.ott,.docx,.dotx,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.text-template,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.wordprocessingml.template"
++    accept=".hwp,.hwpx,.odt,.ott,.docx,.dotx,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.text-template,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+     class="file-input"
+     onchange={handleImportFile}
+   />
+@@ -2090,10 +2160,17 @@
+        callers only say which family to land on. -->
+   <StyleManagerDialog bind:open={styleManagerOpen} family={styleManagerFamily} editor={activeEditor} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '')} scripts={numberingScripts(documentLanguage, documentLanguageOther, locale())} />
+   <NoteOptionsDialog bind:open={noteOptionsOpen} />
+-  <SaveFormatDialog bind:open={saveFormatOpen} onPick={handleSaveAs} />
+ </main>
++{#if nativeHangulOpen}
++  <div class="hangul-overlay"><HangulWorkbench initialFile={nativeHangulFile} onExit={() => { nativeHangulOpen = false; }} /></div>
++{/if}
++{#if hangulSaving}
++  <div class="hangul-saving" role="status">한글 문서로 변환하여 저장하고 있습니다…</div>
++{/if}
+ 
+ <style>
++  .hangul-overlay { position: fixed; inset: 0; z-index: 9000; background: white; }
++  .hangul-saving { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; background: #ffffffd9; color: #17233a; font: 18px system-ui; }
+   main {
+     display: flex;
+     flex-direction: column;
+diff --git a/src/lib/components/HangulWorkbench.svelte b/src/lib/components/HangulWorkbench.svelte
+new file mode 100644
+index 00000000..7e546a3f
+--- /dev/null
++++ b/src/lib/components/HangulWorkbench.svelte
+@@ -0,0 +1,155 @@
++<script lang="ts">
++    import { bridgeFrom, fingerprint, writeArtifact, type HangulBridge, type HangulFormat, type PickerWindow } from '../rhwpWorkbench';
++    let { initialFile, onExit, startNew = false }: {
++        initialFile?: { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null };
++        onExit?: () => void;
++        startNew?: boolean;
++    } = $props();
++
++    let frame: HTMLIFrameElement;
++    let bridge: HangulBridge | undefined;
++    let ready = $state(false);
++    let busy = $state(false);
++    let hasDocument = $state(false);
++    let name = $state('새 문서');
++    let format = $state<HangulFormat>('hwpx');
++    let message = $state('한글 편집기를 준비하고 있습니다.');
++    let target = $state.raw<FileSystemFileHandle | null>(null);
++    let original: FileSystemFileHandle | null = null;
++    let targetHash = '';
++    let targetFormat: HangulFormat = 'hwpx';
++    const pickers = window as PickerWindow;
++    const supported = !!pickers.showOpenFilePicker && !!pickers.showSaveFilePicker;
++
++    function report(error: unknown) {
++        message = error instanceof Error && error.name === 'AbortError' ? '취소했습니다.' : String(error);
++    }
++    async function loaded() {
++        try {
++            bridge = bridgeFrom(frame);
++            await bridge.ready;
++            ready = true;
++            message = '새 문서를 만들거나 HWP/HWPX 파일을 여세요.';
++            if (initialFile) {
++                busy = true;
++                await bridge.open(initialFile.bytes, initialFile.name);
++                hasDocument = true;
++                name = initialFile.name;
++                original = initialFile.handle;
++                format = /\.hwpx$/i.test(name) ? 'hwpx' : 'hwp';
++                message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
++            } else if (startNew) await create();
++        } catch (error) { report(error); }
++        finally { busy = false; }
++    }
++    function canReplace() {
++        return !hasDocument || !bridge?.dirty() || confirm('저장하지 않은 변경을 버리고 문서를 바꾸시겠습니까?');
++    }
++    async function replaceDocument(operation: () => Promise<unknown>) {
++        const previousEpoch = hasDocument ? bridge?.state().epoch : undefined;
++        try { await operation(); }
++        catch (error) {
++            let epoch: number | undefined;
++            try { epoch = bridge?.state().epoch; } catch { /* No document after failed initialization. */ }
++            if (epoch !== previousEpoch) {
++                target = original = null;
++                hasDocument = false;
++            }
++            throw error;
++        }
++    }
++    async function create() {
++        if (busy || !bridge || !canReplace()) return;
++        busy = true;
++        try {
++            await replaceDocument(() => bridge!.create());
++            hasDocument = true;
++            name = '새 문서';
++            format = 'hwpx';
++            target = original = null;
++            message = '새 문서입니다. 저장할 형식을 선택하세요.';
++        } catch (error) { report(error); }
++        finally { busy = false; }
++    }
++    async function open() {
++        if (busy || !bridge || !canReplace()) return;
++        busy = true;
++        try {
++            const [handle] = await pickers.showOpenFilePicker!({ multiple: false, types: [{ description: '한글 문서', accept: { 'application/octet-stream': ['.hwp', '.hwpx'] } }] });
++            const file = await handle.getFile();
++            if (!/\.(hwp|hwpx)$/i.test(file.name)) throw new Error('HWP/HWPX 파일을 선택하세요.');
++            const bytes = new Uint8Array(await file.arrayBuffer());
++            await replaceDocument(() => bridge!.open(bytes, file.name));
++            hasDocument = true;
++            name = file.name;
++            format = /\.hwpx$/i.test(name) ? 'hwpx' : 'hwp';
++            original = handle;
++            target = null;
++            message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
++        } catch (error) { report(error); }
++        finally { busy = false; }
++    }
++    async function save(asNew: boolean) {
++        if (busy || !bridge || !hasDocument) return;
++        busy = true;
++        try {
++            const handle = asNew || !target || format !== targetFormat ? await pickers.showSaveFilePicker!({
++                suggestedName: name.replace(/\.(hwp|hwpx)$/i, '') + '.' + format,
++                types: [{ description: format.toUpperCase(), accept: { 'application/octet-stream': ['.' + format] } }],
++            }) : target;
++            if (original && await original.isSameEntry(handle)) throw new Error('원본 보존 검증 전에는 원본과 다른 파일을 선택하세요.');
++            if (!handle.name.toLowerCase().endsWith('.' + format)) throw new Error('선택한 형식과 파일 확장자가 일치해야 합니다.');
++            const hash = target && await target.isSameEntry(handle) ? targetHash : await fingerprint(await handle.getFile());
++            const artifact = bridge.export(format);
++            await writeArtifact(handle, artifact, hash);
++            target = handle;
++            targetFormat = format;
++            name = handle.name;
++            targetHash = await fingerprint(new File([new Uint8Array(artifact.bytes)], name));
++            const clean = bridge.acknowledge(artifact.version, name);
++            message = clean ? `${name} 저장 완료` : `${name} 저장 완료 — 이후 변경은 아직 저장하지 않았습니다.`;
++        } catch (error) { report(error); }
++        finally { busy = false; }
++    }
++    function leaving(event: BeforeUnloadEvent) {
++        if (busy || bridge?.dirty()) { event.preventDefault(); event.returnValue = ''; }
++    }
++</script>
++
++<svelte:window onbeforeunload={leaving} />
++<main>
++    <header>
++        <strong>edentext · 한글 편집 검증</strong>
++        {#if onExit}
++            <button onclick={() => { if (canReplace()) onExit?.(); }} disabled={busy}>Word 문서로 돌아가기</button>
++        {:else}
++            <a href="./" onclick={(event) => { if (busy || !canReplace()) event.preventDefault(); }}>문서 형식 선택</a>
++        {/if}
++        <span>{name}</span>
++    </header>
++    <nav aria-label="문서 작업">
++        <button onclick={create} disabled={!ready || busy}>새 문서</button>
++        <button onclick={open} disabled={!ready || busy || !supported}>열기</button>
++        <label>저장 형식 <select bind:value={format} disabled={busy}><option value="hwpx">HWPX</option><option value="hwp">HWP</option></select></label>
++        <button onclick={() => save(false)} disabled={!hasDocument || busy || !supported}>저장</button>
++        <button onclick={() => save(true)} disabled={!hasDocument || busy || !supported}>다른 이름으로 저장</button>
++    </nav>
++    <p class="notice">초기 검증 화면입니다. 가져온 원본 덮어쓰기·자동 복구·DOCX 변환은 아직 제공하지 않습니다. 시험용 사본을 사용하세요.</p>
++    {#if !supported}<p role="alert">로컬 파일 저장을 지원하는 데스크톱 Chrome 또는 Edge로 여세요.</p>{/if}
++    <p role="status">{busy ? '처리 중…' : message}</p>
++    <section inert={busy} aria-label="한글 편집 영역">
++        <iframe bind:this={frame} src="./rhwp/index.html?chrome=embed" title="한글 문서 편집기" onload={loaded} allow="clipboard-read; clipboard-write"></iframe>
++    </section>
++</main>
++
++<style>
++    main { font-family: system-ui, sans-serif; color: #17233a; background: #f4f6f9; height: 100vh; display: flex; flex-direction: column; }
++    header, nav { display: flex; gap: 16px; align-items: center; padding: 12px 20px; background: white; border-bottom: 1px solid #d8dee9; flex-wrap: wrap; }
++    header span { margin-left: auto; }
++    button, select { font: inherit; padding: 7px 12px; }
++    a { color: #2459a6; }
++    p { margin: 6px 20px; font-size: 14px; }
++    .notice { color: #624719; }
++    section { flex: 1; min-height: 0; }
++    iframe { width: 100%; height: 100%; border: 0; }
++</style>
+diff --git a/src/lib/components/SaveFormatDialog.svelte b/src/lib/components/SaveFormatDialog.svelte
+index be1d0a42..e5210ef2 100644
+--- a/src/lib/components/SaveFormatDialog.svelte
++++ b/src/lib/components/SaveFormatDialog.svelte
+@@ -1,11 +1,12 @@
+ <script lang="ts">
+   import { t } from '../i18n/i18n.svelte';
++  import type { DocumentFormat } from '../storage/documentName';
+ 
+   // Asked for a document that has no file behind it yet: the format has to be settled
+   // before the bytes are built, and the download route cannot read one back.
+   let { open = $bindable(false), onPick }: {
+     open?: boolean;
+-    onPick: (kind: 'odt' | 'docx') => void;
++    onPick: (kind: DocumentFormat) => void;
+   } = $props();
+ 
+   let dialogEl = $state<HTMLDialogElement | null>(null);
+@@ -17,7 +18,7 @@
+     else if (!open && el.open) el.close();
+   });
+ 
+-  function pick(kind: 'odt' | 'docx') {
++  function pick(kind: DocumentFormat) {
+     open = false;
+     onPick(kind);
+   }
+@@ -33,6 +34,8 @@
+     <h2>{t().dialogs.chooseFormat}</h2>
+     <button class="format" onclick={() => pick('odt')}>OpenDocument Text (.odt)</button>
+     <button class="format" onclick={() => pick('docx')}>Word Document (.docx)</button>
++    <button class="format" onclick={() => pick('hwpx')}>한글 문서 (.hwpx)</button>
++    <button class="format" onclick={() => pick('hwp')}>한글 문서 (.hwp)</button>
+     <div class="actions">
+       <button onclick={() => (open = false)}>{t().common.cancel}</button>
+     </div>
+diff --git a/src/lib/components/ribbon/Ribbon.svelte b/src/lib/components/ribbon/Ribbon.svelte
+index f7d040a9..aeb66f77 100644
+--- a/src/lib/components/ribbon/Ribbon.svelte
++++ b/src/lib/components/ribbon/Ribbon.svelte
+@@ -91,7 +91,7 @@
+     onSelectTheme,
+     pdfBusy = false,
+     hasPassword = false,
+-    onNew, onNewFromTemplate, onOpen, onSave, onSaveAs, onSaveTemplate, onExportPdf, onPrintPdf, onPrint, onAbout, onSettings, onDocProperties, onBrowserDocuments, onProtect, onAutoCorrect, onAutoText, onNewComment,
++    onNew, onNewFromTemplate, onOpen, onOpenHangul, onSave, onSaveAs, onSaveTemplate, onExportPdf, onPrintPdf, onPrint, onAbout, onSettings, onDocProperties, onBrowserDocuments, onProtect, onAutoCorrect, onAutoText, onNewComment,
+     navigatorOpen = false, onToggleNavigator,
+     aiOpen = false, onToggleAi,
+     recentFiles = [], onOpenRecent, onForgetRecent,
+@@ -99,7 +99,7 @@
+     editor: Editor | null;
+     tick: number;
+     documentName?: string;
+-    documentFormat?: 'odt' | 'docx';
++    documentFormat?: 'odt' | 'docx' | 'hwp' | 'hwpx';
+     dirty?: boolean;
+     showFormattingMarks?: boolean;
+     showFieldShading?: boolean;
+@@ -139,8 +139,9 @@
+     onNew?: () => void;
+     onNewFromTemplate?: () => void;
+     onOpen?: () => void;
++    onOpenHangul?: () => void;
+     onSave?: () => void;
+-    onSaveAs?: (kind: 'odt' | 'docx') => void;
++    onSaveAs?: (kind: 'odt' | 'docx' | 'hwp' | 'hwpx') => void;
+     onSaveTemplate?: () => void;
+     recentFiles?: { id: string; name: string }[];
+     onOpenRecent?: (id: string) => void;
+@@ -374,6 +375,9 @@
+           <button data-cmd="browserDocuments" onclick={() => run(onBrowserDocuments)}>
+             <Icon name="folder" size={16} />{t().browserDocs.title}
+           </button>
++          <button onclick={() => run(onOpenHangul)}>
++            <Icon name="folder" size={16} />한글 문서 열기 / 새 문서
++          </button>
+           <hr />
+           <button data-cmd="save" onclick={() => run(onSave)} disabled={!editor || pdfBusy}>
+             <Icon name="save" size={16} />{t().app.save}
+@@ -385,6 +389,12 @@
+           <button data-cmd="saveAsDocx" onclick={() => run(() => onSaveAs?.('docx'))} disabled={!editor || pdfBusy}>
+             <Icon name="save" size={16} />{t().ribbon.saveAs} (.docx)
+           </button>
++          <button data-cmd="saveAsHwpx" onclick={() => run(() => onSaveAs?.('hwpx'))} disabled={!editor || pdfBusy}>
++            <Icon name="save" size={16} />{t().ribbon.saveAs} (.hwpx)
++          </button>
++          <button data-cmd="saveAsHwp" onclick={() => run(() => onSaveAs?.('hwp'))} disabled={!editor || pdfBusy}>
++            <Icon name="save" size={16} />{t().ribbon.saveAs} (.hwp)
++          </button>
+           <hr />
+           <button data-cmd="rasterPdf" onclick={() => run(onExportPdf)} disabled={pdfBusy}>
+             <Icon name="export" size={16} />{pdfBusy ? t().app.exporting : t().app.rasterPdf}
+diff --git a/src/lib/conversion/tiptapToHwpx.ts b/src/lib/conversion/tiptapToHwpx.ts
+new file mode 100644
+index 00000000..1d3a915b
+--- /dev/null
++++ b/src/lib/conversion/tiptapToHwpx.ts
+@@ -0,0 +1,293 @@
++import type { JSONContent } from '@tiptap/core';
++import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
++import { HEADING_STYLE_OVERRIDES } from '../styles/headings';
++
++export interface HwpxConversionOptions {
++  pageWidthMm?: number;
++  pageHeightMm?: number;
++  marginsMm?: { top: number; bottom: number; left: number; right: number };
++}
++export interface HwpxConversionResult { bytes: Uint8Array; warnings: string[] }
++const HP = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
++const HH = 'http://www.hancom.co.kr/hwpml/2011/head';
++const all = (root: Document | Element, name: string) => Array.from(root.getElementsByTagNameNS('*', name));
++const first = (root: Document | Element, name: string) => all(root, name)[0];
++const units = (mm: number) => Math.round(mm * 7200 / 25.4);
++
++/** Builds a new single-section document; the supplied package must be a fresh engine template. */
++export function tiptapToHwpx(doc: JSONContent, blankHwpx: Uint8Array, options: HwpxConversionOptions = {}): HwpxConversionResult {
++  if (doc.type !== 'doc') throw new Error('HWPX 변환에는 TipTap 문서가 필요합니다.');
++  const files = unzipSync(blankHwpx);
++  const parse = (path: string) => {
++    if (!files[path]) throw new Error(`HWPX 템플릿에 ${path} 파일이 없습니다.`);
++    const xml = new DOMParser().parseFromString(strFromU8(files[path]), 'application/xml');
++    if (first(xml, 'parsererror')) throw new Error(`HWPX 템플릿 XML 오류: ${path}`);
++    return xml;
++  };
++  if (Object.keys(files).filter(p => /^Contents\/section\d+\.xml$/.test(p)).length !== 1) {
++    throw new Error('HWPX 템플릿은 하나의 구역이어야 합니다.');
++  }
++  const section = parse('Contents/section0.xml');
++  const header = parse('Contents/header.xml');
++  const secPr = first(section, 'secPr')?.cloneNode(true) as Element | undefined;
++  const colPr = first(section, 'colPr')?.cloneNode(true) as Element | undefined;
++  const charBase = first(header, 'charPr');
++  const paraBase = first(header, 'paraPr');
++  const borderBase = first(header, 'borderFill');
++  if (!secPr || !charBase || !paraBase || !borderBase) throw new Error('HWPX 템플릿의 기본 서식이 없습니다.');
++  const warnings = new Set<string>();
++  const warn = (message: string) => warnings.add(message);
++  const attrs = (node: JSONContent, supported: string[]) => {
++    for (const [key, value] of Object.entries(node.attrs || {})) {
++      if (key === 'styleName' && (['Normal', 'Standard'].includes(String(value)) || (node.type === 'heading' && /^Heading(?:_20_| )?\d+$/.test(String(value))))) continue;
++      if (['minWidth', 'minHeight', 'width', 'height', 'indent', 'hangingIndent', 'marginLeft', 'marginRight', 'marginTop', 'marginBottom'].includes(key) && value === 0) continue;
++      if (Array.isArray(value) && !value.length) continue;
++      if (value !== null && value !== undefined && value !== '' && value !== false && !supported.includes(key)) {
++        warn(`${node.type}.${key}: 이 속성은 HWPX에 반영되지 않습니다.`);
++      }
++    }
++  };
++  const el = (name: string, values: Record<string, string | number> = {}, owner = section) => {
++    const e = owner.createElementNS(name.startsWith('hh:') ? HH : HP, name);
++    for (const [key, value] of Object.entries(values)) e.setAttribute(key, String(value));
++    return e;
++  };
++  const addDefinition = (base: Element) => {
++    const parent = base.parentElement!;
++    const id = Math.max(...Array.from(parent.children).map(e => Number(e.getAttribute('id')) || 0)) + 1;
++    const copy = base.cloneNode(true) as Element;
++    copy.setAttribute('id', String(id));
++    parent.appendChild(copy);
++    parent.setAttribute('itemCnt', String(parent.children.length));
++    return copy;
++  };
++  const page = first(secPr, 'pagePr');
++  const margin = first(secPr, 'margin');
++  for (const [key, value] of [['width', options.pageWidthMm ?? 210], ['height', options.pageHeightMm ?? 297]] as const) {
++    if (!Number.isFinite(value) || value <= 0) throw new Error('용지 크기가 올바르지 않습니다.');
++    page?.setAttribute(key, String(units(value)));
++  }
++  for (const [key, value] of Object.entries(options.marginsMm ?? { top: 20, bottom: 20, left: 20, right: 20 })) {
++    if (!Number.isFinite(value) || value < 0) throw new Error('용지 여백이 올바르지 않습니다.');
++    margin?.setAttribute(key, String(units(value)));
++  }
++  margin?.setAttribute('header', '0');
++  margin?.setAttribute('footer', '0');
++  const bodyWidth = Number(page?.getAttribute('width')) - Number(margin?.getAttribute('left')) - Number(margin?.getAttribute('right'));
++  const bodyHeight = Number(page?.getAttribute('height')) - Number(margin?.getAttribute('top')) - Number(margin?.getAttribute('bottom'));
++  if (!(bodyHeight > 0)) throw new Error('용지 높이보다 여백이 큽니다.');
++  if (!(bodyWidth > 0)) throw new Error('용지 폭보다 여백이 큽니다.');
++  const charCache = new Map<string, string>();
++  const paraCache = new Map<string, string>();
++  let serial = 1;
++  function charId(node: JSONContent, heading = 0): string {
++    const style = HEADING_STYLE_OVERRIDES[heading - 1];
++    let size = style ? parseFloat(style.fontSize) : 12;
++    let bold = !!style, italic = !!style?.italic, underline = false, strike = false;
++    let color = '#000000';
++    let family = heading ? 'Arial' : 'Liberation Serif';
++    for (const mark of node.marks || []) {
++      if (mark.type === 'bold') bold = true;
++      else if (mark.type === 'italic') italic = true;
++      else if (mark.type === 'underline') underline = true;
++      else if (mark.type === 'strike') strike = true;
++      else if (mark.type === 'textStyle') {
++        attrs(mark, ['fontSize', 'color', 'fontFamily']);
++        if (mark.attrs?.fontFamily) family = String(mark.attrs.fontFamily).split(',')[0].trim().replace(/^['"]|['"]$/g, '');
++        if (mark.attrs?.fontSize) {
++          const match = String(mark.attrs.fontSize).match(/^(\d+(?:\.\d+)?)(pt|px)?$/);
++          if (match && Number(match[1]) > 0) size = Number(match[1]) * (match[2] === 'px' ? 0.75 : 1);
++          else warn('textStyle.fontSize: 지원하지 않는 글자 크기입니다.');
++        }
++        if (mark.attrs?.color) {
++          const c = String(mark.attrs.color);
++          if (/^#[\da-f]{6}$/i.test(c)) color = c;
++          else if (/^#[\da-f]{3}$/i.test(c)) color = '#' + [...c.slice(1)].map(x => x + x).join('');
++          else warn('textStyle.color: 지원하지 않는 색상 표현입니다.');
++        }
++      } else warn(`${mark.type}: 이 글자 서식은 HWPX에 반영되지 않습니다.`);
++    }
++    const key = JSON.stringify([size, bold, italic, underline, strike, color, family]);
++    const cached = charCache.get(key);
++    if (cached) return cached;
++    const cp = addDefinition(charBase);
++    cp.setAttribute('height', String(Math.round(size * 100)));
++    cp.setAttribute('textColor', color);
++    const fontRef = first(cp, 'fontRef');
++    for (const face of all(header, 'fontface')) {
++      let font = Array.from(face.children).find(f => f.getAttribute('face') === family);
++      if (!font && face.firstElementChild) {
++        font = face.firstElementChild.cloneNode(true) as Element;
++        font.setAttribute('id', String(Math.max(...Array.from(face.children).map(f => Number(f.getAttribute('id')) || 0)) + 1));
++        font.setAttribute('face', family);
++        face.appendChild(font);
++        face.setAttribute('fontCnt', String(face.children.length));
++      }
++      if (font) fontRef?.setAttribute((face.getAttribute('lang') || '').toLowerCase(), font.getAttribute('id')!);
++    }
++    for (const name of ['bold', 'italic']) for (const child of all(cp, name)) child.remove();
++    const anchor = first(cp, 'underline');
++    if (italic) cp.insertBefore(el('hh:italic', {}, header), anchor || null);
++    if (bold) cp.insertBefore(el('hh:bold', {}, header), anchor || null);
++    first(cp, 'underline')?.setAttribute('type', underline ? 'BOTTOM' : 'NONE');
++    first(cp, 'strikeout')?.setAttribute('shape', strike ? 'SOLID' : 'NONE');
++    const id = cp.getAttribute('id')!;
++    charCache.set(key, id);
++    return id;
++  }
++  function paraId(node: JSONContent): string {
++    const align = node.attrs?.textAlign || 'left';
++    const supported = ['left', 'center', 'right', 'justify'];
++    if (!supported.includes(align)) warn(`문단 정렬 ${align}: 왼쪽 정렬로 변환됩니다.`);
++    const horizontal = supported.includes(align) ? align : 'left';
++    const level = node.type === 'heading' ? Number(node.attrs?.level || 1) : 0;
++    const key = `${horizontal}:${level}`;
++    if (paraCache.has(key)) return paraCache.get(key)!;
++    const pp = addDefinition(paraBase);
++    first(pp, 'align')?.setAttribute('horizontal', horizontal.toUpperCase());
++    for (const e of all(pp, 'lineSpacing')) { e.setAttribute('type', 'PERCENT'); e.setAttribute('value', '100'); }
++    for (const m of all(pp, 'margin')) for (const c of Array.from(m.children)) c.setAttribute('value', '0');
++    const headingStyle = HEADING_STYLE_OVERRIDES[level - 1];
++    if (headingStyle) {
++      for (const m of all(pp, 'margin')) {
++        first(m, 'prev')?.setAttribute('value', String(units(parseFloat(headingStyle.marginTop) * 10)));
++        first(m, 'next')?.setAttribute('value', String(units(parseFloat(headingStyle.marginBottom) * 10)));
++      }
++      first(pp, 'breakSetting')?.setAttribute('keepWithNext', '1');
++    }
++    const id = pp.getAttribute('id')!;
++    paraCache.set(key, id);
++    return id;
++  }
++  function paragraph(node: JSONContent): Element {
++    attrs(node, ['textAlign', 'level']);
++    const heading = node.type === 'heading' ? Number(node.attrs?.level || 1) : 0;
++    if (heading && !HEADING_STYLE_OVERRIDES[heading - 1]) warn('지원하지 않는 제목 수준입니다.');
++    const p = el('hp:p', { id: serial++, paraPrIDRef: paraId(node), styleIDRef: 0, pageBreak: 0, columnBreak: 0, merged: 0 });
++    if (heading) {
++      const styles = first(header, 'styles');
++      const name = `Heading ${heading}`;
++      let style = styles && Array.from(styles.children).find(e => e.getAttribute('engName') === name && e.getAttribute('paraPrIDRef') === p.getAttribute('paraPrIDRef'));
++      if (!style && styles?.firstElementChild) {
++        style = addDefinition(styles.firstElementChild);
++        style.setAttribute('type', 'PARA');
++        style.setAttribute('name', name); style.setAttribute('engName', name);
++        style.setAttribute('paraPrIDRef', p.getAttribute('paraPrIDRef')!);
++        style.setAttribute('charPrIDRef', charId({}, heading));
++      }
++      if (style) p.setAttribute('styleIDRef', style.getAttribute('id')!);
++      else warn('제목 스타일을 생성할 수 없어 직접 서식으로 변환됩니다.');
++    }
++    function inline(n: JSONContent) {
++      if (n.type === 'text' || n.type === 'hardBreak') {
++        const run = el('hp:run', { charPrIDRef: charId(n, heading) });
++        const t = el('hp:t');
++        if (n.type === 'hardBreak') t.appendChild(el('hp:lineBreak'));
++        else t.textContent = n.text || '';
++        run.appendChild(t); p.appendChild(run);
++      } else {
++        warn(`${n.type}: 지원하지 않는 요소입니다. 포함된 텍스트만 유지됩니다.`);
++        for (const c of n.content || []) inline(c);
++      }
++    }
++    for (const child of node.content || []) inline(child);
++    if (!p.children.length) inline({ type: 'text', text: '' });
++    return p;
++  }
++  const tableBorder = addDefinition(borderBase);
++  for (const side of ['leftBorder', 'rightBorder', 'topBorder', 'bottomBorder']) first(tableBorder, side)?.setAttribute('type', 'SOLID');
++  function table(node: JSONContent): Element {
++    attrs(node, []);
++    const rows = node.content || [];
++    // Editor row heights are CSS pixels at 96 dpi; HWP uses 7200 units/inch.
++    const heights = rows.map(row => {
++      const height = row.attrs?.rowHeight;
++      if (height == null || height === 0) return 2800;
++      if (typeof height !== 'number' || !Number.isFinite(height) || height < 0) throw new Error('표의 행 높이가 올바르지 않습니다.');
++      return Math.max(1, Math.round(height * 75));
++    });
++    const occupied: boolean[][] = rows.map(() => []);
++    const placements: { node: JSONContent; row: number; col: number; rs: number; cs: number }[] = [];
++    let cols = 0;
++    rows.forEach((row, r) => {
++      attrs(row, ['rowHeight']);
++      let c = 0;
++      for (const cell of row.content || []) {
++        attrs(cell, ['colspan', 'rowspan', 'colwidth']);
++        while (occupied[r][c]) c++;
++        const cs = Number(cell.attrs?.colspan ?? 1), rs = Number(cell.attrs?.rowspan ?? 1);
++        if (!Number.isInteger(cs) || cs < 1 || cs > 1000 || !Number.isInteger(rs) || rs < 1 || r + rs > rows.length) throw new Error('표의 병합 범위가 올바르지 않습니다.');
++        for (let y = r; y < r + rs; y++) for (let x = c; x < c + cs; x++) {
++          if (occupied[y][x]) throw new Error('표의 병합 범위가 겹칩니다.');
++          occupied[y][x] = true;
++        }
++        placements.push({ node: cell, row: r, col: c, rs, cs }); c += cs; cols = Math.max(cols, c);
++      }
++    });
++    if (!cols || !rows.length || occupied.some(row => Array.from({ length: cols }, (_, i) => row[i]).some(v => !v))) throw new Error('표의 행과 열 구조가 올바르지 않습니다.');
++    // As in the editor, the first row defines proportional column widths.
++    const weights: (number | null)[] = [];
++    for (const cell of placements) {
++      const widths = cell.node.attrs?.colwidth;
++      if (widths != null && (!Array.isArray(widths) || widths.length !== cell.cs || widths.some(w => w != null && (typeof w !== 'number' || !Number.isFinite(w) || w < 0)))) {
++        throw new Error('표의 열 너비가 올바르지 않습니다.');
++      }
++      if (cell.row === 0) for (let k = 0; k < cell.cs; k++) weights.push(widths?.[k] || null);
++    }
++    const present = weights.filter((w): w is number => w != null);
++    const average = present.length ? present.reduce((a, b) => a + b, 0) / present.length : 1;
++    const filled = weights.map(w => w ?? average);
++    const total = filled.reduce((a, b) => a + b, 0);
++    const edges = [0];
++    let cumulative = 0;
++    for (const weight of filled) { cumulative += weight; edges.push(Math.round(bodyWidth * cumulative / total)); }
++    const p = paragraph({ type: 'paragraph' });
++    const run = p.firstElementChild!;
++    const tbl = el('hp:tbl', { id: serial++, zOrder: 0, numberingType: 'TABLE', textWrap: 'TOP_AND_BOTTOM', textFlow: 'BOTH_SIDES', lock: 0, dropcapstyle: 'None', pageBreak: 'CELL', repeatHeader: 0, rowCnt: rows.length, colCnt: cols, cellSpacing: 0, borderFillIDRef: tableBorder.getAttribute('id')!, noAdjust: 0 });
++    tbl.appendChild(el('hp:sz', { width: bodyWidth, widthRelTo: 'ABSOLUTE', height: heights.reduce((a, b) => a + b, 0), heightRelTo: 'ABSOLUTE', protect: 0 }));
++    tbl.appendChild(el('hp:pos', { treatAsChar: 1, affectLSpacing: 0, flowWithText: 1, allowOverlap: 0, holdAnchorAndSO: 0, vertRelTo: 'PARA', horzRelTo: 'COLUMN', vertAlign: 'TOP', horzAlign: 'LEFT', vertOffset: 0, horzOffset: 0 }));
++    for (const n of ['outMargin', 'inMargin']) tbl.appendChild(el(`hp:${n}`, { left: 0, right: 0, top: 0, bottom: 0 }));
++    rows.forEach((_, r) => {
++      const tr = el('hp:tr'); tbl.appendChild(tr);
++      for (const cell of placements.filter(c => c.row === r)) {
++        const tc = el('hp:tc', { name: '', header: cell.node.type === 'tableHeader' ? 1 : 0, hasMargin: 1, protect: 0, editable: 0, dirty: 0, borderFillIDRef: tableBorder.getAttribute('id')! });
++        const list = el('hp:subList', { id: '', textDirection: 'HORIZONTAL', lineWrap: 'BREAK', vertAlign: 'CENTER', linkListIDRef: 0, linkListNextIDRef: 0, textWidth: 0, textHeight: 0, hasTextRef: 0, hasNumRef: 0 });
++        for (const child of blocks(cell.node.content || [])) list.appendChild(child);
++        tc.appendChild(list);
++        tc.appendChild(el('hp:cellAddr', { colAddr: cell.col, rowAddr: r }));
++        tc.appendChild(el('hp:cellSpan', { colSpan: cell.cs, rowSpan: cell.rs }));
++        tc.appendChild(el('hp:cellSz', { width: edges[cell.col + cell.cs] - edges[cell.col], height: heights.slice(r, r + cell.rs).reduce((a, b) => a + b, 0) }));
++        tc.appendChild(el('hp:cellMargin', { left: 141, right: 141, top: 141, bottom: 141 }));
++        tr.appendChild(tc);
++      }
++    });
++    run.insertBefore(tbl, run.firstChild);
++    return p;
++  }
++  function blocks(nodes: JSONContent[]): Element[] {
++    const out: Element[] = [];
++    for (const node of nodes) {
++      if (node.type === 'paragraph' || node.type === 'heading') out.push(paragraph(node));
++      else if (node.type === 'table') out.push(table(node));
++      else {
++        warn(`${node.type}: 지원하지 않는 요소입니다. 포함된 텍스트만 유지됩니다.`);
++        if (node.content?.length) out.push(...blocks(node.content));
++        else if (node.text) out.push(paragraph({ type: 'paragraph', content: [node] }));
++      }
++    }
++    return out.length ? out : [paragraph({ type: 'paragraph' })];
++  }
++  attrs(doc, []);
++  const body = blocks(doc.content || []);
++  section.documentElement.replaceChildren(...body);
++  const firstRun = body[0].firstElementChild!;
++  firstRun.insertBefore(secPr, firstRun.firstChild);
++  if (colPr) { const ctrl = el('hp:ctrl'); ctrl.appendChild(colPr); firstRun.insertBefore(ctrl, secPr.nextSibling); }
++  const serializer = new XMLSerializer();
++  files['Contents/section0.xml'] = strToU8(serializer.serializeToString(section));
++  files['Contents/header.xml'] = strToU8(serializer.serializeToString(header));
++  files['Preview/PrvText.txt'] = strToU8(all(section, 't').map(e => e.textContent).join('\n'));
++  const archive: Zippable = { mimetype: [files.mimetype || strToU8('application/hwp+zip'), { level: 0 }] };
++  for (const [name, bytes] of Object.entries(files)) if (name !== 'mimetype') archive[name] = bytes;
++  return { bytes: zipSync(archive), warnings: [...warnings] };
++}
+diff --git a/src/lib/export/hangul.ts b/src/lib/export/hangul.ts
+new file mode 100644
+index 00000000..245b13bd
+--- /dev/null
++++ b/src/lib/export/hangul.ts
+@@ -0,0 +1,42 @@
++import type { JSONContent } from '@tiptap/core';
++import { bridgeFrom, type HangulFormat, type HangulArtifact } from '../rhwpWorkbench';
++import { tiptapToHwpx, type HwpxConversionOptions } from '../conversion/tiptapToHwpx';
++
++export async function buildHangul(doc: JSONContent, format: HangulFormat, options: HwpxConversionOptions): Promise<HangulArtifact> {
++    const frame = document.createElement('iframe');
++    frame.title = '한글 파일 변환';
++    frame.setAttribute('aria-hidden', 'true');
++    frame.inert = true;
++    frame.tabIndex = -1;
++    frame.style.cssText = 'position:fixed;left:-20000px;top:0;width:1200px;height:900px;border:0;';
++    let timer: ReturnType<typeof setTimeout>;
++    const timeout = new Promise<never>((_, reject) => {
++        timer = setTimeout(() => reject(new Error('한글 변환 엔진 준비 시간이 초과되었습니다.')), 60000);
++    });
++    try {
++        const loaded = new Promise<void>((resolve, reject) => {
++            frame.onload = () => resolve();
++            frame.onerror = () => reject(new Error('한글 변환 엔진을 불러오지 못했습니다.'));
++        });
++        frame.src = new URL('./rhwp/index.html?chrome=embed', document.baseURI).href;
++        document.body.append(frame);
++        return await Promise.race([timeout, (async () => {
++            await loaded;
++            const bridge = bridgeFrom(frame);
++            await bridge.ready;
++            await bridge.create();
++            const blank = bridge.export('hwpx');
++            const converted = tiptapToHwpx(doc, blank.bytes, options);
++            if (converted.warnings.length) {
++                throw new Error('현재 한글 변환에서 보존하지 못하는 항목이 있어 저장을 중단했습니다.\n• ' + converted.warnings.join('\n• '));
++            }
++            await bridge.open(converted.bytes, 'converted.hwpx');
++            const result = bridge.export(format);
++            if (result.contentLoss.count) throw new Error('한글 내보내기에 내용 손실이 있어 저장을 중단했습니다.');
++            return result;
++        })()]);
++    } finally {
++        clearTimeout(timer!);
++        frame.remove();
++    }
++}
+diff --git a/src/lib/export/saveFile.ts b/src/lib/export/saveFile.ts
+index 1f4eb32c..4f233384 100644
+--- a/src/lib/export/saveFile.ts
++++ b/src/lib/export/saveFile.ts
+@@ -28,7 +28,7 @@ const FORMATS: Record<Kind, { mime: string; type: { description: string; accept:
+ // The open picker also accepts templates; opening one never binds it as the file.
+ // The picker preselects the first entry, so it lists both formats together.
+ const OPEN_PICKER_TYPES = [
+-  { description: 'Text Document', accept: { [ODT_MIME]: ['.odt'], [OTT_MIME]: ['.ott'], [DOCX_MIME]: ['.docx'], [DOTX_MIME]: ['.dotx'] } },
++  { description: 'Text Document', accept: { [ODT_MIME]: ['.odt'], [OTT_MIME]: ['.ott'], [DOCX_MIME]: ['.docx'], [DOTX_MIME]: ['.dotx'], 'application/octet-stream': ['.hwp', '.hwpx'] } },
+   { description: 'OpenDocument Text', accept: { [ODT_MIME]: ['.odt'], [OTT_MIME]: ['.ott'] } },
+   { description: 'Word Document', accept: { [DOCX_MIME]: ['.docx'], [DOTX_MIME]: ['.dotx'] } },
+ ];
+diff --git a/src/lib/i18n/config.ts b/src/lib/i18n/config.ts
+index 9ae45d42..102052a8 100644
+--- a/src/lib/i18n/config.ts
++++ b/src/lib/i18n/config.ts
+@@ -1,10 +1,11 @@
+ // UI locale configuration. Plain module (no runes), safe to import anywhere —
+ // keeps appLanguage.ts and i18n.svelte.ts free of circular runes imports.
+ 
+-export const LOCALES = ['en', 'de', 'es', 'fr', 'pt', 'el', 'ru', 'uk', 'ja', 'zh-Hans', 'zh-Hant'] as const;
++export const LOCALES = ['ko', 'en', 'de', 'es', 'fr', 'pt', 'el', 'ru', 'uk', 'ja', 'zh-Hans', 'zh-Hant'] as const;
+ export type Locale = (typeof LOCALES)[number];
+ 
+ export const LOCALE_LABELS: Record<Locale, string> = {
++  ko: '한국어',
+   en: 'English',
+   de: 'Deutsch',
+   es: 'Español (España)',
+diff --git a/src/lib/i18n/i18n.svelte.ts b/src/lib/i18n/i18n.svelte.ts
+index 57737567..dfdc7210 100644
+--- a/src/lib/i18n/i18n.svelte.ts
++++ b/src/lib/i18n/i18n.svelte.ts
+@@ -2,6 +2,7 @@
+ // template or $derived re-renders when setLocale() reassigns it — no store bridge.
+ 
+ import en, { type Messages } from './locales/en';
++import ko from './locales/ko';
+ import de from './locales/de';
+ import es from './locales/es';
+ import fr from './locales/fr';
+@@ -15,7 +16,7 @@ import zhHant from './locales/zh-Hant';
+ import { loadAppLanguage, saveAppLanguage } from '../storage/appLanguage';
+ import type { Locale } from './config';
+ 
+-const catalogs: Record<Locale, Messages> = { en, de, es, fr, pt, el, ru, uk, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
++const catalogs: Record<Locale, Messages> = { ko, en, de, es, fr, pt, el, ru, uk, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
+ 
+ let current = $state<Locale>(loadAppLanguage());
+ 
+diff --git a/src/lib/rhwpWorkbench.ts b/src/lib/rhwpWorkbench.ts
+new file mode 100644
+index 00000000..f01693b3
+--- /dev/null
++++ b/src/lib/rhwpWorkbench.ts
+@@ -0,0 +1,49 @@
++export type HangulFormat = 'hwp' | 'hwpx';
++export interface DocumentVersion { epoch: number; revision: number; dirty: boolean }
++export interface HangulArtifact {
++    bytes: Uint8Array;
++    contentLoss: { schemaVersion: number; outputFormat: HangulFormat; count: number; losses: unknown[] };
++    version: DocumentVersion;
++}
++export interface HangulBridge {
++    ready: Promise<void>;
++    state(): DocumentVersion;
++    dirty(): boolean;
++    create(): Promise<DocumentVersion>;
++    open(bytes: Uint8Array, name: string): Promise<DocumentVersion>;
++    export(format: HangulFormat): HangulArtifact;
++    acknowledge(version: DocumentVersion, name: string): boolean;
++}
++
++export function bridgeFrom(frame: HTMLIFrameElement): HangulBridge {
++    const bridge = (frame.contentWindow as (Window & { edentextHost?: HangulBridge }) | null)?.edentextHost;
++    if (!bridge) throw new Error('한글 편집기를 불러오지 못했습니다. npm run build:rhwp 실행을 확인하세요.');
++    return bridge;
++}
++
++export type PickerWindow = Window & {
++    showOpenFilePicker?: (options: unknown) => Promise<FileSystemFileHandle[]>;
++    showSaveFilePicker?: (options: unknown) => Promise<FileSystemFileHandle>;
++};
++
++export async function fingerprint(file: File): Promise<string> {
++    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
++    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
++}
++
++export async function writeArtifact(handle: FileSystemFileHandle, artifact: HangulArtifact, expectedHash: string) {
++    if (artifact.contentLoss.schemaVersion !== 1 || artifact.contentLoss.count !== 0 || artifact.contentLoss.losses.length) {
++        throw new Error('내용 손실이 보고되어 저장을 중단했습니다. 원본과 편집 내용은 유지됩니다.');
++    }
++    if (await fingerprint(await handle.getFile()) !== expectedHash) {
++        throw new Error('파일이 외부에서 변경되었습니다. 다른 이름으로 저장하세요.');
++    }
++    const writable = await handle.createWritable();
++    try {
++        await writable.write(new Uint8Array(artifact.bytes));
++        await writable.close();
++    } catch (error) {
++        await writable.abort().catch(() => undefined);
++        throw error;
++    }
++}
+diff --git a/src/lib/storage/appLanguage.ts b/src/lib/storage/appLanguage.ts
+index b5d472fa..981e98d7 100644
+--- a/src/lib/storage/appLanguage.ts
++++ b/src/lib/storage/appLanguage.ts
+@@ -1,13 +1,13 @@
+ // The UI language, persisted to localStorage. Distinct from the per-document
+ // spell-check language (documentLanguage.ts): this drives only the app chrome.
+ 
+-import { isLocale, resolveBrowserLocale, type Locale } from '../i18n/config';
++import { isLocale, type Locale } from '../i18n/config';
+ 
+ const KEY = 'edentext-app-language';
+ 
+ export function loadAppLanguage(): Locale {
+   const saved = localStorage.getItem(KEY);
+-  return isLocale(saved) ? saved : resolveBrowserLocale();
++  return isLocale(saved) ? saved : 'ko';
+ }
+ 
+ export function saveAppLanguage(locale: Locale): void {
+diff --git a/src/lib/storage/documentName.ts b/src/lib/storage/documentName.ts
+index 075b4a06..9525bb78 100644
+--- a/src/lib/storage/documentName.ts
++++ b/src/lib/storage/documentName.ts
+@@ -37,18 +37,19 @@ export function sanitizeNameForFile(name: string): string {
+   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim();
+ }
+ 
+-export type DocumentFormat = 'odt' | 'docx';
++export type DocumentFormat = 'odt' | 'docx' | 'hwp' | 'hwpx';
+ 
+ // The format the open document round-trips in. Absent at the .odt default, so only a
+ // document that came in as .docx writes anything.
+ const FORMAT_KEY = docKey('edentext-doc-format');
+ 
+ export function loadDocFormat(): DocumentFormat {
+-  return docStore.getItem(FORMAT_KEY) === 'docx' ? 'docx' : 'odt';
++  const saved = docStore.getItem(FORMAT_KEY);
++  return saved === 'docx' || saved === 'hwp' || saved === 'hwpx' ? saved : 'odt';
+ }
+ 
+ export function saveDocFormat(format: DocumentFormat): void {
+-  if (format === 'docx') docStore.setItem(FORMAT_KEY, format);
++  if (format !== 'odt') docStore.setItem(FORMAT_KEY, format);
+   else docStore.removeItem(FORMAT_KEY);
+ }
+ 
+diff --git a/src/lib/utils/dateTime.ts b/src/lib/utils/dateTime.ts
+index 371138ee..9ac45c01 100644
+--- a/src/lib/utils/dateTime.ts
++++ b/src/lib/utils/dateTime.ts
+@@ -123,7 +123,7 @@ export const DEFAULT_TIME_FORMAT = 'hm24';
+ // The picture a *newly inserted* date field takes, by UI locale: a date is written
+ // differently in each place. Only the preselection — an existing field keeps its own.
+ const DATE_FORMAT_BY_LOCALE: Record<string, string> = {
+-  'zh-Hans': 'ymd_cjk', 'zh-Hant': 'ymd_cjk', ja: 'ymd_cjk', en: 'mdy_slash',
++  'zh-Hans': 'ymd_cjk', 'zh-Hant': 'ymd_cjk', ja: 'ymd_cjk', ko: 'ymd_slash', en: 'mdy_slash',
+ };
+ 
+ export function defaultDateFormat(locale: string): string {
+@@ -241,7 +241,7 @@ export function docxPicture(fmt: DtFormat): string {
+ 
+ const LOCALE_TAG: Record<string, string> = {
+   en: 'en-US', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', pt: 'pt-PT', el: 'el-GR', ru: 'ru-RU', uk: 'uk-UA',
+-  'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', ja: 'ja-JP',
++  'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', ja: 'ja-JP', ko: 'ko-KR',
+ };
+ 
+ // Map a UI locale to a BCP-47 tag for Intl.

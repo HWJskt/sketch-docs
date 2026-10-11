@@ -1,0 +1,49 @@
+import { build } from 'vite';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { root, buildEngines, verifySources } from './build-engines.mjs';
+
+export async function productHash() {
+  const hash = createHash('sha256');
+  async function walk(path) {
+    const entries = await readdir(join(root, path), { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const name = `${path}/${entry.name}`;
+      if (entry.isDirectory()) await walk(name);
+      else hash.update(name).update(await readFile(join(root, name)));
+    }
+  }
+  for (const path of ['src', 'scripts', 'overlays', 'tests']) await walk(path);
+  for (const path of ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'svelte.config.js', 'index.html', 'word.html', 'hwp.html', 'public/favicon.svg', 'public/sw.js']) hash.update(path).update(await readFile(join(root, path)));
+  return hash.digest('hex');
+}
+export async function verify({ candidate = false, lockPath = join(root, 'upstreams.lock.json') } = {}) {
+  await mkdir(join(root, 'artifacts'), { recursive: true });
+  await writeFile(join(root, 'artifacts', candidate ? 'candidate-verified.json' : 'verified.json'), JSON.stringify({ passed: false, startedAt: new Date().toISOString() }));
+  const before = await productHash();
+  execFileSync(process.execPath, ['--check', join(root, 'public/sw.js')], { stdio: 'inherit' });
+  const lockText = await readFile(lockPath, 'utf8');
+  const cache = join(root, candidate ? '.cache/candidate-build' : '.cache/build');
+  const publicDir = join(root, candidate ? '.cache/candidate-public' : 'public');
+  const outDir = join(root, candidate ? 'candidate-dist' : 'dist');
+  await buildEngines({ lockPath, cache, output: publicDir });
+  if (candidate) {
+    await mkdir(publicDir, { recursive: true });
+    for (const name of ['favicon.svg', 'sw.js']) await writeFile(join(publicDir, name), await readFile(join(root, 'public', name)));
+  }
+  execFileSync('npm', ['run', 'check'], { cwd: root, stdio: 'inherit' });
+  execFileSync('npm', ['run', 'check'], { cwd: join(cache, 'word'), stdio: 'inherit' });
+  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs')], { cwd: root, stdio: 'inherit' });
+  await build({ root, publicDir, build: { outDir, emptyOutDir: true } });
+  execFileSync(process.execPath, [join(root, 'tests/integration.mjs')], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 180000 });
+  if (await productHash() !== before) throw new Error('Product files changed during validation; rerun verification');
+  if (await readFile(lockPath, 'utf8') !== lockText) throw new Error('Upstream lock changed during validation');
+  await verifySources(JSON.parse(lockText));
+  const report = { schemaVersion: 1, passed: true, testedAt: new Date().toISOString(), productHash: before, upstreams: JSON.parse(await readFile(lockPath, 'utf8')), output: outDir };
+  await mkdir(join(root, 'artifacts'), { recursive: true });
+  await writeFile(join(root, 'artifacts', candidate ? 'candidate-verified.json' : 'verified.json'), JSON.stringify(report, null, 2) + '\n');
+  console.log('RELEASE GATE PASSED:', outDir);
+}
+if (process.argv[1] === import.meta.filename) await verify();

@@ -1,0 +1,38 @@
+{
+  "name": "edentext-word-hwp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "upstream:sync": "node scripts/upstreams.mjs sync",
+    "upstream:check": "node scripts/upstreams.mjs candidate",
+    "upstream:promote": "node scripts/upstreams.mjs promote",
+    "prepare:engines": "node scripts/build-engines.mjs",
+    "predev": "npm run prepare:engines",
+    "dev": "vite --host localhost",
+    "build": "npm run prepare:engines && vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
+    "test:contracts": "node --test tests/contracts.test.mjs",
+    "test:integration": "node tests/integration.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "svelte": "5.55.9",
+    "canvaskit-wasm": "0.42.0",
+    "@noble/hashes": "2.4.0",
+    "fflate": "0.8.2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.1.2",
+    "vite": "8.0.14",
+    "typescript": "6.0.3",
+    "svelte-check": "4.7.1",
+    "playwright-core": "1.62.1"
+  },
+  "volta": {
+    "node": "24.21.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

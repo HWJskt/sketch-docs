@@ -1,0 +1,54 @@
+// Product-owned extension, appended only to the generated pinned Studio copy.
+const edentextReady = initPromise.then(() => {
+  if (!rendererInitialized) throw new Error(rendererInitializationError || 'Renderer initialization failed');
+});
+function edentextVersion() {
+  if (!documentAgent || !wasm.borrowDocumentHandle()) throw new Error('No active document');
+  wasm.onBeforeExport?.();
+  const state = documentAgent.getDocumentState();
+  return { epoch: state.documentEpoch, revision: state.changeSeq, dirty: state.dirty };
+}
+(window as any).edentextHost = {
+  ready: edentextReady,
+  state: edentextVersion,
+  dirty: () => documentState.isDirty(),
+  async create() {
+    await edentextReady;
+    const info = wasm.createNewDocument();
+    prepareCanvasRendererDocument();
+    plugins.notifyDocumentSwap();
+    await initializeDocument(info, '새 문서', { suppressDialogs: true });
+    return edentextVersion();
+  },
+  async open(bytes: Uint8Array, name: string) {
+    await edentextReady;
+    const generation = wasm.documentGeneration;
+    try {
+      await loadBytes(bytes, name, null, undefined, { suppressDialogs: true, skipRecent: true });
+    } catch (error) {
+      if (wasm.documentGeneration === generation && wasm.borrowDocumentHandle()) {
+        await canvasView?.loadDocument();
+        inputHandler?.activateWithCaretPosition();
+      }
+      throw error;
+    }
+    return edentextVersion();
+  },
+  export(format: 'hwp' | 'hwpx') {
+    if (wasm.requiresPasswordForSave) throw new Error('보호 문서의 저장은 아직 지원하지 않습니다.');
+    const before = edentextVersion();
+    const artifact = format === 'hwp' ? wasm.exportHwpWithReport() : wasm.exportHwpxWithReport();
+    const version = edentextVersion();
+    if (before.epoch !== version.epoch || before.revision !== version.revision) {
+      throw new Error('내보내기 중 문서가 변경되었습니다. 다시 저장하세요.');
+    }
+    return { ...artifact, version };
+  },
+  acknowledge(version: { epoch: number; revision: number }, name: string) {
+    const current = edentextVersion();
+    if (current.epoch !== version.epoch || current.revision !== version.revision) return false;
+    wasm.fileName = name;
+    documentState.markClean('edentext-host-save');
+    return true;
+  },
+};
