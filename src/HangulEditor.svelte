@@ -149,20 +149,21 @@
     }
     async function save(asNew: boolean, requestedFormat: HangulFormat = format) {
         if (busy || !ready || !bridge || !hasDocument || !supported) return;
-        format = requestedFormat;
+        // A cancelled or failed save keeps the previous format and target.
+        const chosen = requestedFormat;
         busy = true;
         try {
-            const handle = asNew || !target || format !== targetFormat ? await pickers.showSaveFilePicker!({
-                suggestedName: name.replace(/\.(hwp|hwpx)$/i, '') + '.' + format,
-                types: [{ description: format.toUpperCase(), accept: { 'application/octet-stream': ['.' + format] } }],
+            const handle = asNew || !target || chosen !== targetFormat ? await pickers.showSaveFilePicker!({
+                suggestedName: name.replace(/\.(hwp|hwpx)$/i, '') + '.' + chosen,
+                types: [{ description: chosen.toUpperCase(), accept: { 'application/octet-stream': ['.' + chosen] } }],
             }) : target;
             if (original && await original.isSameEntry(handle)) throw new Error('원본 보존 검증 전에는 원본과 다른 파일을 선택하세요.');
-            if (!handle.name.toLowerCase().endsWith('.' + format)) throw new Error('선택한 형식과 파일 확장자가 일치해야 합니다.');
+            if (!handle.name.toLowerCase().endsWith('.' + chosen)) throw new Error('선택한 형식과 파일 확장자가 일치해야 합니다.');
             const hash = target && await target.isSameEntry(handle) ? targetHash : await fingerprint(await handle.getFile());
-            const artifact = bridge.export(format);
+            const artifact = bridge.export(chosen);
             await writeArtifact(handle, artifact, hash);
             target = handle;
-            targetFormat = format;
+            format = targetFormat = chosen;
             name = handle.name;
             targetHash = await fingerprint(new File([new Uint8Array(artifact.bytes)], name));
             const clean = bridge.acknowledge(artifact.version, name);

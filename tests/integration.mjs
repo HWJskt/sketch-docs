@@ -353,6 +353,16 @@ try {
   }));
   assert.deepEqual(files.original, saved);
   assert(xml(files.copy).includes('사본수정'));
+  await page.evaluate(() => { window.showSaveFilePicker = async () => { throw new DOMException('cancel', 'AbortError'); }; });
+  await menu();
+  await frame.getByRole('button', { name: '다른 이름으로 저장 (.hwp)', exact: true }).click();
+  await status('취소했습니다').waitFor();
+  await page.evaluate(() => { window.showSaveFilePicker = async () => { throw new Error('picker must not open for the existing target'); }; });
+  await frame.locator('textarea').focus();
+  await page.keyboard.insertText(' 취소후저장');
+  await page.keyboard.press('ControlOrMeta+s');
+  await status('copy.hwpx 저장 완료').waitFor();
+  assert(xml(await page.evaluate(async () => Array.from(new Uint8Array(await (await window.__copy.getFile()).arrayBuffer())))).includes('취소후저장'), 'cancelled .hwp Save As keeps the HWPX target');
   await page.evaluate(async () => {
     const directory = await navigator.storage.getDirectory();
     window.__hwp = await directory.getFileHandle('native.hwp', { create: true });
