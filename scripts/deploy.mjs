@@ -22,9 +22,14 @@ export async function deploymentChecks() {
   if (report.outputHash !== (await outputHash(output)).hash) throw new Error('dist/ differs from the verified output; rerun npm run verify');
   const release = JSON.parse(await readFile(join(output, 'legal/release.json'), 'utf8'));
   if (release.source.commit !== revision.commit || release.source.dirty) throw new Error('dist/legal/release.json does not link this commit');
-  execFileSync('git', ['-C', root, 'fetch', '--quiet', 'origin', 'main'], { stdio: 'inherit' });
-  try { git('merge-base', '--is-ancestor', revision.commit, 'origin/main'); }
-  catch { throw new Error(`Commit ${revision.commit} is not on origin/main; push it before deploying`); }
+  // The About dialog links this repository; check it anonymously, not whatever origin points to.
+  const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  const repository = pkg.repository.url;
+  if (release.source.repository !== repository.replace(/\.git$/, '')) throw new Error('release.json links a different repository than package.json');
+  try {
+    execFileSync('git', ['-C', root, '-c', 'credential.helper=', 'fetch', '--quiet', repository, 'main'], { stdio: 'inherit', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+    git('merge-base', '--is-ancestor', revision.commit, 'FETCH_HEAD');
+  } catch { throw new Error(`Commit ${revision.commit} is not publicly reachable on main of ${repository}; push it before deploying`); }
   const lock = JSON.parse(await readFile(join(root, 'upstreams.lock.json'), 'utf8'));
   assertMirrorsPinned(lock);
   return { commit: revision.commit, output };

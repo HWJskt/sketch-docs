@@ -4,7 +4,11 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertUpstreamsClean, checkoutUpstream, restoreUpstreams, upstreamHeads, upstreamPaths } from '../scripts/upstream-git.mjs';
+import { rename } from 'node:fs/promises';
+import { assertUpstreamsClean, checkoutUpstream, latestOriginal, restoreUpstreams, syncUpstreams, upstreamHeads, upstreamPaths } from '../scripts/upstream-git.mjs';
+
+// Library calls use plain git; allow local-path submodules like the fixture's own git calls.
+Object.assign(process.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'protocol.file.allow', GIT_CONFIG_VALUE_0: 'always' });
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_CONFIG_GLOBAL: '/dev/null' };
 const git = (dir, ...args) => execFileSync('git', ['-c', 'protocol.file.allow=always', '-C', dir, ...args], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -127,5 +131,52 @@ test('a pinned commit missing from origin is fetched from the backup fork', asyn
     checkoutUpstream({ ...paths, mirrors: { edentext: mirror } }, 'edentext', forkOnly);
     assert.equal(upstreamHeads(paths).edentext, forkOnly);
     assert.equal(await readFile(join(paths.edentext, 'file.txt'), 'utf8'), 'only in fork');
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+async function freshProduct(base, rev) {
+  const lock = {};
+  for (const name of ['edentext', 'hop', 'rhwp']) {
+    const mirror = join(base, 'mirrors', name + '.git');
+    git(base, 'clone', '-q', '--mirror', join(base, 'remotes', name), mirror);
+    lock[name] = { url: join(base, 'remotes', name), mirror, commit: rev[name + '1'] };
+  }
+  const root = join(base, 'fresh');
+  await mkdir(join(root, 'source'), { recursive: true });
+  return { root, lock };
+}
+
+test('first sync restores rhwp from its backup fork when the original rhwp is gone', async () => {
+  const { base, rev } = await fixture();
+  try {
+    const { root, lock } = await freshProduct(base, rev);
+    await rename(join(base, 'remotes/rhwp'), join(base, 'remotes/rhwp-deleted'));
+    const paths = syncUpstreams(root, lock);
+    assert.deepEqual(upstreamHeads(paths), { edentext: rev.edentext1, hop: rev.hop1, rhwp: rev.rhwp1 });
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('first sync clones the backup fork when an original repository is gone', async () => {
+  const { base, rev } = await fixture();
+  try {
+    const { root, lock } = await freshProduct(base, rev);
+    await rename(join(base, 'remotes/edentext'), join(base, 'remotes/edentext-deleted'));
+    const paths = syncUpstreams(root, lock);
+    assert.equal(upstreamHeads(paths).edentext, rev.edentext1);
+    assert.equal(git(paths.edentext, 'remote', 'get-url', 'origin'), lock.edentext.mirror);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('the latest check reads the original repository even when origin is the backup fork', async () => {
+  const { base, rev, paths } = await fixture();
+  try {
+    const fork = join(base, 'fork-edentext.git');
+    git(base, 'clone', '-q', '--bare', join(base, 'remotes/edentext'), fork);
+    git(paths.edentext, 'remote', 'set-url', 'origin', fork);
+    const original = join(base, 'remotes/edentext');
+    await put(join(original, 'file.txt'), 'edentext v3');
+    const v3 = commit(original, 'v3 only in the original');
+    assert.notEqual(rev.edentext2, v3);
+    assert.equal(latestOriginal(paths.edentext, original), v3);
   } finally { await rm(base, { recursive: true, force: true }); }
 });

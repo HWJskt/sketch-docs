@@ -11,7 +11,7 @@ const dist = resolve(root, process.env.TEST_DIST || 'dist');
 const port = 4178;
 const origin = `http://localhost:${port}`;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf', '.png': 'image/png', '.ico': 'image/x-icon', '.gz': 'application/gzip', '.dic': 'text/plain', '.aff': 'text/plain' };
-let failShell = false;
+let failShell = false, delayWorker = false;
 
 async function file(path) {
   const full = join(dist, path);
@@ -23,6 +23,7 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url, origin);
     const path = decodeURIComponent(url.pathname);
     if (failShell && /^\/hwp(?:\.html)?$/.test(path)) { response.writeHead(500).end('unavailable'); return; }
+    if (delayWorker && path === '/sw.js') await new Promise(resolve => setTimeout(resolve, 40000));
     if (path.endsWith('.html')) {
       const clean = path.endsWith('/index.html') ? path.slice(0, -'index.html'.length) : path.slice(0, -'.html'.length);
       response.writeHead(308, { location: clean + url.search }).end(); return;
@@ -92,6 +93,14 @@ try {
     } finally { failShell = false; }
   });
 
+  await scenario('a service worker script that never arrives still opens Word online', async page => {
+    delayWorker = true;
+    try {
+      await page.goto(origin + '/word');
+      await wordFrame(page).locator('.tiptap').first().waitFor({ timeout: 20000 });
+    } finally { delayWorker = false; }
+  });
+
   await scenario('modern Word toolbar offers only Word formats', async page => {
     await page.goto(origin + '/word');
     await page.evaluate(() => localStorage.setItem('edentext-chrome', 'modern'));
@@ -112,5 +121,6 @@ try {
   });
 } finally {
   await browser?.close();
+  server.closeAllConnections();
   await new Promise(done => server.close(done));
 }

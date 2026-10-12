@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { upstreamPaths } from './upstream-git.mjs';
 
 // Each pinned upstream commit is kept in our backup fork under a tag, so the corresponding
 // source stays available even if the original repository disappears or rewrites history.
@@ -45,8 +46,13 @@ function pin(lock) {
     catch (error) {
       // A fork only sees new upstream commits after syncing its default branch.
       console.log(`${item.name}: syncing ${repo} with its parent and retrying (${String(error.stderr || error.message).trim().split('\n')[0]})`);
-      run('gh', ['repo', 'sync', repo]);
-      create();
+      try { run('gh', ['repo', 'sync', repo]); create(); }
+      catch {
+        // Commits outside the parent's default branch (or rewritten upstream) are pushed from our clone.
+        const clone = upstreamPaths(root)[item.name];
+        console.log(`${item.name}: pushing ${item.commit} from ${clone}`);
+        run('git', ['-C', clone, '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential', 'push', item.mirror, `${item.commit}:refs/tags/${pinTag(item.commit)}`]);
+      }
     }
     console.log(`${item.name}: tagged ${pinTag(item.commit)} in ${repo}`);
   }

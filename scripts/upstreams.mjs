@@ -1,29 +1,17 @@
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { root, git } from './build-engines.mjs';
 import { verify, productHash } from './verify.mjs';
-import { assertUpstreamsClean, checkoutUpstream, restoreUpstreams, upstreamHeads, upstreamPaths } from './upstream-git.mjs';
+import { assertUpstreamsClean, checkoutUpstream, latestOriginal, restoreUpstreams, syncUpstreams, upstreamHeads, upstreamPaths } from './upstream-git.mjs';
 
 const lockPath = join(root, 'upstreams.lock.json');
 const locked = JSON.parse(await readFile(lockPath, 'utf8'));
 const paths = upstreamPaths(root, locked);
-async function exists(path) { return access(path).then(() => true, () => false); }
 const command = process.argv[2];
 if (command === 'sync') {
   await mkdir(join(root, 'source'), { recursive: true });
-  for (const name of ['edentext', 'hop']) {
-    const dir = join(root, 'source', name);
-    if (await exists(dir)) continue;
-    try { execFileSync('git', ['clone', '--recurse-submodules', locked[name].url, dir], { stdio: 'inherit' }); }
-    catch (error) {
-      if (await exists(dir)) throw error;
-      console.warn(`${name}: original repository unavailable; cloning the backup fork ${locked[name].mirror}`);
-      execFileSync('git', ['clone', locked[name].mirror, dir], { stdio: 'inherit' });
-    }
-  }
-  assertUpstreamsClean(paths);
-  for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, locked[name].commit);
+  syncUpstreams(root, locked);
 } else if (command === 'candidate') {
   await mkdir(join(root, 'artifacts'), { recursive: true });
   await writeFile(join(root, 'artifacts/candidate-verified.json'), JSON.stringify({ passed: false, startedAt: new Date().toISOString() }));
@@ -36,9 +24,7 @@ if (command === 'sync') {
     for (const name of ['edentext', 'hop']) {
       let revision;
       if (latest) {
-        execFileSync('git', ['-C', paths[name], 'fetch', '--quiet', 'origin'], { stdio: 'inherit' });
-        execFileSync('git', ['-C', paths[name], 'remote', 'set-head', 'origin', '--auto'], { stdio: 'ignore' });
-        revision = git(paths[name], 'rev-parse', 'origin/HEAD^{commit}');
+        revision = latestOriginal(paths[name], locked[name].url);
       } else if (explicit.includes(name)) {
         const ref = process.argv[process.argv.indexOf(`--${name}`) + 1];
         if (!ref || ref.startsWith('--')) throw new Error(`--${name} requires a git revision`);

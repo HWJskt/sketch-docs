@@ -25,7 +25,7 @@ export function checkout(dir, revision, mirror) {
 // Moves a submodule to the commit its superproject records, with the same protections.
 export function syncSubmodule(superproject, path, mirror) {
   const dir = join(superproject, path);
-  if (!existsSync(join(dir, '.git'))) {
+  if (!initialized(dir)) {
     try { gitRun(superproject, 'submodule', 'update', '--init', '--', path); }
     catch (error) { if (!mirror) throw error; gitRun(superproject, '-c', `submodule.${path}.url=${mirror}`, 'submodule', 'update', '--init', '--', path); }
     return;
@@ -38,10 +38,12 @@ export function upstreamPaths(root, lock = {}) {
   const mirrors = Object.fromEntries(['edentext', 'hop', 'rhwp'].map(name => [name, lock[name]?.mirror]));
   return { edentext: join(root, 'source/edentext'), hop, rhwp: join(hop, 'third_party/rhwp'), rhwpPath: 'third_party/rhwp', mirrors };
 }
+const initialized = dir => existsSync(join(dir, '.git'));
 export function assertUpstreamsClean(paths) {
   assertClean(paths.edentext, 'edentext');
   assertClean(paths.hop, 'hop', { ignoreSubmodules: true });
-  assertClean(paths.rhwp, 'rhwp');
+  // An uninitialized submodule holds no user bytes; git -C would otherwise inspect HOP instead.
+  if (initialized(paths.rhwp)) assertClean(paths.rhwp, 'rhwp');
 }
 export function upstreamHeads(paths) {
   return { edentext: gitOut(paths.edentext, 'rev-parse', 'HEAD'), hop: gitOut(paths.hop, 'rev-parse', 'HEAD'), rhwp: gitOut(paths.rhwp, 'rev-parse', 'HEAD') };
@@ -59,4 +61,27 @@ export function restoreUpstreams(paths, heads) {
     catch (error) { failures.push(`${name} → ${revision}: ${error.message}`); }
   }
   if (failures.length) throw new Error('Could not restore upstream checkouts:\n' + failures.join('\n'));
+}
+
+// Clones only the superprojects; submodules are initialized after the pinned HOP checkout so that
+// a missing original rhwp can still be restored from its backup fork.
+export function cloneUpstream(dir, url, mirror) {
+  try { gitRun(join(dir, '..'), 'clone', '--quiet', url, dir); }
+  catch (error) {
+    if (existsSync(dir) || !mirror) throw error;
+    console.warn(`${dir}: original repository unavailable; cloning the backup fork ${mirror}`);
+    gitRun(join(dir, '..'), 'clone', '--quiet', mirror, dir);
+  }
+}
+export function syncUpstreams(root, lock) {
+  const paths = upstreamPaths(root, lock);
+  for (const name of ['edentext', 'hop']) if (!existsSync(paths[name])) cloneUpstream(paths[name], lock[name].url, lock[name].mirror);
+  assertUpstreamsClean(paths);
+  for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, lock[name].commit);
+  return paths;
+}
+// The latest default-branch commit of the original repository, never of the fork that may be origin.
+export function latestOriginal(dir, url) {
+  gitRun(dir, 'fetch', '--quiet', url, 'HEAD');
+  return gitOut(dir, 'rev-parse', 'FETCH_HEAD^{commit}');
 }
