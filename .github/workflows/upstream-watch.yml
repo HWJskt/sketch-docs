@@ -1,23 +1,26 @@
 # Weekly: build and test against the latest original EdenText and HOP (with HOP's rhwp).
 # A failure means an upstream change would break our overlays; an issue is opened once.
+# The check job executes unreviewed upstream code, so it holds a read-only token that is not
+# persisted to disk; only the report job, which runs no upstream code, may write issues.
 name: upstream-watch
 on:
   schedule:
     - cron: '17 3 * * 1'
   workflow_dispatch:
-permissions:
-  contents: read
-  issues: write
+permissions: {}
 jobs:
   latest:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24.21.0
-          cache: npm
       - run: npm ci
       - name: Restore pinned upstreams
         run: npm run upstream:sync
@@ -26,15 +29,23 @@ jobs:
       - name: Report candidate
         if: always()
         run: cat artifacts/candidate-verified.json || true
-      - name: Open an issue on breakage
-        if: failure()
+  report:
+    needs: latest
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the breakage issue
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           title="Latest upstream breaks Sketch Docs"
-          if gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q .; then
-            gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | xargs -I{} gh issue comment {} --body "Still failing: $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "Still failing: $RUN_URL"
           else
             gh issue create --title "$title" --body "upstream:check failed against the latest EdenText/HOP. The pinned versions are unchanged and the service is unaffected. Details: $RUN_URL"
           fi
