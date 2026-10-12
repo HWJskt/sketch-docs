@@ -88,3 +88,18 @@ test('editor mode follows both .html and extensionless paths', async () => {
   const { modeFromPath } = await import('../src/routes.ts');
   for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word']]) assert.equal(modeFromPath(path), mode, path);
 });
+
+test('deploy output must fit Cloudflare Pages file limits', async () => {
+  const { assertPagesLimits, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES } = await import('../scripts/verify.mjs');
+  assert.doesNotThrow(() => assertPagesLimits([{ name: 'ok.wasm', size: PAGES_MAX_FILE_BYTES }]));
+  assert.throws(() => assertPagesLimits([{ name: 'legal/source.tar.gz', size: PAGES_MAX_FILE_BYTES + 1 }]), /legal\/source\.tar\.gz/);
+  assert.throws(() => assertPagesLimits(Array.from({ length: PAGES_MAX_FILES + 1 }, (_, i) => ({ name: `f${i}`, size: 1 }))), /allows 20000/);
+});
+
+test('backup fork names resolve to GitHub repositories and pin tags name the full commit', async () => {
+  const { githubRepo, pinTag } = await import('../scripts/mirrors.mjs');
+  assert.equal(githubRepo('https://github.com/HWJskt/edentext.git'), 'HWJskt/edentext');
+  assert.equal(githubRepo('https://github.com/HWJskt/rhwp'), 'HWJskt/rhwp');
+  assert.throws(() => githubRepo('https://example.com/a/b.git'), /Not a GitHub/);
+  assert.equal(pinTag('a'.repeat(40)), 'sketch-docs/pin-' + 'a'.repeat(40));
+});

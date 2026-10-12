@@ -48,9 +48,17 @@
 
 | 단계 | 상태 | 커밋 |
 |---|---|---|
-| 1. 결함 수정·시험 | 진행 중 | |
-| 2. GitHub 소스 링크·README | | |
-| 3. upstream 최신 검사·Actions | | |
+| 1. 결함 수정·시험 | 완료 | acccfb7 499a926 ee4e353 93cfdd4 d7a5e79 |
+| 2. GitHub 소스 링크·README | 완료 | e79f7cd |
+| 3. upstream 최신 검사·Actions·배포 스크립트 | 진행 중 | |
 | 4. Codex 리뷰·반영 | | |
 | 5. 저장소·fork 생성, push, Actions 실행 | | |
 | 6. Cloudflare 배포·실 URL 확인 | | |
+
+## 기록
+
+- 수정 전 코드에서 새 시험이 실패하는지 확인했다(형식 누수, SW 설치 실패, `/hwp` 뒤로 가기, git 변이 2건).
+  - 모던 메뉴·단독 엔진은 수정 전 배포본을 재현 스크립트로 확인했다.
+- Cloudflare 리다이렉트 가설은 일부만 맞았다. 브라우저가 308을 캐시해서 오프라인 Word는 옛 코드로도 동작했다. 틀린 것은 `/hwp`로 들어온 뒤 뒤로 가기 하는 경우 하나였다.
+- 기존 `product.patch`는 줄 번호가 어긋난 채 offset으로 적용되고 있었다. 고정 커밋 기준으로 다시 생성했다(내용 변경은 메뉴 두 줄 삭제뿐).
+- npm 11이 wrangler 의존성(esbuild·workerd·fsevents)의 install script를 막는다. Pages 직접 업로드에 필요한지는 배포 때 확인한다.

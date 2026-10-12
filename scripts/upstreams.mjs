@@ -30,22 +30,38 @@ if (command === 'sync') {
   assertUpstreamsClean(paths);
   const original = upstreamHeads(paths);
   try {
+    // Default: each original's latest default branch. --edentext/--hop REF pick revisions; --current keeps the checkout.
+    const explicit = ['edentext', 'hop'].filter(name => process.argv.includes(`--${name}`));
+    const latest = !explicit.length && !process.argv.includes('--current');
     for (const name of ['edentext', 'hop']) {
-      const at = process.argv.indexOf(`--${name}`);
-      if (at >= 0) {
-        if (!process.argv[at + 1]) throw new Error(`--${name} requires a git revision`);
-        checkoutUpstream(paths, name, git(paths[name], 'rev-parse', `${process.argv[at + 1]}^{commit}`));
+      let revision;
+      if (latest) {
+        execFileSync('git', ['-C', paths[name], 'fetch', '--quiet', 'origin'], { stdio: 'inherit' });
+        execFileSync('git', ['-C', paths[name], 'remote', 'set-head', 'origin', '--auto'], { stdio: 'ignore' });
+        revision = git(paths[name], 'rev-parse', 'origin/HEAD^{commit}');
+      } else if (explicit.includes(name)) {
+        const ref = process.argv[process.argv.indexOf(`--${name}`) + 1];
+        if (!ref || ref.startsWith('--')) throw new Error(`--${name} requires a git revision`);
+        try { execFileSync('git', ['-C', paths[name], 'fetch', '--quiet', 'origin'], { stdio: 'inherit' }); } catch { /* local refs remain usable offline */ }
+        revision = git(paths[name], 'rev-parse', `${ref}^{commit}`);
       }
+      if (revision) checkoutUpstream(paths, name, revision);
     }
     const candidate = structuredClone(locked);
     for (const name of ['edentext', 'hop']) candidate[name].commit = git(join(root, 'source', name), 'rev-parse', 'HEAD');
     candidate.rhwp.commit = git(join(root, 'source/hop/third_party/rhwp'), 'rev-parse', 'HEAD');
     candidate.rhwp.version = JSON.parse(await readFile(join(root, 'source/hop/apps/studio-host/vendor/rhwp-core/package.json'), 'utf8')).version;
-    await mkdir(join(root, '.cache'), { recursive: true });
-    const path = join(root, '.cache/candidate-lock.json');
-    await writeFile(path, JSON.stringify(candidate, null, 2));
-    await verify({ candidate: true, lockPath: path });
-    console.log('Candidate passed. Review artifacts/candidate-verified.json, then npm run upstream:promote.');
+    const changes = ['edentext', 'hop', 'rhwp'].filter(name => candidate[name].commit !== locked[name].commit);
+    console.log('Candidate upstreams:\n' + ['edentext', 'hop', 'rhwp'].map(name => `  ${name}: ${locked[name].commit.slice(0, 12)} → ${candidate[name].commit.slice(0, 12)}${changes.includes(name) ? '' : ' (unchanged)'}`).join('\n'));
+    if (latest && !changes.length) {
+      console.log('Pinned upstreams are already the latest; push CI verifies them. Nothing to check.');
+    } else {
+      await mkdir(join(root, '.cache'), { recursive: true });
+      const path = join(root, '.cache/candidate-lock.json');
+      await writeFile(path, JSON.stringify(candidate, null, 2));
+      await verify({ candidate: true, lockPath: path });
+      console.log('Candidate passed. Review artifacts/candidate-verified.json, then npm run upstream:promote.');
+    }
   } finally {
     restoreUpstreams(paths, original);
   }
@@ -56,4 +72,4 @@ if (command === 'sync') {
   for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, report.upstreams[name].commit);
   await writeFile(lockPath, JSON.stringify(report.upstreams, null, 2) + '\n');
   console.log('Pinned versions updated. Run npm run verify to prepare the release output.');
-} else throw new Error('Use sync, candidate [--edentext REF] [--hop REF], or promote');
+} else throw new Error('Use sync, candidate [--current | --edentext REF] [--hop REF], or promote');

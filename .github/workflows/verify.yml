@@ -1,0 +1,36 @@
+# Release gate on every push: pinned upstreams, overlay contracts, unit and Chrome tests.
+name: verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci
+      - name: Restore pinned upstreams
+        run: npm run upstream:sync
+      - name: Verify
+        run: npm run verify
+      - name: Keep failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-evidence
+          path: |
+            artifacts/
+            /tmp/*.png
+          if-no-files-found: ignore
