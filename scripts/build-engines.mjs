@@ -10,7 +10,7 @@ export const root = resolve(import.meta.dirname, '..');
 export const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 300 * 1024 * 1024 }).trim();
 export function exact(text, before, after) {
   if (text.split(before).length !== 2) throw new Error(`Upstream contract changed: ${before.slice(0, 100)}`);
-  return text.replace(before, after);
+  return text.replace(before, () => after);
 }
 export async function verifySources(lock) {
   for (const name of ['edentext', 'hop']) {

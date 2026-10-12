@@ -76,3 +76,10 @@ test('file shortcuts use native Mac and Windows modifiers, including Korean keyb
   assert.equal(shortcutLabel('saveAs', true), '⌘⇧S');
   assert.equal(shortcutLabel('open', false), 'Ctrl+O');
 });
+
+test('upstream replacements insert overlay text literally, including $ sequences', async () => {
+  const { exact } = await import('../scripts/build-engines.mjs');
+  assert.equal(exact('a<x>b', '<x>', "s.replace(/$&$'$`$1/, '$$')"), "as.replace(/$&$'$`$1/, '$$')b");
+  assert.throws(() => exact('<x><x>', '<x>', 'y'), /Upstream contract changed/);
+  assert.throws(() => exact('none', '<x>', 'y'), /Upstream contract changed/);
+});
