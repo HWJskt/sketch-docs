@@ -87,7 +87,13 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
   html = html.replace(/    <!-- Anonymous visit counting\.[\s\S]*?<\/script>/, '');
   await writeFile(join(word, 'index.html'), html);
   const wordMain = join(word, 'src/main.ts');
-  await writeFile(wordMain, exact(await readFile(wordMain, 'utf8'), "if (import.meta.env.PROD && 'serviceWorker' in navigator)", "if (false && 'serviceWorker' in navigator)"));
+  let wordEntry = exact(await readFile(wordMain, 'utf8'), "if (import.meta.env.PROD && 'serviceWorker' in navigator)", "if (false && 'serviceWorker' in navigator)");
+  // The engine is only usable inside the product shell; a direct visit opens the shell instead.
+  wordEntry = exact(wordEntry, 'startTabPresence();\nvoid pruneOldDocuments();', `const sketchStandalone = window.top === window;
+if (sketchStandalone) location.replace(new URL('../../word.html', location.href).href);
+else { startTabPresence(); void pruneOldDocuments(); }`);
+  wordEntry = exact(wordEntry, "const app = mount(App, { target: document.getElementById('app')! });", "const app = sketchStandalone ? undefined : mount(App, { target: document.getElementById('app')! });");
+  await writeFile(wordMain, wordEntry);
   const dependencyLock = createHash('sha256').update(await readFile(join(word, 'package-lock.json'))).digest('hex');
   const installed = await readFile(join(word, '.dependency-lock'), 'utf8').catch(() => '');
   if (installed !== dependencyLock) {

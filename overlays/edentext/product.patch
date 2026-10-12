@@ -1,5 +1,5 @@
 diff --git a/src/App.svelte b/src/App.svelte
-index 6fe1fa66..f550dd3e 100644
+index 0ea269a..0029d3d 100644
 --- a/src/App.svelte
 +++ b/src/App.svelte
 @@ -1,4 +1,5 @@
@@ -16,7 +16,7 @@ index 6fe1fa66..f550dd3e 100644
    import { loadRecentFiles, rememberRecentFile, readRecentFile, forgetRecentFile, forgetRecentFiles, pruneRecentFiles, getHandle, type RecentFile } from './lib/storage/recentFiles';
    import { isProtected, decryptPackage, WRONG_PASSWORD } from './lib/crypto/protect';
    import { convertUnsupportedImages } from './lib/import/imageFormats';
-@@ -86,7 +88,6 @@
+@@ -85,7 +87,6 @@
    import { OPEN_THESAURUS_EVENT } from './lib/spell/thesaurus';
    import StyleManagerDialog from './lib/components/StyleManagerDialog.svelte';
    import NoteOptionsDialog from './lib/components/NoteOptionsDialog.svelte';
@@ -24,7 +24,7 @@ index 6fe1fa66..f550dd3e 100644
    import { t, locale } from './lib/i18n/i18n.svelte';
    import { fnv1a } from './lib/utils/hash';
    import { withShortcut } from './lib/i18n/shortcut';
-@@ -730,6 +731,10 @@
+@@ -729,6 +730,10 @@
    }
    let fileInput: HTMLInputElement | null = $state(null);
    let pdfBusy = $state(false);
@@ -35,7 +35,7 @@ index 6fe1fa66..f550dd3e 100644
    // What the status bar's spinner names; a layout left running after it keeps the name.
    let busyTask = $state<BusyTask | null>(null);
    let busyProgress = $state<number | null>(null);
-@@ -754,7 +759,6 @@
+@@ -753,7 +758,6 @@
      });
    });
    let exportMenuOpen = $state(false);
@@ -43,7 +43,7 @@ index 6fe1fa66..f550dd3e 100644
  
    // The editable zones as one section — section 1 of the export.
    function hfSetOfState(): HfSet {
-@@ -856,7 +860,7 @@
+@@ -855,7 +859,7 @@
      fileHandle = null;
      fileModified = 0;
      saveDocFile(null);
@@ -52,7 +52,7 @@ index 6fe1fa66..f550dd3e 100644
      documentHasFile = false;
      docPassword = null;
      passwordLost = false;
-@@ -968,7 +972,12 @@
+@@ -967,7 +971,12 @@
    }
  
    async function applyImport(bytes: Uint8Array, handle: FileSystemFileHandle | null, sourceName?: string) {
@@ -66,7 +66,7 @@ index 6fe1fa66..f550dd3e 100644
      try {
        // Before anything reads the archive: an encrypted file is not one yet.
        let password: string | null = null;
-@@ -1215,6 +1224,7 @@
+@@ -1214,6 +1223,7 @@
    }
  
    async function buildBytes(kind: DocumentFormat, json: TiptapNode): Promise<Uint8Array> {
@@ -74,7 +74,7 @@ index 6fe1fa66..f550dd3e 100644
      if (kind === 'docx') {
        const { buildDocx } = await import('./lib/export/docx');
        return buildDocx(editor ? withRenderedBoxHeights(editor.view) as TiptapNode : json, ...exportArgs());
-@@ -1224,11 +1234,11 @@
+@@ -1223,11 +1233,11 @@
    }
  
    async function handleSave() {
@@ -90,7 +90,7 @@ index 6fe1fa66..f550dd3e 100644
      if (!(await ensurePassword())) return;
      const json = editor.getJSON() as TiptapNode;
      try {
-@@ -1261,7 +1271,8 @@
+@@ -1260,7 +1270,8 @@
    // Save As is one entry per format: the format has to be settled before the bytes are
    // built (a download cannot read a name back), and it is the document's from then on.
    async function handleSaveAs(kind: DocumentFormat) {
@@ -100,7 +100,7 @@ index 6fe1fa66..f550dd3e 100644
      exportMenuOpen = false;
      if (!(await ensurePassword())) return;
      const json = editor.getJSON() as TiptapNode;
-@@ -1280,6 +1291,60 @@
+@@ -1279,6 +1290,60 @@
      }
    }
  
@@ -161,7 +161,7 @@ index 6fe1fa66..f550dd3e 100644
    // A template in the document's own format (.ott, or .dotx for a .docx document). It
    // is never bound as the current file, exactly as opening one isn't.
    async function handleSaveTemplate() {
-@@ -1487,6 +1552,7 @@
+@@ -1486,6 +1551,7 @@
        // has one (both word processors' key for it) and only otherwise finds the next
        // match, which is what the extension leaves unhandled.
        if (e.defaultPrevented) return;
@@ -169,7 +169,7 @@ index 6fe1fa66..f550dd3e 100644
        // Drafting needs the body editor; without the assistant the key is the browser's.
        if (aiEnabled() && !hfActive && matchesEvent(e, DEFAULT_SHORTCUTS.aiDraft)) {
          e.preventDefault();
-@@ -1544,7 +1610,7 @@
+@@ -1543,7 +1609,7 @@
  
  <!-- The ribbon docks in flow, so only the modern island needs the editor's top
       padding to clear an overlay. -->
@@ -178,7 +178,7 @@ index 6fe1fa66..f550dd3e 100644
    {#snippet toolbarScrollbar()}
      {#if tbOverflow > 0}
        <div
-@@ -1614,6 +1680,7 @@
+@@ -1613,6 +1679,7 @@
        onOpen={handleOpen}
        onSave={handleSave}
        onSaveAs={handleSaveAs}
@@ -186,17 +186,15 @@ index 6fe1fa66..f550dd3e 100644
        onSaveTemplate={handleSaveTemplate}
        recentFiles={recentFiles}
        onOpenRecent={(id) => { const f = recentFiles.find((r) => r.id === id); if (f) void handleOpenRecent(f); }}
-@@ -1734,6 +1801,9 @@
+@@ -1733,6 +1800,7 @@
                <button class="theme-option" onclick={() => handleSaveAs('docx')} role="menuitem">
                  <span>{t().ribbon.saveAs} (.docx)</span>
                </button>
-+              <button class="theme-option" onclick={() => handleSaveAs('hwpx')} role="menuitem"><span>{t().ribbon.saveAs} (.hwpx)</span></button>
-+              <button class="theme-option" onclick={() => handleSaveAs('hwp')} role="menuitem"><span>{t().ribbon.saveAs} (.hwp)</span></button>
 +              <button class="theme-option" onclick={openHangul} role="menuitem"><span>한글 문서 열기 / 새 문서</span></button>
                <button class="theme-option" onclick={handleExportPdf} disabled={pdfBusy} role="menuitem">
                  <span>{pdfBusy ? t().app.exporting : t().app.rasterPdf}</span>
                  <span class="theme-option-hint">{t().app.rasterHint}</span>
-@@ -1915,7 +1985,7 @@
+@@ -1914,7 +1982,7 @@
    <input
      bind:this={fileInput}
      type="file"
@@ -205,7 +203,7 @@ index 6fe1fa66..f550dd3e 100644
      class="file-input"
      onchange={handleImportFile}
    />
-@@ -2090,10 +2160,17 @@
+@@ -2086,10 +2154,17 @@
         callers only say which family to land on. -->
    <StyleManagerDialog bind:open={styleManagerOpen} family={styleManagerFamily} editor={activeEditor} asianDocument={isAsianTag(tagForLanguage(documentLanguage) ?? '')} scripts={numberingScripts(documentLanguage, documentLanguageOther, locale())} />
    <NoteOptionsDialog bind:open={noteOptionsOpen} />
@@ -226,7 +224,7 @@ index 6fe1fa66..f550dd3e 100644
      flex-direction: column;
 diff --git a/src/lib/components/HangulWorkbench.svelte b/src/lib/components/HangulWorkbench.svelte
 new file mode 100644
-index 00000000..7e546a3f
+index 0000000..7e546a3
 --- /dev/null
 +++ b/src/lib/components/HangulWorkbench.svelte
 @@ -0,0 +1,155 @@
@@ -386,7 +384,7 @@ index 00000000..7e546a3f
 +    iframe { width: 100%; height: 100%; border: 0; }
 +</style>
 diff --git a/src/lib/components/SaveFormatDialog.svelte b/src/lib/components/SaveFormatDialog.svelte
-index be1d0a42..e5210ef2 100644
+index be1d0a4..e5210ef 100644
 --- a/src/lib/components/SaveFormatDialog.svelte
 +++ b/src/lib/components/SaveFormatDialog.svelte
 @@ -1,11 +1,12 @@
@@ -422,7 +420,7 @@ index be1d0a42..e5210ef2 100644
        <button onclick={() => (open = false)}>{t().common.cancel}</button>
      </div>
 diff --git a/src/lib/components/ribbon/Ribbon.svelte b/src/lib/components/ribbon/Ribbon.svelte
-index f7d040a9..aeb66f77 100644
+index f7d040a..294f4c9 100644
 --- a/src/lib/components/ribbon/Ribbon.svelte
 +++ b/src/lib/components/ribbon/Ribbon.svelte
 @@ -91,7 +91,7 @@
@@ -466,7 +464,7 @@ index f7d040a9..aeb66f77 100644
              <Icon name="save" size={16} />{t().app.save}
 diff --git a/src/lib/conversion/tiptapToHwpx.ts b/src/lib/conversion/tiptapToHwpx.ts
 new file mode 100644
-index 00000000..1d3a915b
+index 0000000..1d3a915
 --- /dev/null
 +++ b/src/lib/conversion/tiptapToHwpx.ts
 @@ -0,0 +1,293 @@
@@ -765,7 +763,7 @@ index 00000000..1d3a915b
 +}
 diff --git a/src/lib/export/hangul.ts b/src/lib/export/hangul.ts
 new file mode 100644
-index 00000000..245b13bd
+index 0000000..245b13b
 --- /dev/null
 +++ b/src/lib/export/hangul.ts
 @@ -0,0 +1,42 @@
@@ -812,7 +810,7 @@ index 00000000..245b13bd
 +    }
 +}
 diff --git a/src/lib/export/saveFile.ts b/src/lib/export/saveFile.ts
-index 1f4eb32c..4f233384 100644
+index 1f4eb32..4f23338 100644
 --- a/src/lib/export/saveFile.ts
 +++ b/src/lib/export/saveFile.ts
 @@ -28,7 +28,7 @@ const FORMATS: Record<Kind, { mime: string; type: { description: string; accept:
@@ -825,7 +823,7 @@ index 1f4eb32c..4f233384 100644
    { description: 'Word Document', accept: { [DOCX_MIME]: ['.docx'], [DOTX_MIME]: ['.dotx'] } },
  ];
 diff --git a/src/lib/i18n/config.ts b/src/lib/i18n/config.ts
-index 9ae45d42..102052a8 100644
+index 9ae45d4..102052a 100644
 --- a/src/lib/i18n/config.ts
 +++ b/src/lib/i18n/config.ts
 @@ -1,10 +1,11 @@
@@ -842,7 +840,7 @@ index 9ae45d42..102052a8 100644
    de: 'Deutsch',
    es: 'Español (España)',
 diff --git a/src/lib/i18n/i18n.svelte.ts b/src/lib/i18n/i18n.svelte.ts
-index 57737567..dfdc7210 100644
+index 5773756..dfdc721 100644
 --- a/src/lib/i18n/i18n.svelte.ts
 +++ b/src/lib/i18n/i18n.svelte.ts
 @@ -2,6 +2,7 @@
@@ -864,7 +862,7 @@ index 57737567..dfdc7210 100644
  
 diff --git a/src/lib/rhwpWorkbench.ts b/src/lib/rhwpWorkbench.ts
 new file mode 100644
-index 00000000..f01693b3
+index 0000000..f01693b
 --- /dev/null
 +++ b/src/lib/rhwpWorkbench.ts
 @@ -0,0 +1,49 @@
@@ -918,7 +916,7 @@ index 00000000..f01693b3
 +    }
 +}
 diff --git a/src/lib/storage/appLanguage.ts b/src/lib/storage/appLanguage.ts
-index b5d472fa..981e98d7 100644
+index b5d472f..981e98d 100644
 --- a/src/lib/storage/appLanguage.ts
 +++ b/src/lib/storage/appLanguage.ts
 @@ -1,13 +1,13 @@
@@ -938,7 +936,7 @@ index b5d472fa..981e98d7 100644
  
  export function saveAppLanguage(locale: Locale): void {
 diff --git a/src/lib/storage/documentName.ts b/src/lib/storage/documentName.ts
-index 075b4a06..9525bb78 100644
+index 075b4a0..9525bb7 100644
 --- a/src/lib/storage/documentName.ts
 +++ b/src/lib/storage/documentName.ts
 @@ -37,18 +37,19 @@ export function sanitizeNameForFile(name: string): string {
@@ -965,7 +963,7 @@ index 075b4a06..9525bb78 100644
  }
  
 diff --git a/src/lib/utils/dateTime.ts b/src/lib/utils/dateTime.ts
-index 371138ee..9ac45c01 100644
+index 371138e..9ac45c0 100644
 --- a/src/lib/utils/dateTime.ts
 +++ b/src/lib/utils/dateTime.ts
 @@ -123,7 +123,7 @@ export const DEFAULT_TIME_FORMAT = 'hm24';

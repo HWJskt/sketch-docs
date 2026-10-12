@@ -91,6 +91,25 @@ try {
       await wordFrame(page).locator('.tiptap').first().waitFor({ timeout: 20000 });
     } finally { failShell = false; }
   });
+
+  await scenario('modern Word toolbar offers only Word formats', async page => {
+    await page.goto(origin + '/word');
+    await page.evaluate(() => localStorage.setItem('edentext-chrome', 'modern'));
+    await page.reload();
+    const word = wordFrame(page);
+    await word.locator('.save-chevron').click();
+    const items = (await word.locator('.theme-dropdown [role="menuitem"]').allTextContents()).join('\n');
+    assert.match(items, /\(\.docx\)/);
+    assert.match(items, /\(\.odt\)/);
+    assert.doesNotMatch(items, /\.hwpx?\)/, 'no Hangul Save As in the modern toolbar');
+  });
+
+  await scenario('direct Word engine URL opens the product shell', async page => {
+    await page.goto(origin + '/engines/word/index.html');
+    await page.waitForURL(url => /^\/word(?:\.html)?$/.test(new URL(url).pathname));
+    await wordFrame(page).locator('.tiptap').first().waitFor();
+    await wordFrame(page).locator('.product-header').getByRole('button', { name: '한글', exact: true }).waitFor();
+  });
 } finally {
   await browser?.close();
   await new Promise(done => server.close(done));
