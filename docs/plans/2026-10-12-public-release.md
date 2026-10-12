@@ -50,9 +50,9 @@
 |---|---|---|
 | 1. 결함 수정·시험 | 완료 | acccfb7 499a926 ee4e353 93cfdd4 d7a5e79 |
 | 2. GitHub 소스 링크·README | 완료 | e79f7cd |
-| 3. upstream 최신 검사·Actions·배포 스크립트 | 진행 중 | |
-| 4. Codex 리뷰·반영 | | |
-| 5. 저장소·fork 생성, push, Actions 실행 | | |
+| 3. upstream 최신 검사·Actions·배포 스크립트 | 완료 | f65569e 8dfcd28 |
+| 4. Codex 리뷰·반영 | 완료 (지적 7건: 수용 6, 배포 때 확인 1) | d3fb04c |
+| 5. 저장소·fork 생성, push, Actions 실행 | 진행 중 (fork 3개·고정 태그 생성됨) | |
 | 6. Cloudflare 배포·실 URL 확인 | | |
 
 ## 기록
@@ -62,3 +62,5 @@
 - Cloudflare 리다이렉트 가설은 일부만 맞았다. 브라우저가 308을 캐시해서 오프라인 Word는 옛 코드로도 동작했다. 틀린 것은 `/hwp`로 들어온 뒤 뒤로 가기 하는 경우 하나였다.
 - 기존 `product.patch`는 줄 번호가 어긋난 채 offset으로 적용되고 있었다. 고정 커밋 기준으로 다시 생성했다(내용 변경은 메뉴 두 줄 삭제뿐).
 - npm 11이 wrangler 의존성(esbuild·workerd·fsevents)의 install script를 막는다. Pages 직접 업로드에 필요한지는 배포 때 확인한다.
+- 최신 원본 실측(2026-10-12): EdenText `4c4c94c` → `62241e0`이 우리 오버레이로 전체 게이트를 통과했다. HOP·rhwp는 변화가 없었다. 채택(promote)은 사용자 결정으로 남겼다.
+- 백그라운드 보안 검사 지적: upstream-watch가 원본 코드를 쓰기 권한 토큰과 함께 실행했다. job을 분리하고 자격증명 저장을 껐다(8dfcd28).
