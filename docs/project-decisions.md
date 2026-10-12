@@ -86,4 +86,11 @@ EdenText는 AGPL-3.0-only, HOP와 rhwp의 최상위 코드는 MIT다. GitHub 저
 
 ## Sketch Docs 제품 정보와 공통 화면
 
-사용자가 제품명을 **Sketch Docs**로 확정했다. 저작권자 명칭은 미지정이며 임의의 병원 법인명을 넣지 않았다. 첫 화면과 두 편집기의 공통 헤더에서 프로그램 정보, AGPL 원문, 구성요소 고지, 현재 빌드의 대응 소스 다운로드를 제공한다. 편집기 전환은 두 문서를 각각 유지하며 파일 형식을 변환하지 않는다. 구현과 남은 검증은 [공통 셸 검증](validation/2026-10-12-common-shell.md)에 기록한다.
+사용자가 제품명을 **Sketch Docs**로 확정했다. 저작권자 명칭은 미지정이며 임의의 병원 법인명을 넣지 않았다. 첫 화면과 두 편집기의 공통 헤더에서 프로그램 정보, AGPL 원문, 구성요소 고지, 현재 빌드의 대응 소스 링크(GitHub)를 제공한다. 편집기 전환은 두 문서를 각각 유지하며 파일 형식을 변환하지 않는다. 구현과 남은 검증은 [공통 셸 검증](validation/2026-10-12-common-shell.md)에 기록한다.
+
+## 공개 저장소와 소스 제공 (2026-10-12)
+
+- 서비스 주소는 `docs.sketchps.app`, 공개 저장소는 `HWJskt/sketch-docs`이다. 기존 Git 이력을 그대로 공개한다.
+- 공개 저장소에는 우리 코드만 둔다. EdenText·HOP·rhwp는 `upstreams.lock.json`의 고정 커밋으로 복원하며, 원본이 사라질 때를 대비해 HWJskt 계정의 fork에 `sketch-docs/pin-<commit>` 태그로 고정 커밋을 보존한다.
+- 배포판에는 소스 압축을 넣지 않고, 정보 창에서 빌드 커밋의 GitHub 링크와 원본·보존 fork의 고정 커밋 링크를 제공한다.
+- 배포는 로컬 `npm run verify` 결과만 `npm run deploy`로 Cloudflare Pages에 직접 올린다. 명시 요청 때만 배포한다. 세부 절차는 [공개 배포 계획](plans/2026-10-12-public-release.md).

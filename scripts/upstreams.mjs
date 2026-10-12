@@ -7,14 +7,20 @@ import { assertUpstreamsClean, checkoutUpstream, restoreUpstreams, upstreamHeads
 
 const lockPath = join(root, 'upstreams.lock.json');
 const locked = JSON.parse(await readFile(lockPath, 'utf8'));
-const paths = upstreamPaths(root);
+const paths = upstreamPaths(root, locked);
 async function exists(path) { return access(path).then(() => true, () => false); }
 const command = process.argv[2];
 if (command === 'sync') {
   await mkdir(join(root, 'source'), { recursive: true });
   for (const name of ['edentext', 'hop']) {
     const dir = join(root, 'source', name);
-    if (!await exists(dir)) execFileSync('git', ['clone', '--recurse-submodules', locked[name].url, dir], { stdio: 'inherit' });
+    if (await exists(dir)) continue;
+    try { execFileSync('git', ['clone', '--recurse-submodules', locked[name].url, dir], { stdio: 'inherit' }); }
+    catch (error) {
+      if (await exists(dir)) throw error;
+      console.warn(`${name}: original repository unavailable; cloning the backup fork ${locked[name].mirror}`);
+      execFileSync('git', ['clone', locked[name].mirror, dir], { stdio: 'inherit' });
+    }
   }
   assertUpstreamsClean(paths);
   for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, locked[name].commit);

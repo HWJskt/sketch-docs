@@ -1,87 +1,140 @@
 # Sketch Docs
 
-이 저장소는 문서 형식 선택 화면, 편집기 연결, 한국어 설정과 파일 저장 메뉴를 관리한다. `source/edentext`, `source/hop`는 수정하지 않는 별도 Git 클론이다. 우리 변경은 `overlays/`와 `src/`에 있으며 빌드용 복사본에만 적용한다.
+브라우저에서 Word(DOCX·ODT)와 한글(HWP·HWPX) 문서를 편집하는 웹 편집기. 서버에 문서를 올리지 않는다. 파일은 브라우저의 로컬 파일 API로 열고 저장한다.
 
-저장소 구조·버전 관리·소스 제공·직원용 도메인에 관한 합의와 남은 결정은 [프로젝트 결정 기록](docs/project-decisions.md)에 정리한다.
+- 서비스: <https://docs.sketchps.app>
+- 라이선스: [AGPL-3.0-only](LICENSE)
 
-공통 헤더·편집기 전환·프로그램 정보는 [설계 기록](docs/architecture/common-editor-header.md), 검증 결과는 [공통 셸 검증](docs/validation/2026-10-12-common-shell.md)에 정리한다.
+*A browser editor for Word (DOCX/ODT) and Hangul (HWP/HWPX) documents, built on [EdenText](https://github.com/stffnb/edentext), [HOP](https://github.com/golbin/hop) and [rhwp](https://github.com/edwardkim/rhwp). This repository holds only our product code; the upstream projects are restored from pinned commits at build time.*
+
+## 구성
+
+Sketch Docs는 오픈 소스 편집기 세 개를 하나의 화면으로 묶는다.
+
+| 구성요소 | 역할 | 라이선스 |
+|---|---|---|
+| [EdenText](https://github.com/stffnb/edentext) | Word 편집기 (DOCX/ODT) | AGPL-3.0-only |
+| [HOP](https://github.com/golbin/hop) | 한글 편집 호스트와 검증된 rhwp WASM | MIT |
+| [rhwp](https://github.com/edwardkim/rhwp) | 한글 문서 엔진과 웹 Studio | MIT |
+
+**이 저장소에는 우리 코드만 있다.** 세 원본은 `upstreams.lock.json`에 고정한 커밋으로 `source/`에 내려받는다(Git에는 포함하지 않음). 빌드는 다음 순서로 진행한다.
+
+1. 원본의 고정 커밋을 `.cache/build/`로 복사한다.
+2. 우리 변경(`overlays/`)을 그 복사본에만 적용한다. 원본 클론은 수정하지 않는다.
+3. 엔진을 빌드한다.
+
+원본 저장소가 사라질 때를 대비해 고정 커밋을 보존 fork([edentext](https://github.com/HWJskt/edentext) · [hop](https://github.com/HWJskt/hop) · [rhwp](https://github.com/HWJskt/rhwp))에 `sketch-docs/pin-<commit>` 태그로 남긴다. 원본에서 받을 수 없으면 자동으로 fork에서 받는다.
+
+| 경로 | 내용 |
+|---|---|
+| `src/`, `index.html`, `word.html`, `hwp.html` | 공통 셸, 편집기 전환, 한글 파일 메뉴·저장, 정보 창 |
+| `overlays/edentext/` | EdenText 변경: 한국어 기본값·번역, 저장 메뉴, 셸 연결 |
+| `overlays/rhwp/` | rhwp Studio 변경: 호스트 연결(열기·저장·인쇄·변경 상태), 파일 메뉴 스타일 |
+| `scripts/build-engines.mjs` | 원본 검증, 복사본에 변경 적용, 엔진 빌드 |
+| `scripts/upstreams.mjs` | 원본 내려받기·업데이트 후보 검사·채택 |
+| `scripts/release-info.mjs` | 라이선스 고지와 소스 링크(`legal/release.json`) 생성 |
+| `public/sw.js` | 오프라인 Word를 위한 서비스 워커 |
+| `tests/` | 단위·계약 시험과 실제 Chrome 회귀 시험 |
+| `docs/` | 설계 결정, 계획, 검증 기록 |
 
 ## 실행
 
-Node 24.21.0과 데스크톱 Chrome을 검증에 사용한다. 루트에서 실행한다.
+필요한 것: Node.js 24.21.0, npm, Git, 데스크톱 Chrome(시험용).
 
 ```sh
-cd /Users/hwjung/Coding/edentext-word-hwp
+git clone https://github.com/HWJskt/sketch-docs.git
+cd sketch-docs
 npm ci
-npm run upstream:sync
-npm run dev -- --port 5173 --strictPort
+npm run upstream:sync      # 세 원본을 고정 커밋으로 source/에 내려받음
+npm run dev                # 엔진 빌드 후 http://localhost:5173
 ```
 
-이전에 `source/edentext`에서 띄운 서버가 5173을 사용 중이면 그 터미널에서 Ctrl+C로 종료한 뒤 실행한다. `npm run dev`는 먼저 두 엔진을 준비한다. 첫 빌드는 생성된 EdenText 작업 공간의 의존성을 설치하므로 시간이 더 걸린다.
+첫 실행은 EdenText 의존성을 설치하므로 오래 걸린다.
 
-- `/`: Word / 한글 선택
-- `/word.html`: 한국어 EdenText, 새 문서는 DOCX 기본 저장
-- `/hwp.html`: 한글 전용 엔진, 편집 왼쪽의 파일 메뉴에서 새 문서·열기·저장·다른 이름으로 저장 (.hwpx)/(.hwp)
+- `/`: 문서 형식 선택
+- `/word.html`: Word 편집기. 새 문서는 DOCX로 저장한다.
+- `/hwp.html`: 한글 편집기. 파일 메뉴에서 새 문서·열기·저장·다른 이름으로 저장(.hwpx/.hwp)·인쇄를 할 수 있다.
 
-공통 헤더의 Word/한글 버튼은 각각의 작성 중 문서와 저장 대상을 유지하며 전환한다. 새로고침 후 한글 복구는 지원하지 않는다. 첫 화면 하단과 편집 화면 오른쪽 ⓘ에서 Sketch Docs 정보·라이선스·해당 버전 소스 다운로드를 제공한다. 빌드 시 `public/legal/`에 약 153 MB의 소스 묶음과 고지를 생성하므로 배포할 때 `dist/legal/`도 함께 올린다. 소스의 `SOURCE-README.txt`에 오프라인 원본 복원 및 빌드 절차가 있다.
+공통 헤더의 W·한 버튼은 두 편집기의 작성 중 문서와 저장 대상을 각각 유지한 채 전환한다. 형식 변환은 하지 않는다. 파일 열기·저장은 File System Access API를 지원하는 데스크톱 Chrome·Edge에서 동작한다.
 
-Word 엔진을 직접 실행하는 위치는 `/engines/word/index.html`이다. 빌드된 엔진은 개발 서버에서도 명시적인 `index.html`로 연다.
-
-## 원본과 우리 코드
-
-| 경로 | 소유와 역할 |
-|---|---|
-| `src/`, `index.html`, `word.html`, `hwp.html` | 우리 화면과 파일 작업 연결 |
-| `overlays/edentext/product.patch` | 한국어 기본값·번역, DOCX 기본 저장, 기존 HWPX/HWP 변환 개선 |
-| `overlays/edentext/ko.ts` | upstream 번역 타입으로 검사하는 한국어 사전 |
-| `overlays/rhwp/host-bridge.txt` | 한글 엔진의 열기·직렬화·변경 상태 연결 |
-| `scripts/build-engines.mjs` | 원본 검증, 복사본에 변경 적용, 엔진 빌드 |
-| `upstreams.lock.json` | 검증한 EdenText/HOP/rhwp 커밋 |
-| `source/` | 원본 클론. 루트 Git에서 제외 |
-| `.cache/`, `public/engines/`, `public/rhwp/` | 다시 만들 수 있는 생성물. 직접 수정 금지 |
-| `tests/` | 파일 쓰기 계약과 실제 브라우저 회귀 검사 |
-
-현재 한글 엔진 경로는 **HOP가 고정한 `third_party/rhwp`의 웹 Studio와 HOP의 vendored WASM**이다. HOP 데스크톱 호스트를 브라우저로 그대로 실행하는 것은 아니다. HOP·rhwp 버전과 WASM 검증을 함께 수행한다.
-
-## 업데이트 후보 검증
+## 빌드와 검증
 
 ```sh
-git -C source/edentext fetch origin
-git -C source/hop fetch origin
-npm run upstream:check -- --edentext origin/main --hop origin/main
+npm run build    # 엔진 + 앱 빌드 → dist/
+npm run verify   # 배포 전 필수 검사
 ```
 
-후보 버전으로 원본 체크아웃을 잠시 바꾸고 별도 `.cache/candidate-*`, `candidate-dist/`에서 빌드·검증한다. 성공·실패 후 원래 커밋으로 돌아온다. 수정 파일이 있으면 자동 삭제하거나 덮어쓰지 않고 중단한다. 두 ref를 생략하면 현재 체크아웃을 후보로 검증한다.
+`npm run verify`는 다음을 모두 통과해야 `artifacts/verified.json`에 성공을 기록한다.
 
-검사 내용:
+1. 원본 커밋·작업 트리·HOP WASM 출처를 확인한다.
+2. 변경 적용을 검사한다: `git apply --check`, 그리고 모든 문자열 치환 지점이 정확히 한 번씩 일치하는지.
+3. 우리 앱과 변경이 적용된 Word 엔진을 타입 검사한다.
+4. 단위·계약 시험을 돌린다.
+   - 파일 쓰기: 손실 보고, 외부 변경 감지, 쓰기 실패
+   - 단축키와 경로 판정
+   - 소스 링크
+   - 원본 Git 조작: ignored 파일 보존, 체크아웃 복원, fork 폴백
+5. Chrome 통합 시험 (`tests/integration.mjs`)을 돌린다.
+   - Word: DOCX 저장 내용
+   - 한글: HWP/HWPX 저장·재열기, 원본 보호, 사본 재저장, 인쇄
+   - 공통: 편집기 전환 시 문서·실행 취소 이력 유지, 이탈 확인, 오프라인 Word
+6. Chrome 회귀 시험 (`tests/regressions.mjs`)을 Cloudflare Pages처럼 동작하는 정적 서버에서 돌린다.
+   - 확장자 없는 URL, 뒤로 가기, 오프라인
+   - 서비스 워커 설치 실패
+   - 모던 툴바 저장 메뉴
+   - Word 엔진 직접 접근
+7. 배포 산출물이 파일당 25MiB, 전체 20,000개 제한 안에 드는지 확인한다.
+8. 검사하는 동안 우리 코드나 lock이 바뀌지 않았는지 확인한다.
 
-1. 커밋·작업 트리·HOP WASM 출처 확인
-2. `git apply --check`와 연결 코드의 일치 지점 검사
-3. 우리 앱과 적용된 Word 엔진의 타입 검사
-4. 손실 보고·외부 변경·쓰기 실패 처리 단위 검사
-5. Chrome에서 한국어 Word/DOCX, Word 저장 메뉴에서 한글 형식 제외, 한글 파일 메뉴 위치·세로 배치와 HWP/HWPX 저장·재열기, 원본 보호·사본 재저장 검사
+OS 파일 선택기, 실제 프린터, 한컴오피스·Word에서 다시 열기, IME 입력, Safari는 자동 시험 범위 밖이다. 수동으로 확인한다.
 
-호환되지 않는 업데이트는 검사 실패로 끝나고 기존 lock을 바꾸지 않는다. `artifacts/candidate-verified.json` 결과를 검토한 뒤 채택한다.
+## 원본 업데이트
+
+원본이 업데이트되어도 우리 변경이 조용히 깨지지 않도록, 새 원본은 **후보**로 전체 검사를 통과해야만 채택한다.
 
 ```sh
-npm run upstream:promote
+npm run upstream:check                          # 각 원본의 최신 기본 브랜치를 fetch해 검사
+npm run upstream:check -- --edentext <ref>      # 특정 ref만 지정
+npm run upstream:check -- --current             # 지금 체크아웃된 상태 그대로 검사
+npm run upstream:promote                        # 통과한 후보를 lock에 채택
 npm run verify
 ```
 
-후보 검증 뒤 우리 소스·패치·테스트가 바뀌면 promote가 거절된다. 수정 후 다시 검증해야 한다. 업데이트가 호환되지 않으면 `overlays`/연결 코드를 수정하고 후보 검사를 다시 실행한다. 미래의 모든 업데이트가 수정 없이 호환된다고 보장하지 않는다.
+- `upstream:check`는 원본 체크아웃을 잠시 후보로 바꾼다. `.cache/candidate-*`, `candidate-dist/`에서 위 검사를 모두 돌리고, 성공하든 실패하든 원래 커밋(rhwp 포함)으로 되돌린다.
+- 원본 클론에 수정한 파일이 있으면 아무것도 바꾸지 않고 멈춘다. ignored 파일을 덮어쓰게 되는 체크아웃도 거절한다.
+- 호환되지 않는 업데이트는 검사 실패로 끝나고 lock은 바뀌지 않는다. 이때는 `overlays/`나 연결 코드를 고친 뒤 다시 검사한다.
+- 후보 검증 뒤 우리 코드가 바뀌면 promote가 거절된다.
+- 채택한 뒤 `npm run mirrors:pin`으로 새 고정 커밋을 보존 fork에 태그로 남긴다(GitHub CLI 인증 필요).
 
-## 배포 전
+GitHub Actions는 두 가지를 돌린다.
+- push마다: 고정 버전으로 `npm run verify`
+- 매주(와 수동 실행): 최신 원본으로 `upstream:check`. 실패하면 이슈를 연다.
 
-`npm run verify`가 성공한 `dist/`만 배포 대상으로 사용한다. 성공 보고는 `artifacts/verified.json`에 커밋과 우리 코드 해시를 기록한다. 실패한 실행은 이전 성공 보고를 무효화한다. 코드·lock을 바꾼 뒤에는 다시 실행한다. 자동 라이브 배포나 원격 push는 설정하지 않았다.
+## 배포 (관리자용)
 
-빠른 화면 확인은 `npm run build`, 생성된 엔진을 이용한 개발 서버 회귀 검사는 `node tests/integration.mjs --dev`로 수행한다. `build`만으로 배포 검증 완료를 의미하지 않는다.
+배포는 명시적으로 실행할 때만 한다. push만으로는 배포되지 않는다.
 
-자동 저장 검사는 실제 브라우저 OPFS 핸들로 OS 선택기를 대체한다. 실제 디스크 선택기·한컴/Word 재열기·IME 입력은 배포 대상 OS에서 추가 수동 확인해야 한다. 가져온 한글 원본 덮어쓰기와 한글 자동 복구는 아직 제공하지 않으며, 미지원 변환 요소는 저장을 거절한다.
+```sh
+npm run verify
+npx wrangler login    # 처음 한 번
+npm run deploy
+```
 
-## 기존 작업 보존
+`npm run deploy`는 아래 조건을 모두 확인한 뒤에만 `dist/`를 Cloudflare Pages 프로젝트 `sketch-docs`에 올린다.
 
-분리 전 수정된 EdenText 저장소 전체는 `backups/edentext-custom-worktree/`, Git 이력은 `backups/edentext-custom-ff938e6e.bundle`, 커밋되지 않은 변경은 `backups/edentext-working-tree.patch`에 보존했다. 백업과 원본 클론은 루트 커밋에 포함하지 않는다.
+1. 검증 보고가 현재 커밋·코드와 일치한다.
+2. 작업 트리가 깨끗하다.
+3. 그 커밋이 GitHub에 push되어 있다.
+4. 원본 고정 커밋이 보존 fork에 태그로 남아 있다.
 
-EdenText와 파생 변경은 AGPL-3.0 라이선스를 따른다. 배포 엔진에 각 원본 라이선스를 포함한다. 배포 시 대응 소스는 이 저장소의 코드·패치와 lock에 고정한 원본으로 재현할 수 있어야 한다.
+## 소스 제공과 라이선스
 
-병원 내부 배포·로그인과 HOP/rhwp 라이선스 검토 및 배포 전 남은 고지 작업은 [라이선스 검토 기록](docs/validation/2026-10-11-licenses.md)을 참조한다. 현재 기능 검사 통과가 라이선스 배포 준비 완료를 의미하지 않는다.
+Sketch Docs는 AGPL-3.0-only로 배포한다.
+
+- **우리 코드:** 서비스 안 정보 창(ⓘ)의 "이 버전의 소스 코드 (GitHub)" 링크가 배포판을 빌드한 커밋으로 연결된다.
+- **원본:** 같은 창에서 각 원본 저장소와 보존 fork의 고정 커밋 링크를 제공한다.
+- **고지:** 각 구성요소의 라이선스 원문과 타사 고지는 배포판의 `legal/`에 들어 있다.
+
+문서는 브라우저 안에서만 처리하며 서버로 보내지 않는다. 단, EdenText의 AI 도우미처럼 사용자가 직접 설정하는 외부 기능은 예외다.
+
+설계 결정과 검증 기록은 [`docs/`](docs/)에 있다. [프로젝트 결정](docs/project-decisions.md) · [공통 헤더 설계](docs/architecture/common-editor-header.md) · [공개 배포 계획](docs/plans/2026-10-12-public-release.md)

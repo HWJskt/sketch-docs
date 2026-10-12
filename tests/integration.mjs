@@ -42,11 +42,21 @@ try {
   assert.equal(await page.locator('.tiptap').count(), 0, 'chooser has no active editor');
   await page.getByRole('button', { name: '프로그램 정보 · 라이선스 및 소스 코드' }).click();
   await page.getByRole('dialog').waitFor();
-  await page.getByRole('link', { name: /이 버전의 소스 다운로드/ }).waitFor();
+  const sourceLink = page.getByRole('link', { name: '이 버전의 소스 코드 (GitHub)' });
+  await sourceLink.waitFor();
   assert.equal(await page.getByRole('heading', { name: 'Sketch Docs' }).count(), 1);
   const release = await (await page.request.get(origin + '/legal/release.json')).json();
   assert.equal(release.name, 'Sketch Docs');
-  for (const url of [release.sourceUrl, release.licenseUrl, release.noticesUrl]) {
+  assert.match(release.source.url, /^https:\/\/github\.com\/HWJskt\/sketch-docs\/tree\/[0-9a-f]{40}$/);
+  assert.equal(await sourceLink.getAttribute('href'), release.source.url);
+  await page.getByRole('dialog').locator('summary').click();
+  for (const item of release.upstreams) {
+    for (const href of [item.url, item.mirrorUrl]) {
+      assert.match(href, new RegExp(`^https://github\\.com/[^/]+/${item.name}/tree/${item.commit}$`));
+      assert.equal(await page.getByRole('dialog').locator(`a[href="${href}"]`).count(), 1, href);
+    }
+  }
+  for (const url of [release.licenseUrl, release.noticesUrl]) {
     assert.equal((await page.request.head(new URL(url, origin).href)).status(), 200);
   }
   await page.screenshot({path:'/tmp/sketch-docs-about.png'});

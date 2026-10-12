@@ -14,20 +14,29 @@ export function assertClean(dir, label, { ignoreSubmodules = false } = {}) {
   const status = gitOut(dir, 'status', '--porcelain', ...(ignoreSubmodules ? ['--ignore-submodules=all'] : []));
   if (status) throw new Error(`${label} has local changes; nothing was changed:\n${status}`);
 }
-export function checkout(dir, revision) {
-  if (!hasCommit(dir, revision)) gitRun(dir, 'fetch', 'origin', revision);
+// A pinned commit missing from origin (rewritten or deleted upstream) is fetched from our backup fork.
+export function checkout(dir, revision, mirror) {
+  if (!hasCommit(dir, revision)) {
+    try { gitRun(dir, 'fetch', 'origin', revision); }
+    catch (error) { if (!mirror) throw error; gitRun(dir, 'fetch', mirror, revision); }
+  }
   gitRun(dir, 'checkout', '--quiet', '--no-overwrite-ignore', '--detach', revision);
 }
 // Moves a submodule to the commit its superproject records, with the same protections.
-export function syncSubmodule(superproject, path) {
+export function syncSubmodule(superproject, path, mirror) {
   const dir = join(superproject, path);
-  if (!existsSync(join(dir, '.git'))) { gitRun(superproject, 'submodule', 'update', '--init', '--', path); return; }
-  checkout(dir, gitOut(superproject, 'rev-parse', `HEAD:${path}`));
+  if (!existsSync(join(dir, '.git'))) {
+    try { gitRun(superproject, 'submodule', 'update', '--init', '--', path); }
+    catch (error) { if (!mirror) throw error; gitRun(superproject, '-c', `submodule.${path}.url=${mirror}`, 'submodule', 'update', '--init', '--', path); }
+    return;
+  }
+  checkout(dir, gitOut(superproject, 'rev-parse', `HEAD:${path}`), mirror);
 }
 
-export function upstreamPaths(root) {
+export function upstreamPaths(root, lock = {}) {
   const hop = join(root, 'source/hop');
-  return { edentext: join(root, 'source/edentext'), hop, rhwp: join(hop, 'third_party/rhwp'), rhwpPath: 'third_party/rhwp' };
+  const mirrors = Object.fromEntries(['edentext', 'hop', 'rhwp'].map(name => [name, lock[name]?.mirror]));
+  return { edentext: join(root, 'source/edentext'), hop, rhwp: join(hop, 'third_party/rhwp'), rhwpPath: 'third_party/rhwp', mirrors };
 }
 export function assertUpstreamsClean(paths) {
   assertClean(paths.edentext, 'edentext');
@@ -38,15 +47,15 @@ export function upstreamHeads(paths) {
   return { edentext: gitOut(paths.edentext, 'rev-parse', 'HEAD'), hop: gitOut(paths.hop, 'rev-parse', 'HEAD'), rhwp: gitOut(paths.rhwp, 'rev-parse', 'HEAD') };
 }
 export function checkoutUpstream(paths, name, revision) {
-  checkout(paths[name], revision);
-  if (name === 'hop') syncSubmodule(paths.hop, paths.rhwpPath);
+  checkout(paths[name], revision, paths.mirrors?.[name]);
+  if (name === 'hop') syncSubmodule(paths.hop, paths.rhwpPath, paths.mirrors?.rhwp);
 }
 // Returns every clone to the exact recorded HEADs, including an rhwp checkout that differs
 // from HOP's gitlink. Every clone is attempted; failures are reported together.
 export function restoreUpstreams(paths, heads) {
   const failures = [];
   for (const [name, revision] of [['edentext', heads.edentext], ['hop', heads.hop], ['rhwp', heads.rhwp]]) {
-    try { checkout(paths[name], revision); }
+    try { checkout(paths[name], revision, paths.mirrors?.[name]); }
     catch (error) { failures.push(`${name} → ${revision}: ${error.message}`); }
   }
   if (failures.length) throw new Error('Could not restore upstream checkouts:\n' + failures.join('\n'));

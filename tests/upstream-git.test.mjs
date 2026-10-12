@@ -112,3 +112,20 @@ test('tracked changes in any clone stop the run before anything moves', async ()
     assert.throws(() => assertUpstreamsClean(paths), /hop has local changes/);
   } finally { await rm(base, { recursive: true, force: true }); }
 });
+
+test('a pinned commit missing from origin is fetched from the backup fork', async () => {
+  const { base, paths, rev } = await fixture();
+  try {
+    const mirror = join(base, 'mirror-edentext');
+    git(base, 'clone', '-q', '--bare', join(base, 'remotes/edentext'), mirror);
+    const work = join(base, 'mirror-work');
+    git(base, 'clone', '-q', mirror, work);
+    await put(join(work, 'file.txt'), 'only in fork');
+    const forkOnly = commit(work, 'fork only');
+    git(work, 'push', '-q', 'origin', 'HEAD:refs/tags/pinned');
+    assert.throws(() => checkoutUpstream(paths, 'edentext', forkOnly), 'origin alone cannot provide it');
+    checkoutUpstream({ ...paths, mirrors: { edentext: mirror } }, 'edentext', forkOnly);
+    assert.equal(upstreamHeads(paths).edentext, forkOnly);
+    assert.equal(await readFile(join(paths.edentext, 'file.txt'), 'utf8'), 'only in fork');
+  } finally { await rm(base, { recursive: true, force: true }); }
+});

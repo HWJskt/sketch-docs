@@ -1,5 +1,5 @@
 import { customizeWord } from '../overlays/edentext/product-ui.mjs';
-import { packageSource } from './package-source.mjs';
+import { writeReleaseInfo } from './release-info.mjs';
 import { build } from 'vite';
 import { cp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -124,6 +124,6 @@ else { startTabPresence(); void pruneOldDocuments(); }`);
   await cp(join(hop, 'LICENSE'), join(output, 'rhwp/LICENSE-hop'));
   await writeFile(join(output, 'provenance.json'), JSON.stringify({ ...lock, wasmSha256: createHash('sha256').update(await readFile(join(vendor, 'rhwp_bg.wasm'))).digest('hex') }, null, 2));
   await verifySources(lock);
-  await packageSource({ root, output, lock });
+  await writeReleaseInfo({ root, output, lock });
 }
 if (process.argv[1] === import.meta.filename) await buildEngines();

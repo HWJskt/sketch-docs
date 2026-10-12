@@ -2,13 +2,20 @@
   "schemaVersion": 1,
   "edentext": {
     "url": "https://github.com/stffnb/edentext.git",
+    "mirror": "https://github.com/HWJskt/edentext.git",
+    "license": "AGPL-3.0-only",
     "commit": "4c4c94cb46b9c0b1473b9dd323315f9c4d365251"
   },
   "hop": {
     "url": "https://github.com/golbin/hop.git",
+    "mirror": "https://github.com/HWJskt/hop.git",
+    "license": "MIT",
     "commit": "80888af2b8c8a18aea16f824d2d92309a290b1ad"
   },
   "rhwp": {
+    "url": "https://github.com/edwardkim/rhwp.git",
+    "mirror": "https://github.com/HWJskt/rhwp.git",
+    "license": "MIT",
     "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
     "version": "0.8.7"
   }
