@@ -12,7 +12,7 @@
     "dev": "vite --host localhost",
     "build": "npm run prepare:engines && vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
-    "test:contracts": "node --test tests/contracts.test.mjs",
+    "test:contracts": "node --test tests/contracts.test.mjs tests/upstream-git.test.mjs",
     "test:integration": "node tests/integration.mjs",
     "test:regressions": "node tests/regressions.mjs",
     "verify": "node scripts/verify.mjs"

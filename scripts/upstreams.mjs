@@ -3,47 +3,32 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { root, git } from './build-engines.mjs';
 import { verify, productHash } from './verify.mjs';
+import { assertUpstreamsClean, checkoutUpstream, restoreUpstreams, upstreamHeads, upstreamPaths } from './upstream-git.mjs';
 
 const lockPath = join(root, 'upstreams.lock.json');
 const locked = JSON.parse(await readFile(lockPath, 'utf8'));
-const run = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'inherit' });
+const paths = upstreamPaths(root);
 async function exists(path) { return access(path).then(() => true, () => false); }
-function clean(name) {
-  const dir = join(root, 'source', name);
-  const changes = name === 'hop' ? git(dir, 'status', '--porcelain', '--ignore-submodules=all') : git(dir, 'status', '--porcelain');
-  if (changes) throw new Error(`${name} has local changes; sync never discards them`);
-  if (name === 'hop') {
-    const sub = join(dir, 'third_party/rhwp');
-    if (git(sub, 'status', '--porcelain')) throw new Error('rhwp has local changes');
-  }
-}
-function checkout(name, revision) {
-  clean(name);
-  const dir = join(root, 'source', name);
-  run(dir, 'checkout', '--detach', revision);
-  if (name === 'hop') run(dir, 'submodule', 'update', '--init', '--recursive');
-}
 const command = process.argv[2];
 if (command === 'sync') {
   await mkdir(join(root, 'source'), { recursive: true });
   for (const name of ['edentext', 'hop']) {
     const dir = join(root, 'source', name);
     if (!await exists(dir)) execFileSync('git', ['clone', '--recurse-submodules', locked[name].url, dir], { stdio: 'inherit' });
-    clean(name);
-    run(dir, 'fetch', 'origin', locked[name].commit);
-    checkout(name, locked[name].commit);
   }
+  assertUpstreamsClean(paths);
+  for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, locked[name].commit);
 } else if (command === 'candidate') {
   await mkdir(join(root, 'artifacts'), { recursive: true });
   await writeFile(join(root, 'artifacts/candidate-verified.json'), JSON.stringify({ passed: false, startedAt: new Date().toISOString() }));
-  for (const name of ['edentext', 'hop']) clean(name);
-  const original = Object.fromEntries(['edentext', 'hop'].map(name => [name, git(join(root, 'source', name), 'rev-parse', 'HEAD')]));
+  assertUpstreamsClean(paths);
+  const original = upstreamHeads(paths);
   try {
     for (const name of ['edentext', 'hop']) {
       const at = process.argv.indexOf(`--${name}`);
       if (at >= 0) {
         if (!process.argv[at + 1]) throw new Error(`--${name} requires a git revision`);
-        checkout(name, git(join(root, 'source', name), 'rev-parse', `${process.argv[at + 1]}^{commit}`));
+        checkoutUpstream(paths, name, git(paths[name], 'rev-parse', `${process.argv[at + 1]}^{commit}`));
       }
     }
     const candidate = structuredClone(locked);
@@ -56,13 +41,13 @@ if (command === 'sync') {
     await verify({ candidate: true, lockPath: path });
     console.log('Candidate passed. Review artifacts/candidate-verified.json, then npm run upstream:promote.');
   } finally {
-    for (const name of ['edentext', 'hop']) checkout(name, original[name]);
+    restoreUpstreams(paths, original);
   }
 } else if (command === 'promote') {
   const report = JSON.parse(await readFile(join(root, 'artifacts/candidate-verified.json'), 'utf8'));
   if (!report.passed || report.productHash !== await productHash()) throw new Error('Candidate verification missing or stale; rerun upstream:check');
-  for (const name of ['edentext', 'hop']) clean(name);
-  for (const name of ['edentext', 'hop']) checkout(name, report.upstreams[name].commit);
+  assertUpstreamsClean(paths);
+  for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, report.upstreams[name].commit);
   await writeFile(lockPath, JSON.stringify(report.upstreams, null, 2) + '\n');
   console.log('Pinned versions updated. Run npm run verify to prepare the release output.');
 } else throw new Error('Use sync, candidate [--edentext REF] [--hop REF], or promote');
