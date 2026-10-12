@@ -52,8 +52,8 @@
 | 2. GitHub 소스 링크·README | 완료 | e79f7cd |
 | 3. upstream 최신 검사·Actions·배포 스크립트 | 완료 | f65569e 8dfcd28 |
 | 4. Codex 리뷰·반영 | 완료 (지적 7건: 수용 6, 배포 때 확인 1) | d3fb04c |
-| 5. 저장소·fork 생성, push, Actions 실행 | 진행 중 (fork 3개·고정 태그 생성됨) | |
-| 6. Cloudflare 배포·실 URL 확인 | | |
+| 5. 저장소·fork 생성, push, Actions 실행 | 완료 — Actions verify·upstream-watch 성공 | 3cba22d |
+| 6. Cloudflare 배포·실 URL 확인 | `sketch-docs.pages.dev` 배포·live 시험 완료, `docs.sketchps.app`은 CNAME 대기 | 3cba22d 배포 |
 
 ## 기록
 
@@ -64,3 +64,8 @@
 - npm 11이 wrangler 의존성(esbuild·workerd·fsevents)의 install script를 막는다. Pages 직접 업로드에 필요한지는 배포 때 확인한다.
 - 최신 원본 실측(2026-10-12): EdenText `4c4c94c` → `62241e0`이 우리 오버레이로 전체 게이트를 통과했다. HOP·rhwp는 변화가 없었다. 채택(promote)은 사용자 결정으로 남겼다.
 - 백그라운드 보안 검사 지적: upstream-watch가 원본 코드를 쓰기 권한 토큰과 함께 실행했다. job을 분리하고 자격증명 저장을 껐다(8dfcd28).
+- 배포(2026-10-12): Pages 프로젝트 `sketch-docs`를 만들고 `3cba22d`를 배포했다.
+  - 실측: `.html` 308 리다이렉트, `_headers` 적용, WASM MIME, `release.json` 커밋 일치
+  - 같은 URL에서 live 시험 4개 통과(서버 조작 시나리오 2개는 건너뜀)
+  - GitHub 소스·fork 링크 4개 모두 익명 200
+- wrangler의 막힌 install script는 `pages deploy`를 막지 않았다(리뷰 지적 E 확인).

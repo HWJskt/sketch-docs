@@ -128,6 +128,8 @@ npm run deploy
 3. 그 커밋이 GitHub에 push되어 있다.
 4. 원본 고정 커밋이 보존 fork에 태그로 남아 있다.
 
+배포한 뒤 `npm run test:live`로 실제 URL(`https://docs.sketchps.app`)에서 브라우저 회귀 시험을 돌린다. 서버를 조작해야 하는 시나리오 2개는 건너뛴다.
+
 이 중 3번은 `origin`이 아니라 `package.json`에 적힌 공개 저장소를 인증 없이 조회해 확인한다.
 
 ## 소스 제공과 라이선스

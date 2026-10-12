@@ -9,7 +9,9 @@ import { chromium } from 'playwright-core';
 const root = resolve(import.meta.dirname, '..');
 const dist = resolve(root, process.env.TEST_DIST || 'dist');
 const port = 4178;
-const origin = `http://localhost:${port}`;
+// LIVE_ORIGIN=https://… runs the scenarios that need no server control against a deployment.
+const live = process.env.LIVE_ORIGIN?.replace(/\/$/, '');
+const origin = live ?? `http://localhost:${port}`;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf', '.png': 'image/png', '.ico': 'image/x-icon', '.gz': 'application/gzip', '.dic': 'text/plain', '.aff': 'text/plain' };
 let failShell = false, delayWorker = false;
 
@@ -36,7 +38,8 @@ const server = createServer(async (request, response) => {
 });
 
 let browser;
-const scenario = async (name, run) => {
+const scenario = async (name, run, { needsServer = false } = {}) => {
+  if (live && needsServer) { console.log('SKIP (live)', name); return; }
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   try {
@@ -52,7 +55,7 @@ const scenario = async (name, run) => {
 const wordFrame = page => page.frameLocator('iframe[title="Word 문서 편집기"]');
 
 try {
-  await new Promise((ok, fail) => server.once('error', fail).listen(port, 'localhost', ok));
+  if (!live) await new Promise((ok, fail) => server.once('error', fail).listen(port, 'localhost', ok));
   browser = await chromium.launch({ channel: 'chrome', headless: true });
 
   await scenario('clean URLs: navigation, reload, history and offline Word', async (page, context) => {
@@ -91,7 +94,7 @@ try {
       await page.goto(origin + '/word');
       await wordFrame(page).locator('.tiptap').first().waitFor({ timeout: 20000 });
     } finally { failShell = false; }
-  });
+  }, { needsServer: true });
 
   await scenario('a service worker script that never arrives still opens Word online', async page => {
     delayWorker = true;
@@ -99,6 +102,16 @@ try {
       await page.goto(origin + '/word');
       await wordFrame(page).locator('.tiptap').first().waitFor({ timeout: 20000 });
     } finally { delayWorker = false; }
+  }, { needsServer: true });
+
+  await scenario('About links the deployed commit on GitHub', async page => {
+    const release = await (await page.request.get(origin + '/legal/release.json')).json();
+    assert.match(release.source.url, /^https:\/\/github\.com\/HWJskt\/sketch-docs\/tree\/[0-9a-f]{40}$/);
+    if (live) assert.equal(release.source.dirty, false, 'a deployment links a committed tree');
+    await page.goto(origin + '/');
+    await page.getByRole('button', { name: '프로그램 정보 · 라이선스 및 소스 코드' }).click();
+    assert.equal(await page.getByRole('link', { name: '이 버전의 소스 코드 (GitHub)' }).getAttribute('href'), release.source.url);
+    assert.equal((await page.request.get(origin + '/legal/notices.txt')).status(), 200);
   });
 
   await scenario('modern Word toolbar offers only Word formats', async page => {
@@ -121,6 +134,8 @@ try {
   });
 } finally {
   await browser?.close();
-  server.closeAllConnections();
-  await new Promise(done => server.close(done));
+  if (server.listening) {
+    server.closeAllConnections();
+    await new Promise(done => server.close(done));
+  }
 }

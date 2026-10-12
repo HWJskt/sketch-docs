@@ -20,6 +20,7 @@
     "test:contracts": "node --test tests/contracts.test.mjs tests/upstream-git.test.mjs tests/release-info.test.mjs tests/service-worker.test.mjs",
     "test:integration": "node tests/integration.mjs",
     "test:regressions": "node tests/regressions.mjs",
+    "test:live": "LIVE_ORIGIN=${LIVE_ORIGIN:-https://docs.sketchps.app} node tests/regressions.mjs",
     "verify": "node scripts/verify.mjs",
     "mirrors:pin": "node scripts/mirrors.mjs pin",
     "mirrors:check": "node scripts/mirrors.mjs check",
