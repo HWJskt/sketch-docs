@@ -14,6 +14,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
     "test:contracts": "node --test tests/contracts.test.mjs",
     "test:integration": "node tests/integration.mjs",
+    "test:regressions": "node tests/regressions.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "dependencies": {

@@ -6,8 +6,9 @@
     import HangulEditor from './HangulEditor.svelte';
     import AboutProduct from './AboutProduct.svelte';
     import { offlineReady } from './offline';
+    import { modeFromPath, type EditorMode } from './routes';
     import type { EditorStatus, HangulInput } from './editorState';
-    type Mode = 'word' | 'hwp';
+    type Mode = EditorMode;
     let { initialMode }: { initialMode: Mode } = $props();
     let active = $state<Mode>(untrack(() => initialMode));
     let wordLoaded = $state(untrack(() => initialMode === 'word'));
@@ -60,7 +61,7 @@
         return true;
     }
     function popstate() {
-        const mode = location.pathname.endsWith('/hwp.html') ? 'hwp' : 'word';
+        const mode = modeFromPath(location.pathname);
         if (!switchMode(mode, false)) history.replaceState({mode: active}, '', new URL(active === 'word' ? './word.html' : './hwp.html', location.href));
     }
     function leaving(event: BeforeUnloadEvent) {

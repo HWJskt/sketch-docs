@@ -83,3 +83,8 @@ test('upstream replacements insert overlay text literally, including $ sequences
   assert.throws(() => exact('<x><x>', '<x>', 'y'), /Upstream contract changed/);
   assert.throws(() => exact('none', '<x>', 'y'), /Upstream contract changed/);
 });
+
+test('editor mode follows both .html and extensionless paths', async () => {
+  const { modeFromPath } = await import('../src/routes.ts');
+  for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word']]) assert.equal(modeFromPath(path), mode, path);
+});
