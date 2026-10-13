@@ -25,6 +25,31 @@ async function openPdf(page, name, { loaded = true } = {}) {
     // The name changes only when this file replaced the previous one; the page count is then the new one.
     if (loaded) await page.waitForFunction(name => document.querySelector('.pdf-editor .name')?.textContent === name && Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0, name);
 }
+/** Draws one annotation of each of the six kinds on page 1 of fixture A, the rectangle in blue. */
+async function drawAll(page) {
+    const line = async text => page.locator('.pdf-editor span', { hasText: text }).first().boundingBox();
+    const drag = async (x1, y1, x2, y2) => {
+        await page.mouse.move(x1, y1); await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(x1 + (x2 - x1) * i / 10, y1 + (y2 - y1) * i / 10 + (i % 2) * 3);
+        await page.mouse.up(); await page.waitForTimeout(300);
+    };
+    const across = box => drag(box.x + 2, box.y + box.height / 2, box.x + box.width - 2, box.y + box.height / 2);
+    const tool = name => page.getByRole('button', { name, exact: true }).click();
+    const first = await line('Page 1'), second = await line('Introduction text');
+    await tool('형광펜'); await across(first);
+    await tool('밑줄'); await across(second);
+    await tool('취소선'); await across(second);
+    await tool('펜'); await drag(second.x, second.y + 150, second.x + 150, second.y + 220);
+    await page.getByRole('button', { name: '파랑', exact: true }).click();
+    await tool('사각형'); await drag(second.x + 250, second.y + 150, second.x + 350, second.y + 220);
+    await tool('메모'); await page.mouse.click(second.x + 450, second.y + 100);
+    await page.getByRole('textbox', { name: '메모 추가…' }).waitFor();
+    await page.keyboard.type('메모 내용');
+    await page.mouse.click(second.x + 100, second.y + 400);
+    await page.waitForTimeout(300);
+}
+const kinds = page => page.locator('.pdf-editor [data-pdf-annotation]').evaluateAll(items => items.filter(item => !('foreign' in item.dataset)).map(item => item.dataset.kind).sort());
+
 /** Painted (non-white) pixels on the first page canvas once rendering settles. */
 async function ink(page) {
     let count = 0;
@@ -328,6 +353,82 @@ const scenarios = [
         assert.equal(await page.locator('.product-document-dirty').count(), 0, 'no unsaved marker in the header');
         assert.ok(await page.getByRole('button', { name: '실행 취소' }).isDisabled());
         assert.ok(await page.getByRole('button', { name: '다시 실행' }).isDisabled());
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['the six annotation kinds are drawn, and undo and redo take them all away and back', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        await drawAll(page);
+        const six = ['highlight', 'ink', 'note', 'rect', 'strikeout', 'underline'];
+        assert.deepEqual(await kinds(page), six);
+        assert.equal(await page.locator('.pdf-editor [data-pdf-annotation][data-kind=rect]').getAttribute('data-color'), 'blue');
+        assert.equal(await page.locator('.pdf-editor [data-pdf-annotation][data-kind=highlight]').getAttribute('data-color'), 'yellow');
+        assert.equal(await page.locator('.product-document-dirty').count(), 1, 'unsaved marker');
+        // The new note keeps its text: opening it shows the text again.
+        await page.getByRole('button', { name: '선택', exact: true }).click();
+        await page.locator('.pdf-editor [data-pdf-annotation][data-kind=note]:not([data-foreign])').click({ force: true });
+        await page.getByText('메모 내용').first().waitFor();
+        await page.keyboard.press('Escape');
+        const undo = page.getByRole('button', { name: '실행 취소' }), redo = page.getByRole('button', { name: '다시 실행' });
+        for (let i = 0; i < 20 && !await undo.isDisabled(); i++) await undo.click();
+        assert.deepEqual(await kinds(page), []);
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        assert.equal(await page.locator('.product-document-dirty').count(), 0, 'back to the opened file');
+        for (let i = 0; i < 20 && !await redo.isDisabled(); i++) await redo.click();
+        assert.deepEqual(await kinds(page), six);
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        assert.ok(await ink(page) > 1000, 'the page is still drawn under the annotations');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['annotations can be drawn on signed and encrypted PDFs too', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        const rectangle = async () => {
+            const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+            await page.getByRole('button', { name: '사각형', exact: true }).click();
+            await page.mouse.move(box.x + 100, box.y + 300); await page.mouse.down();
+            await page.mouse.move(box.x + 180, box.y + 360, { steps: 8 }); await page.mouse.up();
+            await page.locator('.pdf-editor [data-pdf-annotation][data-kind=rect]').waitFor({ state: 'attached' });
+        };
+        await openPdf(page, 'c1-signed.pdf');
+        await rectangle();
+        await openPdf(page, 'd-encrypted.pdf', { loaded: false });
+        await page.getByLabel('암호로 보호된 PDF입니다. 암호를 입력하세요.').fill('test');
+        await page.getByRole('button', { name: '열기', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.pages === '1' && document.querySelector('.pdf-editor .name').textContent === 'd-encrypted.pdf');
+        await page.waitForTimeout(500);
+        await rectangle();
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['PDF annotations, unsaved state and undo history survive switching to Word and Hangul and back', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        await drawAll(page);
+        const before = await kinds(page);
+        await page.getByRole('button', { name: 'Word', exact: true }).click();
+        const word = page.locator('iframe[title="Word 문서 편집기"]').contentFrame();
+        await word.locator('.tiptap').first().waitFor({ timeout: 60000 });
+        await word.locator('.tiptap').first().click();
+        await page.keyboard.insertText('워드 전환 시험');
+        await word.locator('.product-header').getByRole('button', { name: '한글', exact: true }).click();
+        await page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor({ timeout: 60000 });
+        await page.locator('iframe[title="한글 문서 편집기"]').contentFrame().locator('.product-header').getByRole('button', { name: 'PDF', exact: true }).click();
+        await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
+        assert.deepEqual(await kinds(page), before);
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        // The last steps were the note and its text: undo until one annotation is gone, then redo all.
+        let undone = 0;
+        while ((await kinds(page)).length === before.length && undone < 3) { await page.getByRole('button', { name: '실행 취소' }).click(); undone++; }
+        assert.equal((await kinds(page)).length, before.length - 1, `undo removed one annotation after ${undone} steps`);
+        for (let i = 0; i < undone; i++) await page.getByRole('button', { name: '다시 실행' }).click();
+        assert.deepEqual(await kinds(page), before, 'history continues after switching back');
+        await page.getByRole('button', { name: 'Word', exact: true }).click();
+        assert.match(await word.locator('.tiptap').first().textContent(), /워드 전환 시험/, 'the Word document kept its text');
         assert.deepEqual(errors, []);
         await page.close();
     }],

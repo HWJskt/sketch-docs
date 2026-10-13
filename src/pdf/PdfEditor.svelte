@@ -4,7 +4,9 @@
     import { createDirtyTracker } from './annotationState';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
-    import { messages } from './messages';
+    import { messages, palette } from './messages';
+    // The six annotation kinds of the plan, plus selecting existing ones.
+    const tools = ['select', 'highlight', 'underline', 'strikeout', 'note', 'ink', 'rect'] as const;
     import type { EditorStatus } from '../editorState';
     import type { PickerWindow } from '../fileAccess';
     setupPdf();
@@ -90,7 +92,7 @@
                 </Document.Password>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
-                    <Annotations.Root foreign="readonly" importFromPdf onImport={result => { tracker.reset(result.annotations); annotations = result.annotations; }} onAnnotationsChange={list => { annotations = list; }}>
+                    <Annotations.Root foreign="readonly" importFromPdf {tools} {palette} onImport={result => { tracker.reset(result.annotations); annotations = result.annotations; }} onAnnotationsChange={list => { annotations = list; }}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
                         <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>
@@ -114,6 +116,11 @@
                             <Find.Next>↓</Find.Next>
                         </span>
                     </div>
+                    <div class="annotate-tools" role="toolbar" aria-label="주석">
+                        {#each tools as tool (tool)}<Annotations.Tool {tool} />{/each}
+                        <span class="gap-small"></span>
+                        {#each palette as color (color.key)}<Annotations.Color color={color.key} class="swatch" />{/each}
+                    </div>
                     <div class="body">
                     {#if panel === 'outline'}
                         <aside class="panel" aria-label="목차">
@@ -134,6 +141,8 @@
                         </Viewer.Pages>
                     </Viewer.Viewport>
                     </div>
+                    <Annotations.SelectionMenu />
+                    <Annotations.Popover />
                     </Annotations.Root>
                     </Find.Root>
                 </Viewer.Root>
@@ -167,6 +176,12 @@
     .view-tools :global(button[data-active]) {border-color:#2563eb;color:#1d4ed8}
     .zoom {min-width:44px;text-align:center;color:#5b6980}
     .gap {flex:1}
+    .annotate-tools {display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px 12px;border-bottom:1px solid #dce1e8;background:#fff;font-size:12px}
+    .annotate-tools :global([data-pdf-annotation-tool]) {font:inherit;padding:3px 8px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;color:#243047;cursor:pointer}
+    .annotate-tools :global([data-pdf-annotation-tool][data-active]) {border-color:#2563eb;color:#1d4ed8;background:#eef4ff}
+    .annotate-tools :global(.swatch) {width:20px;height:20px;padding:0;border:2px solid #fff;border-radius:50%;background:var(--swatch);box-shadow:0 0 0 1px #c8d1dd;cursor:pointer}
+    .annotate-tools :global(.swatch[data-active]) {box-shadow:0 0 0 2px #2563eb}
+    .gap-small {width:8px}
     .view-tools :global(.page-input) {width:3em;text-align:center;font:inherit;padding:2px 4px;border:1px solid #c8d1dd;border-radius:5px}
     .count {color:#5b6980}
     .find {display:flex;align-items:center;gap:4px;margin-left:12px}

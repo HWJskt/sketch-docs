@@ -1,5 +1,11 @@
 // Korean labels for the svelte-pdf-mini parts we use (the library defaults to English).
 // Keys missing here fall back to the library's English text.
+import { defaultPalette } from 'svelte-pdf-mini';
+
+const colorNames: Record<string, string> = { yellow: '노랑', green: '초록', blue: '파랑', red: '빨강' };
+/** The annotation colors offered, with Korean names. */
+export const palette = defaultPalette.filter(color => color.key in colorNames).map(color => ({ ...color, label: colorNames[color.key] }));
+
 export const messages = {
     zoom: '배율', zoomIn: '확대', zoomOut: '축소', zoomAuto: '자동', zoomPageWidth: '쪽 너비', zoomPageHeight: '쪽 높이', zoomPageFit: '쪽 전체',
     page: '{page}쪽', pages: '쪽', pageInput: '쪽 (1–{count})', prevPage: '이전 쪽', nextPage: '다음 쪽', back: '뒤로', backToPage: '{page}쪽으로 돌아가기',
