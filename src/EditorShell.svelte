@@ -124,7 +124,7 @@
 
 <svelte:window onbeforeunload={leaving} onpopstate={popstate} />
 <div class="editor-shell">
-    {#if !controlsReady}<EditorControls mode={active} getBlocked={() => blocked} getName={() => active === 'pdf' ? pdfStatus.name : ''} onSwitch={switchMode} onAbout={() => about = true} />{/if}
+    {#if !controlsReady}<EditorControls mode={active} getBlocked={() => blocked} getName={() => active === 'pdf' ? pdfStatus.name : ''} getDirty={() => active === 'pdf' && pdfStatus.dirty} onSwitch={switchMode} onAbout={() => about = true} />{/if}
     {#if notice}<div class="notice" role="status">{notice}</div>{/if}
     <div class="engines">
         {#if wordLoaded}

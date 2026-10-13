@@ -372,7 +372,8 @@
 | 7a. 선택기 타입 공용화 | 완료: `PickerWindow`를 `src/fileAccess.ts`로, Word 엔진 복사 목록에 추가. Word 엔진 타입 검사 713파일 0 오류, verify 단위 51/51·통합(원본 보호·사본 저장·외부 변경) PASS·브라우저 30 | (이 커밋) |
 | 7b. 해시·쓰기 공용화 | 완료: `fingerprint`·`writeIfUnchanged`(외부 변경 확인 → writable 쓰기, 실패 시 abort)를 `fileAccess.ts`로, `writeArtifact`는 내용 손실 확인 뒤 이것을 부름. Word 엔진 tsconfig가 `.ts` 확장자 import를 허용하지 않아 소스는 확장자 없이 두고, Node 단위 시험에 `tests/ts-resolve.mjs` resolve 훅(`--import`). 기존 저장 계약 시험은 import 줄만 바뀌고 그대로 통과, 새 `tests/file-access.test.mjs` 3개. verify 단위 54/54·통합 PASS·브라우저 30 | (이 커밋) |
 | 0~7 코드 리뷰 | 완료: Codex 2회(기준 `d9e77ae`), 고유 지적 9건 모두 수용 — 연속 열기 경합·읽기 실패 시 상태 손상·파일 교체 뒤 배율 표시·준비 전 인쇄·좁은 창 도구막대·파일 입력 재선택·probe 폴더 덮어쓰기·probe 주석 비교 범위·인수인계 시험 수 오기(PDF 14 → 실제 12). 시험 5개 추가, 고친 4곳 변이 → 각 해당 시험에서 실패. probe 재실행(비교가 7곳 변경을 잡음). verify 단위 54/54·회귀 17·PDF 17 | (이 커밋) |
-| 8a~8c. 주석·편집 상태 보존 | 대기 | |
+| 8a. 주석 상태·이력 | 완료: 라이브러리 `Annotations.Root`(PDF 안 주석 불러오기, foreign `readonly`, 실행 취소·다시 실행). dirty는 `src/pdf/annotationState.ts`가 저장 시점의 우리 주석과 내용으로 비교(실행 취소로 돌아오면 깨끗). 헤더 "저장하지 않음"을 PDF에도 연결. 단위 3개(계약 57/57), 브라우저: A의 기존 메모 표시·dirty 아님·실행 취소 비활성. `test:pdf` 18개 | (이 커밋) |
+| 8b~8c. 그리기 도구·편집 상태 보존 | 대기 | |
 | 9a~9c. 보존 검사·판별·worker | 대기 | |
 | 10a~10e. 저장·복원·이탈 확인 | 대기 | |
 | 11. 검증·문서·리뷰 | 대기 | |

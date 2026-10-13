@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { Document, Find, Outline, PageNav, Thumbnails, Viewer, Zoom } from 'svelte-pdf-mini';
-    import type { ZoomMode } from 'svelte-pdf-mini';
+    import { Annotations, Document, Find, Outline, PageNav, Thumbnails, Viewer, Zoom } from 'svelte-pdf-mini';
+    import type { Annotation, ZoomMode } from 'svelte-pdf-mini';
+    import { createDirtyTracker } from './annotationState';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
     import { messages } from './messages';
@@ -21,9 +22,13 @@
     let input = $state<HTMLInputElement>();
     // pdf.js takes ownership of the buffer it is given; the original bytes stay ours for saving.
     const src = $derived(opened ? opened.bytes.slice() : null);
-    // Annotations and saving come later (plan steps 8-10); until then a PDF is never dirty or busy.
-    export function getState(): EditorStatus { return { ready: true, busy: false, dirty: false, name: opened?.name ?? '' }; }
-    $effect(() => { void opened; onState(getState()); });
+    // The annotations shown; the tracker knows which of them the opened file already has.
+    let annotations = $state.raw<Annotation[]>([]);
+    const tracker = createDirtyTracker();
+    const dirty = $derived.by(() => { void opened; return tracker.isDirty(annotations); });
+    // Saving comes later (plan step 10); until then a PDF is never busy.
+    export function getState(): EditorStatus { return { ready: true, busy: false, dirty, name: opened?.name ?? '' }; }
+    $effect(() => { void opened; void dirty; onState(getState()); });
 
     const failure = (what: string, reason: unknown) => `${what} ${reason instanceof Error ? reason.message : String(reason)}`;
     let request = 0;
@@ -36,6 +41,7 @@
             const bytes = new Uint8Array(await chosen.arrayBuffer());
             if (mine !== request) return;
             error = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
+            annotations = []; tracker.reset([]);
             opened = { bytes, name: chosen.name, handle };
         } catch (reason) {
             if (mine === request) error = failure('PDF를 열지 못했습니다.', reason);
@@ -84,6 +90,7 @@
                 </Document.Password>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
+                    <Annotations.Root foreign="readonly" importFromPdf onImport={result => { tracker.reset(result.annotations); annotations = result.annotations; }} onAnnotationsChange={list => { annotations = list; }}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
                         <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>
@@ -97,6 +104,8 @@
                         <PageNav.Input class="page-input" />
                         <span class="count">/ {pages}</span>
                         <PageNav.Next>›</PageNav.Next>
+                        <Annotations.Undo>↶</Annotations.Undo>
+                        <Annotations.Redo>↷</Annotations.Redo>
                         <button type="button" disabled={status !== 'ready'} onclick={() => { document.print().catch(reason => { error = failure('인쇄하지 못했습니다.', reason); }); }}>인쇄</button>
                         <span class="find">
                             <Find.Input class="find-input" placeholder="찾기" />
@@ -120,11 +129,12 @@
                     <Viewer.Viewport class="viewport">
                         <Viewer.Pages>
                             {#snippet children({ pageNumber })}
-                                <Viewer.Page {pageNumber}><Viewer.Canvas /><Viewer.TextLayer /><Find.Layer /></Viewer.Page>
+                                <Viewer.Page {pageNumber}><Viewer.Canvas /><Viewer.TextLayer /><Find.Layer /><Annotations.Layer /></Viewer.Page>
                             {/snippet}
                         </Viewer.Pages>
                     </Viewer.Viewport>
                     </div>
+                    </Annotations.Root>
                     </Find.Root>
                 </Viewer.Root>
                 {/snippet}

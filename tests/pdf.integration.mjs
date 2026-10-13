@@ -321,6 +321,16 @@ const scenarios = [
         assert.deepEqual(errors, []);
         await page.close();
     }],
+    ['annotations already in the file are shown read-only and do not make the document unsaved', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        assert.equal(await page.locator('.product-document-dirty').count(), 0, 'no unsaved marker in the header');
+        assert.ok(await page.getByRole('button', { name: '실행 취소' }).isDisabled());
+        assert.ok(await page.getByRole('button', { name: '다시 실행' }).isDisabled());
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;
