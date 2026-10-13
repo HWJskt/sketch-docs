@@ -357,7 +357,8 @@
 | 4a-2. 열기·그리기 | 완료: `PDF 열기`(File System Access 핸들, 없으면 파일 입력), A 3쪽·1쪽 칠해짐, B cMap `200 /pdfjs/<ver>/cmaps/UniKS-UCS2-H.bcmap`·글자 칠해짐, cMap 404 변이 → 픽셀 0. `test:pdf` 3개 PASS | (이 커밋) |
 | 4a-3. 확대·맞춤 | 완료: 확대/축소(배율 변화, `manual`), 쪽 너비(쪽 폭이 보기 폭의 85~100%), 쪽 전체(쪽 높이 ≤ 보기 높이·쪽 너비보다 좁음). 라이브러리가 aria-label을 자체 영어 메시지로 덮어써서 `src/pdf/messages.ts`(한국어)를 `Viewer.Root messages`로 넘김. 변이(쪽 전체 → page-height) → 실패. `test:pdf` 4개 PASS | (이 커밋) |
 | 4a-4. 쪽 이동 | 완료: 다음 1→2→3(마지막에서 다음 비활성), 이전 3→2, 번호 입력 1. `test:pdf` 5개 PASS. 변이 시험은 안 함(단언이 라이브러리의 실제 쪽 상태를 직접 읽음) | (이 커밋) |
-| 4b-1~4d. 보기 기능 | 대기 | |
+| 4b-1. 찾기 | 완료: "Résumé"·"resume" 결과 2 / 2로 같음, 다음 결과 → 2쪽. 입력란은 `type=search`(역할 searchbox). 변이(악센트 구분 `diacritics`) → 1 ≠ 2로 실패. `test:pdf` 6개 PASS | (이 커밋) |
+| 4b-2~4d. 보기 기능 | 대기 | |
 | 5a~5d. 엔진 타입·경로·셸·첫 화면 | 대기 | |
 | 6a. 엔진 목록 | 대기 | |
 | 6b. 미리 받기 순서 | 대기 | |

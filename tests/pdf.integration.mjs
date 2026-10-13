@@ -135,6 +135,26 @@ const scenarios = [
         assert.deepEqual(errors, []);
         await page.close();
     }],
+    ['find ignores case and accents: "Résumé" and "resume" find the same matches', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        const input = page.getByRole('searchbox', { name: '문서에서 찾기' });
+        const count = page.locator('.find-count');
+        const total = async query => {
+            await input.fill(query);
+            await page.waitForFunction(() => /^\d+ \/ \d+$/.test(document.querySelector('.find-count')?.textContent.trim() ?? ''));
+            return Number((await count.textContent()).trim().split('/')[1]);
+        };
+        const accented = await total('Résumé');
+        const plain = await total('resume');
+        assert.equal(accented, 2, 'page 1 "Résumé" and page 2 "resume"');
+        assert.equal(plain, accented);
+        await page.getByRole('button', { name: '다음 결과' }).click();
+        await page.waitForFunction(() => document.querySelector('.find-count').textContent.trim() === '2 / 2');
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.page === '2');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;

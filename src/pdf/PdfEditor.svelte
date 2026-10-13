@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Document, PageNav, Viewer, Zoom } from 'svelte-pdf-mini';
+    import { Document, Find, PageNav, Viewer, Zoom } from 'svelte-pdf-mini';
     import type { ZoomMode } from 'svelte-pdf-mini';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
@@ -49,6 +49,7 @@
         {#key src}
             <Document.Root {src} onLoad={doc => { pages = doc.numPages; }} onError={reason => { error = `PDF를 열지 못했습니다. ${reason.message}`; }}>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
+                    <Find.Root>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <Zoom.Out>−</Zoom.Out>
                         <span class="zoom">{Math.round(zoom * 100)}%</span>
@@ -60,14 +61,21 @@
                         <PageNav.Input class="page-input" />
                         <span class="count">/ {pages}</span>
                         <PageNav.Next>›</PageNav.Next>
+                        <span class="find">
+                            <Find.Input class="find-input" placeholder="찾기" />
+                            <Find.Count class="find-count" />
+                            <Find.Prev>↑</Find.Prev>
+                            <Find.Next>↓</Find.Next>
+                        </span>
                     </div>
                     <Viewer.Viewport class="viewport">
                         <Viewer.Pages>
                             {#snippet children({ pageNumber })}
-                                <Viewer.Page {pageNumber}><Viewer.Canvas /><Viewer.TextLayer /></Viewer.Page>
+                                <Viewer.Page {pageNumber}><Viewer.Canvas /><Viewer.TextLayer /><Find.Layer /></Viewer.Page>
                             {/snippet}
                         </Viewer.Pages>
                     </Viewer.Viewport>
+                    </Find.Root>
                 </Viewer.Root>
             </Document.Root>
         {/key}
@@ -92,4 +100,7 @@
     .gap {flex:1}
     .view-tools :global(.page-input) {width:3em;text-align:center;font:inherit;padding:2px 4px;border:1px solid #c8d1dd;border-radius:5px}
     .count {color:#5b6980}
+    .find {display:flex;align-items:center;gap:4px;margin-left:12px}
+    .view-tools :global(.find-input) {width:11em;font:inherit;padding:2px 6px;border:1px solid #c8d1dd;border-radius:5px}
+    .view-tools :global(.find-count) {min-width:4em;color:#5b6980;text-align:center}
 </style>
