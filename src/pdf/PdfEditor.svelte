@@ -11,6 +11,7 @@
     import { fingerprint, type PickerWindow } from '../fileAccess';
     import { createExporter } from './exporter';
     import { createSaver, type SaveOutcome } from './save';
+    import { createRecoveryStore } from './recovery';
     setupPdf();
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
 
@@ -35,11 +36,13 @@
     // `opened`, which feeds the viewer, so saving does not reload the document.
     interface Base { bytes: Uint8Array; hash: string; handle: FileSystemFileHandle | null; name: string }
     let base = $state.raw<Base | null>(null);
-    let epoch = 0, revision = 0;
+    let epoch = $state(0), revision = 0;
     let saving = $state(false);
     let notice = $state('');
     const canSave = !!pickers.showSaveFilePicker;
-    const saver = createSaver({ exporter: createExporter(), recovery: { keep: async () => {} } });
+    const recovery = createRecoveryStore();
+    const saver = createSaver({ exporter: createExporter(), recovery });
+    let section = $state<HTMLElement>();
     export function getState(): EditorStatus { return { ready: true, busy: saving, dirty, name: base?.name ?? '' }; }
     $effect(() => { void base; void dirty; void saving; onState(getState()); });
 
@@ -83,6 +86,26 @@
         tracker.reset(saved); baseline++;
         notice = `${name}에 저장했습니다.`;
     }
+    /** Ctrl+S: back into the opened file; a file opened without a handle needs a new target. */
+    async function save() {
+        if (!base || saving) return;
+        if (!base.handle || !canSave) return saveAs();
+        const handle = base.handle, name = base.name;
+        const snapshot = annotations, mine = { epoch, revision };
+        error = ''; notice = ''; saving = true;
+        try {
+            // Read when this save's turn comes: a save queued behind another starts from what that one wrote.
+            const outcome = await saver.save(() => ({ ...mine, name, original: base!.bytes, annotations: snapshot, handle, hash: base!.hash, overwrite: true }));
+            finish(outcome, snapshot, name);
+        } finally { saving = false; }
+    }
+    function shortcut(event: KeyboardEvent) {
+        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
+        // Only while the PDF editor is the one shown (the shell hides the others).
+        if (!section || section.closest('[hidden]') || !section.isConnected) return;
+        event.preventDefault();
+        void save();
+    }
     async function saveAs() {
         if (!base || saving) return;
         let handle: FileSystemFileHandle;
@@ -109,9 +132,12 @@
     }
 </script>
 
-<section class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current}>
+<!-- Capture: the annotation layer handles keys of a new annotation's note itself and stops them. -->
+<svelte:window onkeydowncapture={shortcut} />
+<section bind:this={section} class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current} data-opens={epoch}>
     <header class="toolbar">
         <button type="button" onclick={choose} disabled={saving}>PDF 열기</button>
+        <button type="button" onclick={save} disabled={!base || saving || !canSave} title={canSave ? 'Ctrl+S' : undefined}>저장</button>
         <button type="button" onclick={saveAs} disabled={!base || saving || !canSave} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
         {#if opened}<span class="name">{base?.name ?? opened.name}</span>{/if}
         {#if saving}<span class="saving" role="status">저장하는 중…</span>{:else if notice}<span class="saved" role="status">{notice}</span>{/if}

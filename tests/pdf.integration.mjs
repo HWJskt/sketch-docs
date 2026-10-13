@@ -48,8 +48,10 @@ const savedBytes = page => page.evaluate(async () => Array.from(new Uint8Array(a
 /** Opens a file previously written to the origin-private folder. */
 async function reopen(page, name) {
     await page.evaluate(async name => { const handle = await (await navigator.storage.getDirectory()).getFileHandle(name); window.showOpenFilePicker = async () => [handle]; }, name);
+    // data-opens counts documents opened; the name alone may already match (after Save As).
+    const opens = Number(await page.locator('.pdf-editor').getAttribute('data-opens'));
     await page.getByRole('button', { name: 'PDF 열기' }).click();
-    await page.waitForFunction(name => document.querySelector('.pdf-editor .name')?.textContent === name && Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0, name);
+    await page.waitForFunction(({ name, opens }) => { const editor = document.querySelector('.pdf-editor'); return Number(editor?.dataset.opens) > opens && editor.querySelector('.name')?.textContent === name && Number(editor.dataset.pages) > 0; }, { name, opens });
 }
 
 /** Draws one annotation of each of the six kinds on page 1 of fixture A, the rectangle in blue. */
@@ -529,6 +531,85 @@ const scenarios = [
         assert.equal(await page.locator('.product-document-dirty').count(), 1, 'the second rectangle is not in the file');
         assert.deepEqual(errors, []);
         await page.close();
+    }],
+    ['Ctrl+S saves back into the opened file, after keeping the original once for recovery', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        const rectangle = async (x, y) => {
+            await page.getByRole('button', { name: '사각형', exact: true }).click();
+            await page.mouse.move(box.x + x, box.y + y); await page.mouse.down();
+            await page.mouse.move(box.x + x + 60, box.y + y + 40, { steps: 8 }); await page.mouse.up();
+        };
+        const fileBytes = () => page.evaluate(async () => Array.from(new Uint8Array(await (await (await (await navigator.storage.getDirectory()).getFileHandle('a-basic.pdf')).getFile()).arrayBuffer())));
+        const copies = () => page.evaluate(async () => {
+            const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle('sketch-docs-recovery', { create: true });
+            const found = [];
+            for await (const [name, entry] of folder) found.push({ name, bytes: Array.from(new Uint8Array(await (await entry.getFile()).arrayBuffer())) });
+            return found;
+        });
+        const original = [...await fixture('a-basic.pdf')];
+        await rectangle(100, 400);
+        await page.keyboard.press('ControlOrMeta+S');
+        await page.getByRole('status').filter({ hasText: 'a-basic.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.locator('.product-document-dirty').count(), 0);
+        assert.notDeepEqual(await fileBytes(), original, 'the opened file was written');
+        let kept = await copies();
+        assert.equal(kept.length, 1);
+        assert.match(kept[0].name, /--a-basic\.pdf$/);
+        assert.deepEqual(kept[0].bytes, original, 'the recovery copy is the file before the save');
+        await rectangle(300, 400);
+        await page.getByRole('button', { name: '저장', exact: true }).click();
+        await page.waitForFunction(() => !document.querySelector('.product-document-dirty') && /저장했습니다/.test(document.querySelector('.pdf-editor .saved')?.textContent ?? ''));
+        kept = await copies();
+        assert.equal(kept.length, 1, 'still only the original');
+        await reopen(page, 'a-basic.pdf');
+        await page.waitForFunction(() => document.querySelectorAll('.pdf-editor [data-pdf-annotation][data-kind=rect]').length === 2);
+        assert.equal(await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').count(), 1);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['a file changed elsewhere after opening is not overwritten', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf');
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 140, { steps: 8 }); await page.mouse.up();
+        await page.evaluate(async () => { const handle = await (await navigator.storage.getDirectory()).getFileHandle('e-image.pdf'); const stream = await handle.createWritable(); await stream.write('changed elsewhere'); await stream.close(); });
+        await page.keyboard.press('ControlOrMeta+S');
+        await page.getByRole('alert').filter({ hasText: '외부에서 변경' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getFileHandle('e-image.pdf')).getFile()).text()), 'changed elsewhere');
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['two tabs saving the same file at once: one is written, the other is refused and stays unsaved', async browser => {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        try {
+            const bytes = [...await fixture('e-image.pdf')];
+            const tabs = [];
+            for (const index of [0, 1]) {
+                const page = await context.newPage();
+                await page.goto(origin + '/pdf.html');
+                if (index === 0) await page.evaluate(async bytes => { const handle = await (await navigator.storage.getDirectory()).getFileHandle('shared.pdf', { create: true }); const stream = await handle.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close(); }, bytes);
+                await reopen(page, 'shared.pdf');
+                const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+                await page.getByRole('button', { name: '사각형', exact: true }).click();
+                await page.mouse.move(box.x + 100 + index * 200, box.y + 100); await page.mouse.down();
+                await page.mouse.move(box.x + 160 + index * 200, box.y + 140, { steps: 8 }); await page.mouse.up();
+                tabs.push(page);
+            }
+            await Promise.all(tabs.map(page => page.getByRole('button', { name: '저장', exact: true }).click()));
+            const results = await Promise.all(tabs.map(async page => {
+                await page.waitForFunction(() => document.querySelector('.pdf-editor .saved') || document.querySelector('.pdf-editor [role=alert]'), null, { timeout: 60000 });
+                return { saved: await page.locator('.pdf-editor .saved').count(), refused: await page.getByRole('alert').filter({ hasText: '외부에서 변경' }).count(), dirty: await page.locator('.product-document-dirty').count() };
+            }));
+            assert.deepEqual(results.map(r => r.saved).sort(), [0, 1], JSON.stringify(results));
+            const loser = results.find(r => r.saved === 0);
+            assert.deepEqual([loser.refused, loser.dirty], [1, 1]);
+        } finally { await context.close(); }
     }],
 ];
 
