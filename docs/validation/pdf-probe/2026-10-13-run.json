@@ -167,6 +167,7 @@
     "3-codec-worker": {
       "pass": true,
       "problems": [],
+      "comparisonCatches": 7,
       "read": 7,
       "foreign": 1,
       "warnings": [],

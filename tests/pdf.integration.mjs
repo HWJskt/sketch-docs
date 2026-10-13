@@ -22,7 +22,8 @@ async function openPdf(page, name, { loaded = true } = {}) {
         window.showOpenFilePicker = async () => [handle];
     }, { name, bytes });
     await page.getByRole('button', { name: 'PDF 열기' }).click();
-    if (loaded) await page.waitForFunction(() => Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0);
+    // The name changes only when this file replaced the previous one; the page count is then the new one.
+    if (loaded) await page.waitForFunction(name => document.querySelector('.pdf-editor .name')?.textContent === name && Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0, name);
 }
 /** Painted (non-white) pixels on the first page canvas once rendering settles. */
 async function ink(page) {
@@ -241,6 +242,82 @@ const scenarios = [
         assert.equal(await page.getByLabel('현재 파일 이름').textContent(), 'a-basic.pdf');
         assert.ok(await ink(page) > 1000, 'the page is still drawn');
         assert.equal(new URL(page.url()).pathname, '/pdf.html');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['a slow earlier open never replaces a later one, and a failed read keeps the open document', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        const slow = [...await fixture('e-image.pdf')], later = [...await fixture('c2-empty-signature.pdf')];
+        await page.evaluate(async ({ slow, later }) => {
+            const directory = await navigator.storage.getDirectory();
+            const write = async (name, bytes) => { const handle = await directory.getFileHandle(name, { create: true }); const stream = await handle.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close(); return handle; };
+            const slowHandle = await write('slow.pdf', slow), laterHandle = await write('later.pdf', later);
+            let release;
+            window.__releaseSlow = new Promise(resolve => { release = resolve; });
+            window.__release = release;
+            const held = { getFile: async () => { await window.__releaseSlow; return slowHandle.getFile(); } };
+            const queue = [held, laterHandle, { getFile: async () => { throw new Error('read failed'); } }];
+            window.showOpenFilePicker = async () => [queue.shift()];
+        }, { slow, later });
+        const button = page.getByRole('button', { name: 'PDF 열기' });
+        await button.click();
+        await button.click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.pages === '1' && document.querySelector('.pdf-editor .name').textContent === 'later.pdf');
+        await page.evaluate(() => window.__release());
+        await page.waitForTimeout(800);
+        assert.equal(await page.locator('.pdf-editor .name').textContent(), 'later.pdf', 'the slow first choice arrived late and was ignored');
+        await button.click();
+        await page.getByRole('alert').filter({ hasText: 'read failed' }).waitFor();
+        assert.equal(await page.locator('.pdf-editor .name').textContent(), 'later.pdf');
+        assert.equal(await page.locator('.pdf-editor').getAttribute('data-pages'), '1', 'the open document is untouched');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['opening another file starts at page width again, so the zoom shown is the zoom used', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '확대' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.zoomMode === 'manual');
+        await openPdf(page, 'e-image.pdf');
+        assert.equal(await page.locator('.pdf-editor').getAttribute('data-zoom-mode'), 'page-width');
+        await page.waitForTimeout(600);
+        const fit = await page.evaluate(() => {
+            const canvas = document.querySelector('.pdf-editor canvas').getBoundingClientRect().width;
+            return { canvas, view: document.querySelector('.pdf-editor .viewport').clientWidth, shown: document.querySelector('.pdf-editor .zoom').textContent };
+        });
+        assert.ok(fit.canvas > fit.view * 0.85 && fit.canvas <= fit.view, JSON.stringify(fit));
+        assert.equal(fit.shown, `${Math.round(Number(await page.locator('.pdf-editor').getAttribute('data-zoom')) * 100)}%`);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['print is unavailable until the document is open (for example while its password is asked)', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'd-encrypted.pdf', { loaded: false });
+        await page.getByLabel('암호로 보호된 PDF입니다. 암호를 입력하세요.').waitFor();
+        assert.ok(await page.getByRole('button', { name: '인쇄' }).isDisabled());
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['in a 600px wide window the view tools wrap and stay on screen', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await page.setViewportSize({ width: 600, height: 800 });
+        await openPdf(page, 'a-basic.pdf');
+        for (const control of [page.getByRole('searchbox', { name: '문서에서 찾기' }), page.getByRole('button', { name: '다음 결과' }), page.getByRole('button', { name: '인쇄' })]) {
+            const box = await control.boundingBox();
+            assert.ok(box && box.x >= 0 && box.x + box.width <= 600, `${await control.getAttribute('aria-label') ?? await control.textContent()} at ${JSON.stringify(box)}`);
+        }
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['without the File System Access API the file input opens a PDF', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await page.evaluate(() => { delete window.showOpenFilePicker; });
+        const chooser = page.waitForEvent('filechooser');
+        await page.getByRole('button', { name: 'PDF 열기' }).click();
+        await (await chooser).setFiles(resolve(root, 'tests/fixtures/pdf/a-basic.pdf'));
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.pages === '3');
+        assert.equal(await page.locator('.pdf-editor input[type=file]').inputValue(), '', 'cleared so the same file can be chosen again');
         assert.deepEqual(errors, []);
         await page.close();
     }],

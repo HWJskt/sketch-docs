@@ -10,16 +10,28 @@ export const ANNOTATIONS = [
     base('probe-ink', 'ink', [100, 300, 200, 400], [0, 0.5, 0], { paths: [{ points: [[100, 300], [150, 360], [200, 400]] }], width: 2 }),
     base('probe-rect', 'rect', [300, 300, 400, 380], [0.5, 0, 0.5], { width: 2 }),
 ];
-/** Differences between written and read annotations (kind, rect within 0.01, color, contents). */
+const close = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => Array.isArray(value) ? close(value, b[i]) : Number.isFinite(value) && Math.abs(value - b[i]) <= 0.01);
+/**
+ * Differences between written and read annotations: kind, page, rect, color, contents, and the geometry of
+ * each kind (quads of text markup, ink paths and width, shape width), numbers within 0.01.
+ */
 export function compare(written, read) {
     const problems = [];
     for (const want of written) {
         const got = read.find(item => item.id === want.id);
         if (!got) { problems.push(`${want.id}: missing`); continue; }
         if (got.kind !== want.kind) problems.push(`${want.id}: kind ${got.kind}`);
-        if (got.rect.some((value, i) => Math.abs(value - want.rect[i]) > 0.01)) problems.push(`${want.id}: rect ${got.rect}`);
-        if (got.color.some((value, i) => Math.abs(value - want.color[i]) > 0.01)) problems.push(`${want.id}: color ${got.color}`);
+        if (got.page !== want.page) problems.push(`${want.id}: page ${got.page}`);
+        for (const key of ['rect', 'color']) if (!close(got[key], want[key])) problems.push(`${want.id}: ${key} ${JSON.stringify(got[key])}`);
         if ((got.contents ?? '') !== (want.contents ?? '')) problems.push(`${want.id}: contents ${got.contents}`);
+        if (want.quads && !close(got.quads, want.quads)) problems.push(`${want.id}: quads ${JSON.stringify(got.quads)}`);
+        if (want.paths && !close(got.paths?.map(path => path.points), want.paths.map(path => path.points))) problems.push(`${want.id}: paths ${JSON.stringify(got.paths)}`);
+        if (want.width !== undefined && Math.abs((got.width ?? NaN) - want.width) > 0.01) problems.push(`${want.id}: width ${got.width}`);
     }
     return problems;
+}
+// The comparison must be able to fail: 7 changes (note page, 3 quads, ink path, ink and rect width) are reported.
+export function selfCheck() {
+    const broken = ANNOTATIONS.map(item => ({ ...item, page: item.id === 'probe-note' ? 2 : item.page, quads: item.quads?.map(quad => quad.map(v => v + 5)), paths: item.paths?.map(path => ({ points: path.points.slice(1) })), width: item.width === undefined ? undefined : item.width + 1 }));
+    return compare(ANNOTATIONS, broken).length;
 }

@@ -28,8 +28,13 @@ const dir = resolve(process.argv[arg + 1]);
 const report = { package: PACKAGE, dir, items: {} };
 const item = (key, pass, data) => { report.items[key] = { pass, ...data }; };
 
-// Lifecycle scripts stay off: the packages are only read and bundled.
+// The folder is ours to overwrite and clear only if it is new, empty, or marked by an earlier run.
+const MARK = '.pdf-probe-folder';
 await mkdir(dir, { recursive: true });
+const present = await readdir(dir);
+if (present.length && !present.includes(MARK)) { console.error(`${dir} is not empty and was not created by this probe; choose a new folder`); process.exit(2); }
+await writeFile(join(dir, MARK), 'Created by scripts/pdf-probe/run.mjs; safe to delete.\n');
+// Lifecycle scripts stay off: the packages are only read and bundled.
 await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'pdf-probe', private: true, type: 'module' }));
 execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', PACKAGE, ...TOOLS], { cwd: dir, stdio: ['ignore', 'ignore', 'inherit'] });
 const require = createRequire(join(dir, 'package.json'));
@@ -192,7 +197,7 @@ try {
     const result = await page.evaluate(() => window.__codec);
     await page.close();
     const external = requests.filter(url => !url.startsWith(origin) && !url.startsWith('blob:') && !url.startsWith('data:'));
-    item('3-codec-worker', !result.error && result.problems.length === 0 && external.length === 0, { ...result, external });
+    item('3-codec-worker', !result.error && result.problems.length === 0 && result.comparisonCatches === 7 && external.length === 0, { ...result, external });
     item('4-incremental', true, { incrementalPrefix: result.incrementalPrefix, note: 'recorded only' });
 } finally {
     await browser?.close();

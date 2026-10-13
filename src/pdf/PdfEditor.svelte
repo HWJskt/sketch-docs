@@ -25,22 +25,39 @@
     export function getState(): EditorStatus { return { ready: true, busy: false, dirty: false, name: opened?.name ?? '' }; }
     $effect(() => { void opened; onState(getState()); });
 
-    async function load(file: File, handle: FileSystemFileHandle | null) {
-        error = ''; pages = 0;
-        opened = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name, handle };
+    const failure = (what: string, reason: unknown) => `${what} ${reason instanceof Error ? reason.message : String(reason)}`;
+    let request = 0;
+    // Only the latest open may replace the document, and only after its bytes were read: a slow or failed
+    // read leaves the current document, its page and its zoom as they are.
+    async function load(file: File | Promise<File>, handle: FileSystemFileHandle | null) {
+        const mine = ++request;
+        try {
+            const chosen = await file;
+            const bytes = new Uint8Array(await chosen.arrayBuffer());
+            if (mine !== request) return;
+            error = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
+            opened = { bytes, name: chosen.name, handle };
+        } catch (reason) {
+            if (mine === request) error = failure('PDF를 열지 못했습니다.', reason);
+        }
     }
     async function choose() {
         // Without the File System Access API the file has no handle; saving then needs a new target.
         if (!pickers.showOpenFilePicker) { input?.click(); return; }
+        let handle: FileSystemFileHandle;
         try {
-            const [handle] = await pickers.showOpenFilePicker({ multiple: false, types: [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }] });
-            await load(await handle.getFile(), handle);
+            [handle] = await pickers.showOpenFilePicker({ multiple: false, types: [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }] });
         } catch (reason) {
-            if ((reason as DOMException)?.name !== 'AbortError') error = `PDF를 열지 못했습니다. ${reason instanceof Error ? reason.message : String(reason)}`;
+            if ((reason as DOMException)?.name !== 'AbortError') error = failure('PDF를 열지 못했습니다.', reason);
+            return;
         }
+        await load(handle.getFile(), handle);
     }
     function picked(event: Event) {
-        const file = (event.currentTarget as HTMLInputElement).files?.[0];
+        const field = event.currentTarget as HTMLInputElement;
+        const file = field.files?.[0];
+        // Cleared so choosing the same file again (to retry) is a change.
+        field.value = '';
         if (file) void load(file, null);
     }
 </script>
@@ -55,7 +72,7 @@
     {#if src}
         {#key src}
             <Document.Root {src} onLoad={doc => { pages = doc.numPages; }} onError={reason => { error = `PDF를 열지 못했습니다. ${reason.message}`; }}>
-                {#snippet children({ document })}
+                {#snippet children({ document, status })}
                 <Document.Password class="password">
                     {#snippet children({ reason })}
                         <label>
@@ -80,7 +97,7 @@
                         <PageNav.Input class="page-input" />
                         <span class="count">/ {pages}</span>
                         <PageNav.Next>›</PageNav.Next>
-                        <button type="button" onclick={() => void document.print()}>인쇄</button>
+                        <button type="button" disabled={status !== 'ready'} onclick={() => { document.print().catch(reason => { error = failure('인쇄하지 못했습니다.', reason); }); }}>인쇄</button>
                         <span class="find">
                             <Find.Input class="find-input" placeholder="찾기" />
                             <Find.Count class="find-count" />
@@ -120,7 +137,7 @@
 
 <style>
     .pdf-editor {height:100%;display:flex;flex-direction:column;background:#eef0f3;font-family:system-ui,sans-serif;color:#3b4a60}
-    .toolbar {display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid #dce1e8;background:#fff}
+    .toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid #dce1e8;background:#fff}
     .toolbar button {font:inherit;font-size:13px;padding:5px 12px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     .name {font-size:13px;color:#5b6980}
     .problem {margin:8px 12px;color:#9a4b00;font-size:13px}
@@ -135,7 +152,7 @@
     .pdf-editor :global(.password) {margin:40px auto;display:flex;gap:8px;align-items:end;font-size:14px}
     .pdf-editor :global(.password label) {display:flex;flex-direction:column;gap:6px}
     .pdf-editor :global(.password input), .pdf-editor :global(.password button) {font:inherit;padding:5px 10px;border:1px solid #c8d1dd;border-radius:6px;background:#fff}
-    .view-tools {display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid #dce1e8;background:#f8f9fb;font-size:13px}
+    .view-tools {display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid #dce1e8;background:#f8f9fb;font-size:13px}
     .view-tools :global(button) {font:inherit;padding:3px 10px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;color:#243047;cursor:pointer}
     .view-tools :global(button[data-active]) {border-color:#2563eb;color:#1d4ed8}
     .zoom {min-width:44px;text-align:center;color:#5b6980}
