@@ -31,7 +31,7 @@
     "@cantoo/pdf-lib": "2.11.1",
     "@noble/hashes": "2.4.0",
     "canvaskit-wasm": "0.42.0",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "svelte": "5.57.1",
     "svelte-pdf-mini": "0.9.1"
   },
