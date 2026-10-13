@@ -1,6 +1,6 @@
 # PDF 뷰어·주석 추가 (2026-10-13)
 
-선행: `2026-10-13-engine-preload.md`(첫 화면 형식 선택·엔진 미리 받기·진행 화면)를 먼저 끝낸다.
+선행: `2026-10-13-engine-preload.md`(첫 화면 형식 선택·엔진 미리 받기·진행 화면). 2026-10-13 완료(`fa504a9`~`2ad35e2`).
 
 ## 사용자 결정 (2026-10-13)
 
@@ -72,7 +72,11 @@
 - `EditorMode`에 `'pdf'`를 더한다. `modeFromPath` 시험에 `/pdf`, `/pdf.html`, `/x/pdf`를 추가한다.
 - `pdf.html` 진입점을 만들고 vite 입력에 넣는다. 첫 화면에 PDF 카드, `EditorControls`에 PDF 버튼을 둔다.
 - `EditorShell`이 PDF 편집기를 `pdfLoaded`일 때만 동적 `import()`로 마운트한다. 이렇게 해서 DoD 8을 지킨다.
-- 엔진 미리 받기(`2026-10-13-engine-preload.md`)에 PDF를 붙인다: `engines.json`에 PDF 진입 청크·pdf.js worker를 넣는다. 첫 화면에 PDF 카드를 넣고, 같은 진행 화면을 쓴다. cMap·글꼴은 문서가 요구할 때만 받으므로 목록에 넣지 않는다.
+- 엔진 미리 받기에 PDF를 붙인다.
+  - `Engine` 타입과 `engines.ts`의 순서 목록에 `pdf`를 더한다. 첫 화면 카드 가로채기(`home.ts`)와 `EngineProgress`가 PDF도 다룬다.
+  - 지금 `engines/manifest.json`은 `build-engines.mjs`가 엔진 iframe의 HTML을 읽어 셸 빌드 **전에** 만든다. PDF 코드는 iframe이 아니라 우리 셸의 Vite 청크라서 이름(해시)이 셸 빌드 **뒤에** 정해진다. 그래서 셸 빌드 뒤 단계(Vite `build.manifest`로 PDF 진입 청크와 그 정적 의존 청크, pdf.js worker를 찾는 플러그인 또는 후처리 스크립트)가 `dist/engines/manifest.json`에 `pdf` 항목을 더한다. `verify`의 `outputHash`가 이 파일을 포함하는지 확인한다.
+  - cMap·글꼴·wasm·ICC는 문서가 요구할 때만 받으므로 목록에 넣지 않는다.
+  - 엔진 목록 회귀 시나리오(`engine manifest lists what each editor downloads at startup`)에 PDF를 더한다. PDF는 iframe이 아니므로 "편집기 자체 요청"을 구분하는 기준을 다시 정한다(예: 진행 화면이 끝난 뒤의 요청).
 - 시험(회귀): `/pdf` 확장자 없는 URL, 뒤로 가기, W→PDF→한 전환 뒤 각 상태 유지.
 
 ### 3. PDF 편집기 (보기)
@@ -115,7 +119,7 @@
 
 | 단계 | 상태 | 커밋 |
 |---|---|---|
-| 계획 | 작성 | |
+| 계획 | 작성, Codex 리뷰 대기 | |
 | 1. 의존성·자산 | 대기 | |
 | 2. 경로·셸 | 대기 | |
 | 3. 보기 | 대기 | |
