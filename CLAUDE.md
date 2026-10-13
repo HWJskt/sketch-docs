@@ -24,4 +24,4 @@
 - `docs.sketchps.app` DNS는 대시보드에서 관리한다(CNAME → `sketch-docs.pages.dev`, **DNS only**). wrangler OAuth 토큰에는 DNS 쓰기 권한이 없다.
   - 프록시를 켜면 KT 회선에서 무료 플랜 IP가 해외 colo로 가서 WASM 로딩이 수십 배 느려진다(2026-10-13 실측). 다시 켜지 않는다.
 - 소스 제공: 배포판 정보 창이 빌드 커밋의 GitHub 링크를 건다. 그래서 push되지 않은 커밋은 배포하지 않는다.
-- GitHub Actions: push마다 `verify`, 매주 `upstream-watch`(최신 원본 검사, 실패 시 이슈). 배포 권한은 주지 않는다.
+- GitHub Actions: push마다 `verify`, 매주 `upstream-watch`(최신 원본 검사, 실패 시 이슈 / `svelte-pdf-mini` 새 판·`npm audit --omit=dev` 확인, 걸리면 이슈 — 고정판은 바꾸지 않는다). 배포 권한은 주지 않는다.

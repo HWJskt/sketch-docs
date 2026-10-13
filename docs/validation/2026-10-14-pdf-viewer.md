@@ -36,7 +36,7 @@
 
 - (정리함, 2026-10-14) pdf.js worker가 두 벌(라이브러리의 Vite `?url` 사본과 우리 `pdfjs/` 사본, 각 1.26MB) 있었다. 라이브러리 사본은 라이브러리를 고치지 않고는 뺄 수 없어 우리 사본을 뺐다(`configurePdf`의 `workerSrc` 제거). 배포 파일 527 → 526개. 앞의 "`.js`도 1.26MB"는 잘못 쟀다 — 90바이트짜리 주소 모듈이다.
 - KaTeX 글꼴 59개(1.1MB)는 쓰지 않는 파일이 아니었다: 메모에 `$…$` 수식을 쓰면 라이브러리가 KaTeX와 글꼴을 불러온다(`svelte-pdf-mini/dist/internal/markdown.js`). 그대로 둔다.
-- 주간 upstream-watch에 `svelte-pdf-mini` 최신판 검사를 넣을지는 아직 정하지 않았다.
+- (정함, 2026-10-14) 주간 upstream-watch의 `npm` job이 `svelte-pdf-mini` npm 최신판과 고정판을 비교하고 lockfile로 `npm audit --omit=dev`를 돌린다(설치·패키지 코드 실행 없음). 하나라도 걸리면 쓰기 권한만 가진 별도 job이 이슈 "npm check needs attention"을 열거나 댓글을 단다. 새 판 시험은 사람이 한다.
 - (해결) wrangler 4.142의 npm audit 권고: 배포 전에 4.149.0으로 올렸다(`npm audit` 0건).
 
 ## 배포 (2026-10-14)
