@@ -7,6 +7,7 @@
     import EngineProgress from './EngineProgress.svelte';
     import AboutProduct from './AboutProduct.svelte';
     import { offlineReady } from './offline';
+    import { rememberEngine } from './engines';
     import { modeFromPath, type EditorMode } from './routes';
     import type { EditorStatus, HangulInput } from './editorState';
     type Mode = EditorMode;
@@ -57,6 +58,7 @@
         const focused = frame?.contentDocument?.activeElement;
         if (focused && 'blur' in focused) (focused as HTMLElement).blur();
         active = mode;
+        rememberEngine(mode);
         if (mode === 'word') wordLoaded = true; else hangulLoaded = true;
         notice = '';
         if (updateUrl) history.pushState({mode}, '', new URL(mode === 'word' ? './word.html' : './hwp.html', location.href));
@@ -72,6 +74,7 @@
     }
     onMount(() => {
         let alive = true;
+        rememberEngine(active);
         void offlineReady.then(() => { if (alive) onlineReady = true; });
         const host = {
             wordState(state: EditorStatus) { wordStatus = state; },

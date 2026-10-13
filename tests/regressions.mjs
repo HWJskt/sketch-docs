@@ -207,6 +207,33 @@ try {
     for (const route of held) await route.abort().catch(() => {});
   }, { contextOptions: { serviceWorkers: 'block' } });
 
+  await scenario('the start page preloads engines in the background, last used first, so the editor opens without waiting', async (page, context) => {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Network.enable');
+    const order = [], transfers = [];
+    const urls = new Map();
+    cdp.on('Network.requestWillBeSent', event => { const path = new URL(event.request.url).pathname; if (/^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path); });
+    cdp.on('Network.responseReceived', event => urls.set(event.requestId, event.response.url));
+    cdp.on('Network.loadingFinished', event => { if (urls.get(event.requestId)?.endsWith('.wasm')) transfers.push(event.encodedDataLength); });
+    await page.goto(origin + '/');
+    await page.evaluate(() => localStorage.setItem('sketch-docs-last-engine', 'hwp'));
+    await page.reload();
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('.wasm') && entry.responseEnd > 0), null, { timeout: 60000 });
+    assert.match(order[0] ?? '', /^\/rhwp\//, `the last used editor downloads first (order: ${order.slice(0, 3)})`);
+    await page.getByRole('link', { name: /한글 문서/ }).click();
+    await hangulReady(page);
+    assert.equal(transfers.filter(bytes => bytes > 1_000_000).length, 1, `the WASM crossed the network once (transfers: ${transfers})`);
+  }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
+
+  await scenario('the start page does not preload on a Save-Data connection', async page => {
+    await page.addInitScript(() => Object.defineProperty(navigator, 'connection', { value: { saveData: true, effectiveType: '4g' } }));
+    const engineRequests = [];
+    page.on('request', request => { if (/\/(?:engines\/word|rhwp)\/assets\//.test(request.url())) engineRequests.push(request.url()); });
+    await page.goto(origin + '/');
+    await page.waitForTimeout(3000);
+    assert.deepEqual(engineRequests, []);
+  }, { contextOptions: { serviceWorkers: 'block' } });
+
   await scenario('direct Word engine URL opens the product shell', async page => {
     await page.goto(origin + '/engines/word/index.html');
     await page.waitForURL(url => /^\/word(?:\.html)?$/.test(new URL(url).pathname));
