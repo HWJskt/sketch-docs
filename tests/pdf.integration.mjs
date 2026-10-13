@@ -13,7 +13,7 @@ const origin = `http://localhost:${port}`;
 const fixture = name => readFile(resolve(root, 'tests/fixtures/pdf', name));
 
 /** Opens a fixture through the editor's open button; the OS picker is replaced by an origin-private file. */
-async function openPdf(page, name) {
+async function openPdf(page, name, { loaded = true } = {}) {
     const bytes = [...await fixture(name)];
     await page.evaluate(async ({ name, bytes }) => {
         const directory = await navigator.storage.getDirectory();
@@ -22,7 +22,7 @@ async function openPdf(page, name) {
         window.showOpenFilePicker = async () => [handle];
     }, { name, bytes });
     await page.getByRole('button', { name: 'PDF 열기' }).click();
-    await page.waitForFunction(() => Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0);
+    if (loaded) await page.waitForFunction(() => Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0);
 }
 /** Painted (non-white) pixels on the first page canvas once rendering settles. */
 async function ink(page) {
@@ -204,6 +204,23 @@ const scenarios = [
         for (let i = 0; i < 40 && !page.__prints; i++) await page.waitForTimeout(250);
         assert.equal(page.__prints, 1, `print called once (frames ${before} -> ${page.frames().length})`);
         assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['an encrypted PDF asks for its password, asks again when it is wrong, then opens', async browser => {
+        const { page, errors, external } = await open(browser, '/pdf.html');
+        await openPdf(page, 'd-encrypted.pdf', { loaded: false });
+        const field = page.getByLabel('암호로 보호된 PDF입니다. 암호를 입력하세요.');
+        await field.fill('wrong');
+        await page.getByRole('button', { name: '열기', exact: true }).click();
+        const again = page.getByLabel('암호가 틀렸습니다. 다시 입력하세요.');
+        await again.waitFor();
+        assert.equal(await page.locator('.pdf-editor').getAttribute('data-pages'), '0');
+        await again.fill('test');
+        await page.getByRole('button', { name: '열기', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.pages === '1');
+        assert.ok(await ink(page) > 200, 'the decrypted page is drawn');
+        assert.deepEqual(errors, []);
+        assert.deepEqual(external, []);
         await page.close();
     }],
 ];

@@ -360,7 +360,7 @@
 | 4b-1. 찾기 | 완료: "Résumé"·"resume" 결과 2 / 2로 같음, 다음 결과 → 2쪽. 입력란은 `type=search`(역할 searchbox). 변이(악센트 구분 `diacritics`) → 1 ≠ 2로 실패. `test:pdf` 6개 PASS | (이 커밋) |
 | 4b-2·4b-3. 목차·썸네일 | 완료: 옆 패널(목차/썸네일 전환). 목차 항목 `Introduction`·`Chapter 2`, 2번째 → 2쪽. 썸네일 3개(이름 1·2·3), 그려짐, 3번째 → 3쪽. 같은 패널 코드라 한 커밋으로 묶음(계획은 따로). `test:pdf` 8개 PASS | (이 커밋) |
 | 4c-1·4c-2. 선택·복사, 인쇄 | 완료: 텍스트 층 선택 + Ctrl/Cmd+C → 클립보드에 `Introduction text`. 인쇄는 라이브러리 `PdfDocument.print()`(원본 PDF를 숨긴 blob iframe에 띄워 브라우저 PDF 엔진으로 인쇄) → print 1회. 주석을 넣은 인쇄는 저장본 바이트를 넘겨야 하므로 8b·10b에서 다룸. `test:pdf` 10개 PASS | (이 커밋) |
-| 4d. 암호 PDF 보기 | 대기 | |
+| 4d. 암호 PDF 보기 | 완료: `Document.Password`에 한국어 입력 화면. 틀린 암호 → 다시 묻기(쪽 수 0 유지), `test` → 1쪽 칠해짐, 외부 요청 0. `test:pdf` 11개 PASS | (이 커밋) |
 | 5a~5d. 엔진 타입·경로·셸·첫 화면 | 대기 | |
 | 6a. 엔진 목록 | 대기 | |
 | 6b. 미리 받기 순서 | 대기 | |

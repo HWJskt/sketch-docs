@@ -50,6 +50,15 @@
         {#key src}
             <Document.Root {src} onLoad={doc => { pages = doc.numPages; }} onError={reason => { error = `PDF를 열지 못했습니다. ${reason.message}`; }}>
                 {#snippet children({ document })}
+                <Document.Password class="password">
+                    {#snippet children({ reason })}
+                        <label>
+                            {reason === 'incorrect' ? '암호가 틀렸습니다. 다시 입력하세요.' : '암호로 보호된 PDF입니다. 암호를 입력하세요.'}
+                            <input type="password" autocomplete="current-password" />
+                        </label>
+                        <button type="submit">열기</button>
+                    {/snippet}
+                </Document.Password>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
                     <div class="view-tools" role="toolbar" aria-label="보기">
@@ -117,6 +126,9 @@
     .panel :global([data-pdf-thumbnail]), .panel :global(button) {display:block;margin:0 auto 8px;border:1px solid transparent;background:none;cursor:pointer;font:inherit;color:#243047;text-align:left}
     .view-tools button[aria-pressed='true'] {border-color:#2563eb;color:#1d4ed8}
     .none {color:#5b6980}
+    .pdf-editor :global(.password) {margin:40px auto;display:flex;gap:8px;align-items:end;font-size:14px}
+    .pdf-editor :global(.password label) {display:flex;flex-direction:column;gap:6px}
+    .pdf-editor :global(.password input), .pdf-editor :global(.password button) {font:inherit;padding:5px 10px;border:1px solid #c8d1dd;border-radius:6px;background:#fff}
     .view-tools {display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid #dce1e8;background:#f8f9fb;font-size:13px}
     .view-tools :global(button) {font:inherit;padding:3px 10px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;color:#243047;cursor:pointer}
     .view-tools :global(button[data-active]) {border-color:#2563eb;color:#1d4ed8}
