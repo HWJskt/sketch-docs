@@ -342,7 +342,7 @@ try {
   await status('파일을 열었습니다').waitFor();
   await action('저장');
   await status('원본과 다른 파일').waitFor();
-  assert.match(await page.getByRole('status').filter({ hasText: '원본과 다른 파일' }).first().textContent(), /비워진 원본은 되돌렸습니다/);
+  assert.match(await page.getByRole('status').filter({ hasText: '원본과 다른 파일' }).first().textContent(), /비워진 원본은 열 때의 내용으로 되돌렸습니다/);
   assert.deepEqual(await page.evaluate(async () => Array.from(new Uint8Array(await (await window.__original.getFile()).arrayBuffer()))), saved, 'the emptied original is written back');
   await page.evaluate(async () => {
     const directory = await navigator.storage.getDirectory();
@@ -360,12 +360,23 @@ try {
   await action('저장');
   await status('copy.hwpx 저장 완료').waitFor();
   assert.equal(await frame.locator('.product-document-name').textContent(), 'copy.hwpx');
-  // Save As onto the current copy again: the picker empties it, and the save still goes through.
-  await page.evaluate(() => { window.showSaveFilePicker = async () => { const stream = await window.__copy.createWritable(); await stream.close(); return window.__copy; }; });
+  // Save As onto the current copy again: the picker empties it, and the save still goes through. The first
+  // picker call fails as it does once the click no longer counts, so a second click picks the target.
+  await page.evaluate(() => {
+    window.__pickerCalls = 0;
+    window.showSaveFilePicker = async () => {
+      window.__pickerCalls++;
+      if (window.__pickerCalls === 1) throw new DOMException('Must be handling a user gesture to show a file picker.', 'SecurityError');
+      const stream = await window.__copy.createWritable(); await stream.close(); return window.__copy;
+    };
+  });
   await frame.locator('textarea').focus();
+  await page.keyboard.insertText(' 재선택');
   await page.keyboard.press('ControlOrMeta+Shift+s');
-  await page.waitForFunction(async () => (await window.__copy.getFile()).size > 0);
+  await page.getByRole('button', { name: '저장할 위치 고르기' }).click();
   await status('copy.hwpx 저장 완료').waitFor();
+  assert.equal(await page.evaluate(() => window.__pickerCalls), 2);
+  assert(xml(await page.evaluate(async () => Array.from(new Uint8Array(await (await window.__copy.getFile()).arrayBuffer())))).includes('재선택'), 'the second Save As onto the copy wrote the new text');
   const files = await page.evaluate(async () => ({
     original: Array.from(new Uint8Array(await (await window.__original.getFile()).arrayBuffer())),
     copy: Array.from(new Uint8Array(await (await window.__copy.getFile()).arrayBuffer())),

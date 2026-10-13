@@ -32,6 +32,25 @@
     // The opened file's bytes: a save picker empties the file it returns, so if the original is chosen by
     // mistake it is written back from here.
     let originalBytes: Uint8Array | null = null;
+    // What was last written to `target`: if saving over that same file again fails after the picker emptied
+    // it, it is written back.
+    let targetBytes: Uint8Array | null = null;
+    // A save picker needs a recent click; after a long export one more click is asked for.
+    let pendingPick = $state.raw<{ go: () => void; cancel: () => void } | null>(null);
+    async function chooseSaveTarget(options: unknown): Promise<FileSystemFileHandle> {
+        const open = () => pickers.showSaveFilePicker!(options);
+        try { return await open(); }
+        catch (error) {
+            const kind = (error as DOMException)?.name;
+            if (kind !== 'SecurityError' && kind !== 'NotAllowedError') throw error;
+        }
+        return new Promise((resolve, reject) => {
+            pendingPick = {
+                go: () => { pendingPick = null; open().then(resolve, reject); },
+                cancel: () => { pendingPick = null; reject(new DOMException('cancel', 'AbortError')); },
+            };
+        });
+    }
     let targetHash = '';
     let targetFormat: HangulFormat = 'hwpx';
     const pickers = window as PickerWindow;
@@ -69,7 +88,7 @@
             documentEpoch = undefined;
             unsubscribeState = bridge.subscribe(state => {
                 if (documentEpoch !== undefined && state.epoch !== documentEpoch) {
-                    target = original = null; originalBytes = null; targetHash = '';
+                    target = original = null; originalBytes = null; targetBytes = null; targetHash = '';
                 }
                 documentEpoch = state.epoch;
                 name = state.name || '새 문서';
@@ -115,7 +134,7 @@
             let epoch: number | undefined;
             try { epoch = bridge?.state().epoch; } catch { /* No document after failed initialization. */ }
             if (epoch !== previousEpoch) {
-                target = original = null; originalBytes = null;
+                target = original = null; originalBytes = null; targetBytes = null;
                 hasDocument = false;
             }
             throw error;
@@ -129,7 +148,7 @@
             hasDocument = true;
             name = '새 문서';
             format = 'hwpx';
-            target = original = null; originalBytes = null;
+            target = original = null; originalBytes = null; targetBytes = null;
             message = '새 문서입니다. 저장할 형식을 선택하세요.';
         } catch (error) { report(error); }
         finally { busy = false; }
@@ -164,7 +183,7 @@
             const artifact = bridge.export(chosen);
             assertNoContentLoss(artifact);
             const picked = asNew || !target || chosen !== targetFormat;
-            const handle = picked ? await pickers.showSaveFilePicker!({
+            const handle = picked ? await chooseSaveTarget({
                 suggestedName: name.replace(/\.(hwp|hwpx)$/i, '') + '.' + chosen,
                 types: [{ description: chosen.toUpperCase(), accept: { 'application/octet-stream': ['.' + chosen] } }],
             }) : target!;
@@ -174,13 +193,22 @@
                 const stream = await handle.createWritable();
                 try { await stream.write(new Uint8Array(originalBytes)); await stream.close(); }
                 catch (error) { await stream.abort().catch(() => undefined); throw new Error(`원본 파일을 선택해 원본이 비워졌고, 되돌리지 못했습니다. ${error instanceof Error ? error.message : String(error)}`); }
-                throw new Error('원본 보존 검증 전에는 원본과 다른 파일을 선택하세요. 선택하면서 비워진 원본은 되돌렸습니다.');
+                throw new Error('원본 보존 검증 전에는 원본과 다른 파일을 선택하세요. 선택하면서 비워진 원본은 열 때의 내용으로 되돌렸습니다(그 뒤 다른 프로그램에서 바꾼 내용은 되돌리지 못합니다).');
             }
-            if (!handle.name.toLowerCase().endsWith('.' + chosen)) throw new Error('선택한 형식과 파일 확장자가 일치해야 합니다.');
+            if (!handle.name.toLowerCase().endsWith('.' + chosen)) throw new Error('선택한 형식과 파일 확장자가 일치해야 합니다. 이미 있던 파일을 고르셨다면 저장 창이 그 파일을 비웠습니다.');
             // A picked file holds what it holds now (emptied if it existed); the current target must still hold what was saved.
             const hash = picked ? await fingerprint(await handle.getFile()) : targetHash;
-            await writeArtifact(handle, artifact, hash);
+            try { await writeArtifact(handle, artifact, hash); }
+            catch (error) {
+                // Saving over the current copy again: the picker emptied it, so put back what was last saved there.
+                if (picked && target && targetBytes && await target.isSameEntry(handle)) {
+                    const stream = await handle.createWritable().catch(() => null);
+                    if (stream) { try { await stream.write(new Uint8Array(targetBytes)); await stream.close(); } catch { await stream.abort().catch(() => undefined); } }
+                }
+                throw error;
+            }
             target = handle;
+            targetBytes = new Uint8Array(artifact.bytes);
             format = targetFormat = chosen;
             name = handle.name;
             targetHash = await fingerprint(new File([new Uint8Array(artifact.bytes)], name));
@@ -209,6 +237,7 @@
     <footer role="status" aria-live="polite">
         <span class="document-name" title={name}>{name}</span>
         <span>{busy ? '처리 중…' : message}</span>
+        {#if pendingPick}<span>문서를 만드는 데 시간이 걸렸습니다. <button type="button" onclick={pendingPick.go}>저장할 위치 고르기</button> <button type="button" onclick={pendingPick.cancel}>취소</button></span>{/if}
         {#if !supported}<span>파일 열기·저장은 데스크톱 Chrome 또는 Edge에서 사용할 수 있습니다.</span>{/if}
     </footer>
 </main>
