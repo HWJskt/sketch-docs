@@ -367,7 +367,8 @@
 | 6a. 엔진 목록 | 완료: `scripts/pdf-manifest.mjs`가 Vite manifest에서 `PdfEditor` 청크 + 동적 import `pdfjs-dist/build/pdf.mjs`(문서를 열 때 필요) + 정적 import·CSS + `pdfjs/<ver>/pdf.worker.min.mjs`를 `pdf`로 추가: 6개, 1,909,875바이트. `.vite/`는 목록을 만든 뒤 지움(배포 제외). 회귀 "엔진 목록"에 PDF(같은 프레임이라 fetch 아닌 요청으로 판정). 변이(pdf.mjs 제외) → "pdf: large startup downloads missing". verify·`upstream:check -- --current` 단위 51/51·브라우저 28, 두 산출물 목록 6개 | (이 커밋) |
 | 6b. 미리 받기 순서 | 완료: 순서에 `pdf`. 회귀(마지막에 PDF → PDF 파일이 첫 요청, PDF 연 뒤 worker 네트워크 전송 1회 이하). 첫 화면 미리 받기 필수 합계 18.46MB 중 PDF 1.91MB(엔진 미리 받기 문서에 표). verify 단위 51/51·브라우저 29. 변이는 안 돌림(`engineOrder`가 목록에 없는 마지막 엔진을 무시하는 경로라 단언이 바로 실패함) | (이 커밋) |
 | 6c. 번들 경계 시험 | 완료: 빌드 플러그인이 `.vite/chunk-modules.json`(청크별 모듈 ID) 기록, `tests/bundle-boundary.mjs <outDir>`가 첫 화면·Word·한글·PDF 진입에서 `PdfEditor`를 넘지 않고 닿는 청크 6개에 PDF 패키지 모듈 0건 확인. verify가 PDF 목록 추가 뒤·`.vite/` 삭제 전에 실행. 변이 3개(셸이 `configurePdf`·pdfjs `version`·`PDFDocument.create`를 씀) → 각각 새어 들어온 모듈 이름으로 실패. verify 단위 51/51·브라우저 30, `dist/` 없이 `upstream:check -- --current` 통과 | (이 커밋) |
-| 7a·7b. 공용화 리팩터링 | 대기 | |
+| 7a. 선택기 타입 공용화 | 완료: `PickerWindow`를 `src/fileAccess.ts`로, Word 엔진 복사 목록에 추가. Word 엔진 타입 검사 713파일 0 오류, verify 단위 51/51·통합(원본 보호·사본 저장·외부 변경) PASS·브라우저 30 | (이 커밋) |
+| 7b. 해시·쓰기 공용화 | 대기 | |
 | 8a~8c. 주석·편집 상태 보존 | 대기 | |
 | 9a~9c. 보존 검사·판별·worker | 대기 | |
 | 10a~10e. 저장·복원·이탈 확인 | 대기 | |

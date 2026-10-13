@@ -49,7 +49,7 @@ export async function buildEngines({ lockPath = join(root, 'upstreams.lock.json'
   await cp(join(root, 'overlays/edentext/ko.ts'), join(word, 'src/lib/i18n/locales/ko.ts'));
   const product = join(word, 'src/product');
   await mkdir(product, { recursive: true });
-  for (const name of ['HangulEditor.svelte', 'HangulFileMenu.svelte', 'hangulFiles.ts', 'editorState.ts', 'hangulShortcuts.ts']) await cp(join(root, 'src', name), join(product, name));
+  for (const name of ['HangulEditor.svelte', 'HangulFileMenu.svelte', 'hangulFiles.ts', 'fileAccess.ts', 'editorState.ts', 'hangulShortcuts.ts']) await cp(join(root, 'src', name), join(product, name));
   await writeFile(join(word, 'src/lib/components/HangulWorkbench.svelte'), `<script lang="ts">\nimport HangulEditor from '../../product/HangulEditor.svelte';\nlet props = $props();\n</script>\n<HangulEditor {...props} startNew={true} engineUrl="../../rhwp/index.html?chrome=embed" homeUrl="../../" />\n`);
   const wordApp = join(word, 'src/App.svelte');
   let app = await readFile(wordApp, 'utf8');

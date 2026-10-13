@@ -5,11 +5,12 @@
     import { setupPdf } from './setup';
     import { messages } from './messages';
     import type { EditorStatus } from '../editorState';
+    import type { PickerWindow } from '../fileAccess';
     setupPdf();
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
 
     interface Opened { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null }
-    const pickers = window as Window & { showOpenFilePicker?: (options: unknown) => Promise<FileSystemFileHandle[]> };
+    const pickers = window as PickerWindow;
     let opened = $state.raw<Opened | null>(null);
     let pages = $state(0);
     let zoom = $state(1);

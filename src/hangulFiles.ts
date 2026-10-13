@@ -25,11 +25,6 @@ export function bridgeFrom(frame: HTMLIFrameElement): HangulBridge {
     return bridge;
 }
 
-export type PickerWindow = Window & {
-    showOpenFilePicker?: (options: unknown) => Promise<FileSystemFileHandle[]>;
-    showSaveFilePicker?: (options: unknown) => Promise<FileSystemFileHandle>;
-};
-
 export async function fingerprint(file: File): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
     return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
