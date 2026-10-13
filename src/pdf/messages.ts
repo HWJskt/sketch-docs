@@ -15,4 +15,10 @@ export const messages = {
     copy: '복사', copyText: '텍스트 복사', undo: '실행 취소', redo: '다시 실행', delete: '삭제', color: '색', annotation: '주석',
     underline: '밑줄', strikeout: '취소선', highlight: '형광펜', comment: '메모', addNote: '메모 추가…', editNote: '메모 편집',
     tool_select: '선택', tool_hand: '이동', tool_highlight: '형광펜', tool_underline: '밑줄', tool_strikeout: '취소선', tool_note: '메모', tool_ink: '펜', tool_rect: '사각형',
+    annotateSelection: '선택한 글에 주석', highlightColor: '형광펜 {color}', label: '이름표', changeType: '종류 바꾸기', markupStyle: '모양', reply: '답글',
+    annotationsOnPage: '{page}쪽 주석', annotationMarkers: '{page}쪽 주석 표시', annotationNote: '메모: {note}',
+    pendingKeep: '유지', pendingDiscard: '버리기', pendingColor: '색',
+    kind_highlight: '형광펜', kind_underline: '밑줄', kind_strikeout: '취소선', kind_note: '메모', kind_ink: '펜', kind_rect: '사각형', kind_other: '주석',
+    announceCreated: '{kind}을(를) 만들었습니다. 메모를 입력하고 Enter로 유지, Escape로 버립니다.',
+    announceDeleted: '주석을 지웠습니다', announceDeletedMany: '주석 {count}개를 지웠습니다', announceDiscarded: '버렸습니다', announceOverlap: '겹친 주석 {count}개 중 {index}번째',
 };

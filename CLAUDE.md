@@ -9,6 +9,7 @@
 - 어떤 실행도 사용자 편집 파일, upstream 수정 파일, 백업을 덮어쓰거나 삭제하지 않는다.
 - 공개 저장소 `HWJskt/sketch-docs`(public). push하면 바로 공개된다. 원본 코드·`backups/`·비밀값은 올리지 않는다. push는 명시 요청 때만 한다.
 - 브라우저 테스트는 playwright-core와 설치된 Chrome을 사용하고, 자신이 시작한 서버·브라우저는 finally에서 닫는다.
+- PDF 편집기는 npm `svelte-pdf-mini`를 정확한 버전으로 고정해 공개 API만 쓴다(패치·overlay 없음). 저장 정책·보존 검사의 근거는 `docs/plans/2026-10-13-pdf-viewer.md`.
 - 구조·실행·업데이트 절차는 README.md, 목표·계획·검증 결과는 docs/에 기록한다.
 
 ## 배포 (배포)

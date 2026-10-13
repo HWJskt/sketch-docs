@@ -395,6 +395,9 @@ const scenarios = [
         assert.deepEqual(await kinds(page), six);
         assert.equal(await page.locator('.pdf-editor [data-pdf-annotation][data-kind=rect]').getAttribute('data-color'), 'blue');
         assert.equal(await page.locator('.pdf-editor [data-pdf-annotation][data-kind=highlight]').getAttribute('data-color'), 'yellow');
+        // Screen-reader announcements are Korean too.
+        assert.equal(await page.getByText(/[A-Za-z]+ created\./).count(), 0);
+        assert.ok(await page.getByText(/을\(를\) 만들었습니다/).count() > 0);
         assert.equal(await page.locator('.product-document-dirty').count(), 1, 'unsaved marker');
         // The new note keeps its text: opening it shows the text again.
         await page.getByRole('button', { name: '선택', exact: true }).click();

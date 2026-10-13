@@ -1,6 +1,6 @@
 # Sketch Docs
 
-브라우저에서 Word(DOCX·ODT)와 한글(HWP·HWPX) 문서를 편집하는 웹 편집기. 서버에 문서를 올리지 않는다. 파일은 브라우저의 로컬 파일 API로 열고 저장한다.
+브라우저에서 Word(DOCX·ODT)와 한글(HWP·HWPX) 문서를 편집하고, PDF를 보며 주석을 다는 웹 편집기. 서버에 문서를 올리지 않는다. 파일은 브라우저의 로컬 파일 API로 열고 저장한다.
 
 - 서비스: <https://docs.sketchps.app>
 - 라이선스: [AGPL-3.0-only](LICENSE)
@@ -16,6 +16,7 @@ Sketch Docs는 오픈 소스 편집기 세 개를 하나의 화면으로 묶는�
 | [EdenText](https://github.com/stffnb/edentext) | Word 편집기 (DOCX/ODT) | AGPL-3.0-only |
 | [HOP](https://github.com/golbin/hop) | 한글 편집 호스트와 검증된 rhwp WASM | MIT |
 | [rhwp](https://github.com/edwardkim/rhwp) | 한글 문서 엔진과 웹 Studio | MIT |
+| [svelte-pdf-mini](https://github.com/julien-blanchon/svelte-pdf-mini) 0.9.1 (npm, 정확한 버전 고정·패치 안 함) | PDF 보기·주석 부품, 주석 읽기·쓰기(pdf.js 6.4.299·@cantoo/pdf-lib 2.11.1) | MIT (pdf.js Apache-2.0) |
 
 **이 저장소에는 우리 코드만 있다.** 세 원본은 `upstreams.lock.json`에 고정한 커밋으로 `source/`에 내려받는다(Git에는 포함하지 않음). 빌드는 다음 순서로 진행한다.
 
@@ -27,7 +28,10 @@ Sketch Docs는 오픈 소스 편집기 세 개를 하나의 화면으로 묶는�
 
 | 경로 | 내용 |
 |---|---|
-| `src/`, `index.html`, `word.html`, `hwp.html` | 공통 셸, 편집기 전환, 한글 파일 메뉴·저장, 정보 창 |
+| `src/`, `index.html`, `word.html`, `hwp.html`, `pdf.html` | 공통 셸, 편집기 전환, 한글 파일 메뉴·저장, 정보 창 |
+| `src/pdf/` | PDF 편집기: 보기·주석, 저장 트랜잭션(`save.ts`), 보존 검사(`preserve.ts`), 서명·암호 판별, 내보내기 worker, 복구 사본 |
+| `scripts/pdf-assets.mjs`, `scripts/pdf-manifest.mjs` | pdf.js 자산을 `pdfjs/<버전>/`에 배치, PDF 엔진 파일 목록 |
+| `scripts/make-pdf-fixtures.mjs`, `tests/fixtures/pdf/` | 시험용 PDF 7종(의존성 없이 생성, `--check`로 재현 비교) |
 | `overlays/edentext/` | EdenText 변경: 한국어 기본값·번역, 저장 메뉴, 셸 연결 |
 | `overlays/rhwp/` | rhwp Studio 변경: 호스트 연결(열기·저장·인쇄·변경 상태), 파일 메뉴 스타일 |
 | `scripts/build-engines.mjs` | 원본 검증, 복사본에 변경 적용, 엔진 빌드 |
@@ -55,7 +59,9 @@ npm run dev                # 엔진 빌드 후 http://localhost:5173
 - `/word.html`: Word 편집기. 새 문서는 DOCX로 저장한다.
 - `/hwp.html`: 한글 편집기. 파일 메뉴에서 새 문서·열기·저장·다른 이름으로 저장(.hwpx/.hwp)·인쇄를 할 수 있다.
 
-공통 헤더의 W·한 버튼은 두 편집기의 작성 중 문서와 저장 대상을 각각 유지한 채 전환한다. 형식 변환은 하지 않는다. 파일 열기·저장은 File System Access API를 지원하는 데스크톱 Chrome·Edge에서 동작한다.
+공통 헤더의 W·한·PDF 버튼은 세 편집기의 작성 중 문서와 저장 대상을 각각 유지한 채 전환한다.
+
+PDF 편집기는 형광펜·밑줄·취소선·메모·펜·사각형 주석을 표준 PDF 주석으로 저장한다. 열린 파일에 저장(Ctrl+S)하기 전에 저장본을 다시 읽어 원본과 비교하고(보존 검사), 그 세션에서 처음 덮어쓸 때 원본을 브라우저 저장소에 보관한다("저장 전 원본 복원"). 서명된 PDF와 암호 PDF는 열어서 주석을 달 수 있지만 저장하지 않는다. 형식 변환은 하지 않는다. 파일 열기·저장은 File System Access API를 지원하는 데스크톱 Chrome·Edge에서 동작한다.
 
 ## 빌드와 검증
 
@@ -76,7 +82,9 @@ npm run verify   # 배포 전 필수 검사
    - 원본 Git 조작: ignored 파일 보존, 체크아웃 복원, fork 폴백
    - 서비스 워커: 캐시 쓰기 실패, 오프라인 대체, 리다이렉트 저장, 옛 캐시 정리
    - 엔진 파일 목록(`engines/manifest.json`): 진입 JS·CSS·WASM, 미리 받을 글꼴·이미지
-   - 엔진 미리 받기: 진행률, 중복 요청 공유, 형식 선택 시 다른 엔진 중단, 정체 알림, 실패 뒤 다시 받기
+   - 엔진 미리 받기: 진행률, 중복 요청 공유, 형식 선택 시 다른 엔진 중단, 정체 알림, 실패 뒤 다시 받기, 목록에 없는 엔진
+   - PDF: 보존 검사(시험용 PDF 왕복과 손상 13종), 서명·암호 판별, 저장 트랜잭션(복구 사본·탭 간 잠금·외부 변경·직렬), 내보내기 worker 시간 상한, 복구 사본 저장소, 주석 dirty 판정, pdf.js 자산·엔진 목록
+   - 라이선스 고지: 런타임 npm 의존성 전부
 5. Chrome 통합 시험 (`tests/integration.mjs`)을 돌린다.
    - Word: DOCX 저장 내용
    - 한글: HWP/HWPX 저장·재열기, 원본 보호, 사본 재저장, 인쇄
@@ -89,6 +97,8 @@ npm run verify   # 배포 전 필수 검사
    - 엔진 파일 목록: 각 편집기가 처음 열 때 받는 100KB 넘는 파일이 모두 목록에 있고, 목록의 필수 파일은 실제로 받는지
    - 엔진 다운로드 진행 화면: 느린 네트워크에서 진행률 표시 뒤 편집기가 열리고 WASM은 한 번만 받는지, 정체·실패 시 다시 시도
    - 첫 화면 미리 받기: 마지막으로 쓴 편집기 먼저, 받는 도중에 골라도 처음부터 다시 받지 않음, 뒤로 가기로 첫 화면 복귀, Save-Data면 받지 않음
+   - 번들 경계(`tests/bundle-boundary.mjs`): 첫 화면·Word·한글 쪽 청크에 PDF 라이브러리 모듈이 없는지
+   - PDF 브라우저 시험(`tests/pdf.integration.mjs`): 보기 기능, 같은 출처 자산, 주석 6종, 다른 이름으로·열린 파일 저장과 재열기, 서명·암호 거절, 두 탭 동시 저장, 원본 복원, 이탈 확인
 7. 배포 산출물이 파일당 25MiB, 전체 20,000개 제한 안에 드는지 확인한다.
 8. 검사하는 동안 우리 코드나 lock이 바뀌지 않았는지 확인한다.
 
