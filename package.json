@@ -30,7 +30,7 @@
     "@noble/hashes": "2.4.0",
     "canvaskit-wasm": "0.42.0",
     "fflate": "0.8.2",
-    "svelte": "5.55.9"
+    "svelte": "5.57.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.1.2",
