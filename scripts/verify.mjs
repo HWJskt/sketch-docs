@@ -63,6 +63,8 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/release-info.test.mjs'), join(root, 'tests/upstream-git.test.mjs'), join(root, 'tests/service-worker.test.mjs'), join(root, 'tests/engine-manifest.test.mjs'), join(root, 'tests/engine-preload.test.mjs'), join(root, 'tests/pdf-assets.test.mjs'), join(root, 'tests/pdf-manifest.test.mjs')], { cwd: root, stdio: 'inherit' });
   await build({ root, publicDir, build: { outDir, emptyOutDir: true } });
   await addPdfEngine(outDir);
+  // Reads the build's .vite/ metadata, so it runs before that is removed from the output.
+  execFileSync(process.execPath, [join(root, 'tests/bundle-boundary.mjs'), outDir], { cwd: root, stdio: 'inherit' });
   await dropBuildMetadata(outDir);
   for (const test of ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
   const output = await outputHash(outDir);
