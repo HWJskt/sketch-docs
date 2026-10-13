@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { root, buildEngines, verifySources } from './build-engines.mjs';
 import { sourceRevision } from './revision.mjs';
+import { addPdfEngine, dropBuildMetadata } from './pdf-manifest.mjs';
 
 // Cloudflare Pages limits: https://developers.cloudflare.com/pages/platform/limits/
 export const PAGES_MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -59,8 +60,10 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   }
   execFileSync('npm', ['run', 'check'], { cwd: root, stdio: 'inherit' });
   execFileSync('npm', ['run', 'check'], { cwd: join(cache, 'word'), stdio: 'inherit' });
-  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/release-info.test.mjs'), join(root, 'tests/upstream-git.test.mjs'), join(root, 'tests/service-worker.test.mjs'), join(root, 'tests/engine-manifest.test.mjs'), join(root, 'tests/engine-preload.test.mjs'), join(root, 'tests/pdf-assets.test.mjs')], { cwd: root, stdio: 'inherit' });
+  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/release-info.test.mjs'), join(root, 'tests/upstream-git.test.mjs'), join(root, 'tests/service-worker.test.mjs'), join(root, 'tests/engine-manifest.test.mjs'), join(root, 'tests/engine-preload.test.mjs'), join(root, 'tests/pdf-assets.test.mjs'), join(root, 'tests/pdf-manifest.test.mjs')], { cwd: root, stdio: 'inherit' });
   await build({ root, publicDir, build: { outDir, emptyOutDir: true } });
+  await addPdfEngine(outDir);
+  await dropBuildMetadata(outDir);
   for (const test of ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
   const output = await outputHash(outDir);
   assertPagesLimits(output.files);

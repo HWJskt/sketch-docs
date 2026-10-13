@@ -199,6 +199,18 @@ try {
     const ready = {
       word: () => wordFrame(page).locator('.tiptap').first().waitFor(),
       hwp: () => page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor(),
+      // pdf.js and its worker load with the first document, so open one.
+      pdf: async () => {
+        await page.getByRole('button', { name: 'PDF 열기' }).waitFor();
+        const bytes = [...await readFile(join(root, 'tests/fixtures/pdf/a-basic.pdf'))];
+        await page.evaluate(async bytes => {
+          const handle = await (await navigator.storage.getDirectory()).getFileHandle('manifest.pdf', { create: true });
+          const stream = await handle.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close();
+          window.showOpenFilePicker = async () => [handle];
+        }, bytes);
+        await page.getByRole('button', { name: 'PDF 열기' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
+      },
     };
     for (const [name, open] of Object.entries(ready)) {
       const listed = new Set([...engines[name].required, ...engines[name].warm].map(file => file.path));
@@ -208,7 +220,8 @@ try {
       const record = async response => {
         const url = new URL(response.url());
         if (url.origin !== origin || response.status() !== 200) return;
-        if (response.frame() !== page.mainFrame()) byEditor.add(url.pathname.slice(1));
+        // The PDF editor runs in the shell's own frame: there, everything but the preloader's fetches is its own.
+        if (name === 'pdf' ? response.request().resourceType() !== 'fetch' : response.frame() !== page.mainFrame()) byEditor.add(url.pathname.slice(1));
         const bytes = (await response.body().catch(() => Buffer.alloc(0))).length;
         seen.set(url.pathname.slice(1), bytes);
       };
