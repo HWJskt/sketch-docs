@@ -2,7 +2,7 @@
     import { mount, unmount, onDestroy } from 'svelte';
     import type { EditorStatus, HangulInput } from './editorState';
     import HangulFileMenu from './HangulFileMenu.svelte';
-    import { bridgeFrom, writeArtifact, type HangulBridge, type HangulFormat } from './hangulFiles';
+    import { assertNoContentLoss, bridgeFrom, writeArtifact, type HangulBridge, type HangulFormat } from './hangulFiles';
     import { fingerprint, type PickerWindow } from './fileAccess';
     let { initialFile, onExit, startNew = true, engineUrl = './rhwp/index.html?chrome=embed', homeUrl = './', embedded = false, onState }: {
         initialFile?: { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null };
@@ -29,6 +29,9 @@
     let message = $state('한글 편집기를 준비하고 있습니다.');
     let target = $state.raw<FileSystemFileHandle | null>(null);
     let original: FileSystemFileHandle | null = null;
+    // The opened file's bytes: a save picker empties the file it returns, so if the original is chosen by
+    // mistake it is written back from here.
+    let originalBytes: Uint8Array | null = null;
     let targetHash = '';
     let targetFormat: HangulFormat = 'hwpx';
     const pickers = window as PickerWindow;
@@ -49,7 +52,7 @@
         busy = true;
         try {
             await replaceDocument(() => bridge!.open(file.bytes, file.name));
-            hasDocument = true; name = file.name; original = file.handle; target = null;
+            hasDocument = true; name = file.name; original = file.handle; originalBytes = file.handle ? file.bytes.slice() : null; target = null;
             format = /\.hwpx$/i.test(name) ? 'hwpx' : 'hwp';
             message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
             return true;
@@ -66,7 +69,7 @@
             documentEpoch = undefined;
             unsubscribeState = bridge.subscribe(state => {
                 if (documentEpoch !== undefined && state.epoch !== documentEpoch) {
-                    target = original = null; targetHash = '';
+                    target = original = null; originalBytes = null; targetHash = '';
                 }
                 documentEpoch = state.epoch;
                 name = state.name || '새 문서';
@@ -95,6 +98,7 @@
                 hasDocument = true;
                 name = initialFile.name;
                 original = initialFile.handle;
+                originalBytes = initialFile.handle ? initialFile.bytes.slice() : null;
                 format = /\.hwpx$/i.test(name) ? 'hwpx' : 'hwp';
                 message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
             } else if (startNew) await create();
@@ -111,7 +115,7 @@
             let epoch: number | undefined;
             try { epoch = bridge?.state().epoch; } catch { /* No document after failed initialization. */ }
             if (epoch !== previousEpoch) {
-                target = original = null;
+                target = original = null; originalBytes = null;
                 hasDocument = false;
             }
             throw error;
@@ -125,7 +129,7 @@
             hasDocument = true;
             name = '새 문서';
             format = 'hwpx';
-            target = original = null;
+            target = original = null; originalBytes = null;
             message = '새 문서입니다. 저장할 형식을 선택하세요.';
         } catch (error) { report(error); }
         finally { busy = false; }
@@ -143,6 +147,7 @@
             name = file.name;
             format = /\.hwpx$/i.test(name) ? 'hwpx' : 'hwp';
             original = handle;
+            originalBytes = bytes.slice();
             target = null;
             message = '파일을 열었습니다. 원본 보존 검증 전에는 다른 이름으로 저장하세요.';
         } catch (error) { report(error); }
@@ -154,14 +159,26 @@
         const chosen = requestedFormat;
         busy = true;
         try {
-            const handle = asNew || !target || chosen !== targetFormat ? await pickers.showSaveFilePicker!({
+            // Export and check first: a save picker empties an existing file as soon as it is chosen, so nothing
+            // may be refused after it opens.
+            const artifact = bridge.export(chosen);
+            assertNoContentLoss(artifact);
+            const picked = asNew || !target || chosen !== targetFormat;
+            const handle = picked ? await pickers.showSaveFilePicker!({
                 suggestedName: name.replace(/\.(hwp|hwpx)$/i, '') + '.' + chosen,
                 types: [{ description: chosen.toUpperCase(), accept: { 'application/octet-stream': ['.' + chosen] } }],
-            }) : target;
-            if (original && await original.isSameEntry(handle)) throw new Error('원본 보존 검증 전에는 원본과 다른 파일을 선택하세요.');
+            }) : target!;
+            if (picked && original && await original.isSameEntry(handle)) {
+                // The picker emptied the original: put its bytes back before refusing.
+                if (!originalBytes) throw new Error('원본 파일을 선택해 원본이 비워졌습니다. 원본을 다시 저장할 수 없습니다.');
+                const stream = await handle.createWritable();
+                try { await stream.write(new Uint8Array(originalBytes)); await stream.close(); }
+                catch (error) { await stream.abort().catch(() => undefined); throw new Error(`원본 파일을 선택해 원본이 비워졌고, 되돌리지 못했습니다. ${error instanceof Error ? error.message : String(error)}`); }
+                throw new Error('원본 보존 검증 전에는 원본과 다른 파일을 선택하세요. 선택하면서 비워진 원본은 되돌렸습니다.');
+            }
             if (!handle.name.toLowerCase().endsWith('.' + chosen)) throw new Error('선택한 형식과 파일 확장자가 일치해야 합니다.');
-            const hash = target && await target.isSameEntry(handle) ? targetHash : await fingerprint(await handle.getFile());
-            const artifact = bridge.export(chosen);
+            // A picked file holds what it holds now (emptied if it existed); the current target must still hold what was saved.
+            const hash = picked ? await fingerprint(await handle.getFile()) : targetHash;
             await writeArtifact(handle, artifact, hash);
             target = handle;
             format = targetFormat = chosen;

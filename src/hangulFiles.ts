@@ -27,9 +27,14 @@ export function bridgeFrom(frame: HTMLIFrameElement): HangulBridge {
     return bridge;
 }
 
-export async function writeArtifact(handle: FileSystemFileHandle, artifact: HangulArtifact, expectedHash: string) {
+/** Throws when the export reported lost content. Called before a save picker opens (it empties the chosen file). */
+export function assertNoContentLoss(artifact: HangulArtifact) {
     if (artifact.contentLoss.schemaVersion !== 1 || artifact.contentLoss.count !== 0 || artifact.contentLoss.losses.length) {
         throw new Error('내용 손실이 보고되어 저장을 중단했습니다. 원본과 편집 내용은 유지됩니다.');
     }
+}
+
+export async function writeArtifact(handle: FileSystemFileHandle, artifact: HangulArtifact, expectedHash: string) {
+    assertNoContentLoss(artifact);
     await writeIfUnchanged(handle, new Uint8Array(artifact.bytes), expectedHash);
 }

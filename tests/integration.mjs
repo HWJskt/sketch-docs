@@ -334,13 +334,16 @@ try {
     window.__original = await directory.getFileHandle('original.hwpx', { create: true });
     const stream = await window.__original.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close();
     window.showOpenFilePicker = async () => [window.__original];
-    window.showSaveFilePicker = async () => window.__original;
+    // Like Chrome, the save picker empties an existing file when it is chosen.
+    window.showSaveFilePicker = async () => { const stream = await window.__original.createWritable(); await stream.close(); return window.__original; };
   }, saved);
   await frame.locator('textarea').focus();
   await page.keyboard.press('ControlOrMeta+o');
   await status('파일을 열었습니다').waitFor();
   await action('저장');
   await status('원본과 다른 파일').waitFor();
+  assert.match(await page.getByRole('status').filter({ hasText: '원본과 다른 파일' }).first().textContent(), /비워진 원본은 되돌렸습니다/);
+  assert.deepEqual(await page.evaluate(async () => Array.from(new Uint8Array(await (await window.__original.getFile()).arrayBuffer()))), saved, 'the emptied original is written back');
   await page.evaluate(async () => {
     const directory = await navigator.storage.getDirectory();
     window.__copy = await directory.getFileHandle('copy.hwpx', { create: true });
@@ -357,6 +360,12 @@ try {
   await action('저장');
   await status('copy.hwpx 저장 완료').waitFor();
   assert.equal(await frame.locator('.product-document-name').textContent(), 'copy.hwpx');
+  // Save As onto the current copy again: the picker empties it, and the save still goes through.
+  await page.evaluate(() => { window.showSaveFilePicker = async () => { const stream = await window.__copy.createWritable(); await stream.close(); return window.__copy; }; });
+  await frame.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+Shift+s');
+  await page.waitForFunction(async () => (await window.__copy.getFile()).size > 0);
+  await status('copy.hwpx 저장 완료').waitFor();
   const files = await page.evaluate(async () => ({
     original: Array.from(new Uint8Array(await (await window.__original.getFile()).arrayBuffer())),
     copy: Array.from(new Uint8Array(await (await window.__copy.getFile()).arrayBuffer())),
