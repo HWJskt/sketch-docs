@@ -67,6 +67,7 @@
         }
     }
     async function choose() {
+        if (dirty && !confirm('저장하지 않은 주석이 있습니다. 다른 PDF를 열까요?')) return;
         // Without the File System Access API the file has no handle; saving then needs a new target.
         if (!pickers.showOpenFilePicker) { input?.click(); return; }
         let handle: FileSystemFileHandle;

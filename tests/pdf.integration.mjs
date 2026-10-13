@@ -97,13 +97,14 @@ async function ink(page) {
     return count;
 }
 
-/** A page that records page errors and requests to other origins. */
-async function open(browser, path) {
+/** A page that records page errors and requests to other origins; confirm dialogs are accepted unless a test answers them. */
+async function open(browser, path, { answerDialogs = true } = {}) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     page.setDefaultTimeout(30000);
     const errors = [], external = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('request', request => { const url = request.url(); if (!url.startsWith(origin) && !/^(?:data|blob):/.test(url)) external.push(url); });
+    if (answerDialogs) page.on('dialog', dialog => dialog.accept());
     await page.goto(origin + path);
     return { page, errors, external };
 }
@@ -629,6 +630,48 @@ const scenarios = [
         await page.getByRole('status').filter({ hasText: 'restored.pdf(으)로 저장했습니다' }).waitFor();
         assert.deepEqual(await savedBytes(page), [...await fixture('a-basic.pdf')], 'the restored file is the original');
         assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['unsaved annotations: opening another PDF, going back to the start page and closing the tab ask first', async browser => {
+        const { page, errors } = await open(browser, '/', { answerDialogs: false });
+        const dialogs = [];
+        let answer = false;
+        page.on('dialog', async dialog => { dialogs.push(dialog.type()); await (answer ? dialog.accept() : dialog.dismiss()); });
+        await page.getByRole('link', { name: /PDF 문서/ }).click();
+        await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
+        await openPdf(page, 'a-basic.pdf');
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 400); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 440, { steps: 8 }); await page.mouse.up();
+        await page.locator('.product-document-dirty').waitFor();
+        // Another PDF: cancelled, the document and its unsaved state stay.
+        await page.evaluate(() => { window.__opened = 0; const previous = window.showOpenFilePicker; window.showOpenFilePicker = async (...args) => { window.__opened++; return previous(...args); }; });
+        await page.getByRole('button', { name: 'PDF 열기' }).click();
+        await page.waitForTimeout(300);
+        assert.deepEqual(dialogs, ['confirm']);
+        assert.equal(await page.evaluate(() => window.__opened), 0, 'no file picker after cancelling');
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        // Back to the start page: cancelled, still in the editor.
+        await page.goBack();
+        await page.waitForTimeout(500);
+        assert.deepEqual(dialogs, ['confirm', 'confirm']);
+        await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
+        assert.equal(await page.locator('.pdf-editor .name').textContent(), 'a-basic.pdf');
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        // Leaving the page (closing the tab or going elsewhere): the browser asks; staying keeps everything.
+        // page.close({ runBeforeUnload }) did not raise the prompt in headless Chrome; a real navigation does.
+        const here = page.url();
+        await page.goto(origin + '/word.html').catch(error => assert.match(String(error), /ERR_ABORTED/));
+        assert.equal(dialogs.at(-1), 'beforeunload');
+        assert.equal(page.url(), here);
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        // Accepting another PDF opens it.
+        answer = true;
+        await openPdf(page, 'e-image.pdf');
+        assert.equal(await page.locator('.product-document-dirty').count(), 0);
+        assert.deepEqual(errors, []);
+        page.removeAllListeners('dialog');
         await page.close();
     }],
 ];
