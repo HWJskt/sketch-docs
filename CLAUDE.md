@@ -9,6 +9,8 @@
 - 어떤 실행도 사용자 편집 파일, upstream 수정 파일, 백업을 덮어쓰거나 삭제하지 않는다.
 - 공개 저장소 `HWJskt/sketch-docs`(public). push하면 바로 공개된다. 원본 코드·`backups/`·비밀값은 올리지 않는다. push는 명시 요청 때만 한다.
 - 브라우저 테스트는 playwright-core와 설치된 Chrome을 사용하고, 자신이 시작한 서버·브라우저는 finally에서 닫는다.
+  - 하나만: 빌드된 `dist/`로 `node tests/regressions.mjs`(`pdf.integration.mjs`·`integration.mjs`, 다른 출력은 `TEST_DIST=`). 단위 테스트는 `node --import ./tests/ts-resolve.mjs --test tests/<파일>`(Word 엔진 tsconfig가 `.ts` import를 막는다).
+  - Word는 `navigator.language`의 Hunspell 사전을 시작 뒤 받는다(이 기기 ko는 없음, CI en은 1.3MB). 네트워크를 재는 시나리오는 `locale`을 고정한다. 저장 선택기는 고른 파일을 비운다 — 검사는 선택기 전에(공통 정본 `~/Coding/.claude/docs/stacks/기타-실측함정.md` §4).
 - PDF 편집기는 npm `svelte-pdf-mini`를 정확한 버전으로 고정해 공개 API만 쓴다(패치·overlay 없음). 저장 정책·보존 검사의 근거는 `docs/plans/2026-10-13-pdf-viewer.md`.
 - 구조·실행·업데이트 절차는 README.md, 목표·계획·검증 결과는 docs/에 기록한다.
 
@@ -16,7 +18,7 @@
 
 - 정책: **명시 요청 때만 배포한다.** push만으로는 배포되지 않는다(Git 연동 자동 배포 없음). 2026-10-12 사용자 결정.
 - 대상: Cloudflare Pages 프로젝트 `sketch-docs` → `docs.sketchps.app`.
-- 절차: `npm run verify` → 커밋을 `origin/main`에 push → `npm run mirrors:check`(필요하면 `mirrors:pin`) → `npm run deploy`.
+- 절차: `npm run verify` → 커밋을 `origin/main`에 push → `gh run list --limit 3`으로 CI verify 확인 → `npm run mirrors:check`(필요하면 `mirrors:pin`) → `npm run deploy`.
   - `deploy`는 다음을 모두 확인한 뒤에만 wrangler로 `dist/`를 올린다: 검증 보고와 커밋·코드·`dist` 해시 일치, 깨끗한 작업 트리, push된 커밋, 보존 fork의 고정 커밋 태그.
 - wrangler는 4.149.0(2026-10-14 업그레이드: 4.142의 undici·sharp·miniflare npm audit 권고 해결, `npm audit` 0건). 업그레이드 뒤 `wrangler whoami`·`wrangler pages project list`로 확인했다.
 - 배포 뒤 `npm run test:live`(기본 `https://docs.sketchps.app`, `LIVE_ORIGIN`으로 바꿈)로 실제 URL에서 브라우저 회귀 시험을 돌린다.
