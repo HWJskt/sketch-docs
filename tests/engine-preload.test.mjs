@@ -118,3 +118,26 @@ test('an unreadable file list is a ManifestError, so the editor can open without
   const missing = createPreloader({ base, fetch: async () => new Response('', { status: 404 }) });
   await assert.rejects(missing.prepare('word'), error => error instanceof ManifestError && /404/.test(error.message));
 });
+
+test('switching to another editor keeps downloading the files the first editor is waiting on', { timeout: 5000 }, async () => {
+  const net = network();
+  const preloader = createPreloader({ base, fetch: net.fetch });
+  const hwp = preloader.prepare('hwp');
+  const wasm = await net.stream('h.wasm');
+  wasm.send(3);
+  const word = preloader.prepare('word');
+  const js = await net.stream('w.js');
+  js.send(4); js.end();
+  await word;
+  (await net.stream('h.js')).send(2); (await net.stream('h.js')).end();
+  wasm.send(3); wasm.end();
+  await hwp;
+  assert.equal(net.fetched('h.wasm'), 1);
+});
+
+test('a file list request that never answers gives up as a ManifestError', { timeout: 5000 }, async () => {
+  const { ManifestError } = await import('../src/enginePreload.ts');
+  const hanging = (url, init) => new Promise((resolve, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason)));
+  const preloader = createPreloader({ base, fetch: hanging, manifestLimitMs: 200 });
+  await assert.rejects(preloader.prepare('word'), error => error instanceof ManifestError);
+});

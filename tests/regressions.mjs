@@ -152,10 +152,13 @@ try {
     };
     for (const [name, open] of Object.entries(ready)) {
       const listed = new Set([...engines[name].required, ...engines[name].warm].map(file => file.path));
-      const seen = new Map();
+      // `byEditor`: requests from the editor's own iframe. The shell's preloader fetches every
+      // required file itself, so its requests cannot show that the editor needs a file.
+      const seen = new Map(), byEditor = new Set();
       const record = async response => {
         const url = new URL(response.url());
         if (url.origin !== origin || response.status() !== 200) return;
+        if (response.frame() !== page.mainFrame()) byEditor.add(url.pathname.slice(1));
         const bytes = (await response.body().catch(() => Buffer.alloc(0))).length;
         seen.set(url.pathname.slice(1), bytes);
       };
@@ -166,7 +169,7 @@ try {
       context.off('response', record);
       const unlisted = [...seen].filter(([path, bytes]) => bytes > 100_000 && !listed.has(path));
       assert.deepEqual(unlisted, [], `${name}: large startup downloads missing from the engine manifest`);
-      const missing = engines[name].required.map(file => file.path).filter(path => !seen.has(path));
+      const missing = engines[name].required.map(file => file.path).filter(path => !byEditor.has(path));
       assert.deepEqual(missing, [], `${name}: manifest requires files the editor never downloads`);
     }
   }, { contextOptions: { serviceWorkers: 'block' } });
@@ -215,9 +218,8 @@ try {
     cdp.on('Network.requestWillBeSent', event => { const path = new URL(event.request.url).pathname; if (/^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path); });
     cdp.on('Network.responseReceived', event => urls.set(event.requestId, event.response.url));
     cdp.on('Network.loadingFinished', event => { if (urls.get(event.requestId)?.endsWith('.wasm')) transfers.push(event.encodedDataLength); });
+    await page.addInitScript(() => localStorage.setItem('sketch-docs-last-engine', 'hwp'));
     await page.goto(origin + '/');
-    await page.evaluate(() => localStorage.setItem('sketch-docs-last-engine', 'hwp'));
-    await page.reload();
     await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('.wasm') && entry.responseEnd > 0), null, { timeout: 60000 });
     assert.match(order[0] ?? '', /^\/rhwp\//, `the last used editor downloads first (order: ${order.slice(0, 3)})`);
     await page.getByRole('link', { name: /한글 문서/ }).click();

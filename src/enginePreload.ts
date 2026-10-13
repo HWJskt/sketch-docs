@@ -6,18 +6,20 @@ export interface EngineFiles { required: ManifestFile[]; warm: ManifestFile[]; r
 export interface Manifest { schemaVersion: number; engines: Record<Engine, EngineFiles> }
 export interface Progress { loaded: number; total: number }
 
-interface Download { loaded: number; done: Promise<void>; controller: AbortController }
+// `wanted`: an editor is waiting on this file, so choosing another editor must not stop it.
+interface Download { loaded: number; done: Promise<void>; controller: AbortController; wanted: boolean }
 /** The file list itself could not be read; callers may open the editor without progress. */
 export class ManifestError extends Error {}
 type Fetch = (url: string, init: RequestInit & { priority?: 'high' | 'low' }) => Promise<Response>;
 
-export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis) }: { base: string; fetch?: Fetch }) {
+export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis), manifestLimitMs = 10000 }: { base: string; fetch?: Fetch; manifestLimitMs?: number }) {
     const downloads = new Map<string, Download>();
     let manifest: Promise<Manifest> | undefined;
     let chosen: Engine | undefined;
 
     function load(): Promise<Manifest> {
-        manifest ??= fetch(new URL('engines/manifest.json', base).href, { cache: 'no-cache' }).then(async response => {
+        // The list is optional; a request that hangs must not keep the editor closed.
+        manifest ??= fetch(new URL('engines/manifest.json', base).href, { cache: 'no-cache', signal: AbortSignal.timeout(manifestLimitMs) }).then(async response => {
             if (!response.ok) throw new ManifestError(`엔진 목록을 받지 못했습니다 (${response.status}).`);
             return response.json() as Promise<Manifest>;
         }).catch(error => { manifest = undefined; throw error instanceof ManifestError ? error : new ManifestError(String(error)); });
@@ -27,9 +29,9 @@ export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis
     // One download per file; later callers share it. A failed or aborted download is forgotten so a retry starts over.
     function download(file: ManifestFile, priority: 'high' | 'low'): Download {
         const existing = downloads.get(file.path);
-        if (existing) return existing;
+        if (existing) { existing.wanted ||= priority === 'high'; return existing; }
         const controller = new AbortController();
-        const entry: Download = { loaded: 0, controller, done: Promise.resolve() };
+        const entry: Download = { loaded: 0, controller, done: Promise.resolve(), wanted: priority === 'high' };
         entry.done = (async () => {
             const response = await fetch(new URL(file.path, base).href, { signal: controller.signal, priority });
             if (!response.ok || !response.body) throw new Error(`엔진 파일을 받지 못했습니다 (${response.status}).`);
@@ -61,14 +63,15 @@ export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis
             }
         },
         /**
-         * Waits for the chosen engine's required files and stops downloads that belong only to other engines.
+         * Waits for the chosen engine's required files and stops background downloads of other engines
+         * (files another editor is waiting on continue).
          * Its warm files continue in the background. `onProgress` fires as bytes arrive.
          */
         async prepare(engine: Engine, { onProgress = () => {}, onStall = () => {}, stallMs = 15000 }: { onProgress?: (progress: Progress) => void; onStall?: () => void; stallMs?: number } = {}) {
             chosen = engine;
             const { engines } = await load();
             const mine = new Set([...engines[engine].required, ...engines[engine].warm].map(file => file.path));
-            for (const [path, entry] of downloads) if (!mine.has(path)) entry.controller.abort();
+            for (const [path, entry] of downloads) if (!mine.has(path) && !entry.wanted) entry.controller.abort();
             const files = engines[engine].required;
             // A stall only informs the caller; the download keeps going until restart().
             let last = -1, since = Date.now(), warned = false;

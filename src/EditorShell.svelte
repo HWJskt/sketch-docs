@@ -86,6 +86,7 @@
                     if (!await hangul!.openDocument(file)) return;
                 } else { initialFile = file; hangulLoaded = true; }
                 active = 'hwp';
+                rememberEngine('hwp');
                 history.pushState({mode:'hwp'}, '', new URL('./hwp.html', location.href));
                 document.title = '한글 · Sketch Docs';
             },

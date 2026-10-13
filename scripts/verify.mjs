@@ -55,7 +55,7 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   await buildEngines({ lockPath, cache, output: publicDir });
   if (candidate) {
     await mkdir(publicDir, { recursive: true });
-    for (const name of ['favicon.svg', 'sw.js']) await writeFile(join(publicDir, name), await readFile(join(root, 'public', name)));
+    for (const name of ['favicon.svg', 'sw.js', '_headers']) await writeFile(join(publicDir, name), await readFile(join(root, 'public', name)));
   }
   execFileSync('npm', ['run', 'check'], { cwd: root, stdio: 'inherit' });
   execFileSync('npm', ['run', 'check'], { cwd: join(cache, 'word'), stdio: 'inherit' });

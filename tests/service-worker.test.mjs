@@ -8,14 +8,18 @@ import vm from 'node:vm';
 const source = await readFile(resolve(import.meta.dirname, '../public/sw.js'), 'utf8');
 const scope = 'https://docs.example/';
 
-function worker({ network, failPut = false, existing = {} }) {
+function worker({ network, failPut = false, holdPut = false, existing = {} }) {
   const stores = new Map(Object.entries(existing).map(([name, entries]) => [name, new Map(Object.entries(entries))]));
   const key = request => typeof request === 'string' ? request : request.url ?? request.href;
   const open = name => {
     if (!stores.has(name)) stores.set(name, new Map());
     const store = stores.get(name);
     return {
-      async put(request, response) { if (failPut) throw new DOMException('quota', 'QuotaExceededError'); store.set(key(request), response); },
+      async put(request, response) {
+        if (failPut) throw new DOMException('quota', 'QuotaExceededError');
+        if (holdPut) await new Promise(() => {});
+        store.set(key(request), response);
+      },
       async match(request) { return store.get(key(request)); },
       async addAll(urls) { for (const url of urls) store.set(url, await network(url)); },
     };
@@ -33,13 +37,17 @@ function worker({ network, failPut = false, existing = {} }) {
     skipWaiting: async () => {}, clients: { claim: async () => {} },
   };
   vm.runInNewContext(source, { self, caches, fetch: request => network(key(request)), URL, Response, console: { warn() {} } });
+  // Resolves to the respondWith answer for fetch events, or after waitUntil for others.
+  const background = [];
   const dispatch = async (type, request) => {
-    let pending;
-    const event = { request, waitUntil: promise => { pending = promise; }, respondWith: promise => { pending = promise; } };
+    let answer;
+    const event = { request, waitUntil: promise => { background.push(promise); }, respondWith: promise => { answer = promise; } };
     listeners[type](event);
-    return pending;
+    if (type === 'fetch') return answer;
+    await Promise.all(background);
   };
-  return { stores, dispatch, cacheName: 'sketch-docs-build2' };
+  const settled = () => Promise.all(background);
+  return { stores, dispatch, settled, cacheName: 'sketch-docs-build2' };
 }
 const get = url => ({ url: scope + url, method: 'GET' });
 // A same-origin network response as a worker sees it (Node's Response reports type "default").
@@ -58,11 +66,19 @@ test('a failed cache write still returns the network response', async () => {
   assert.equal(await response.text(), 'fresh');
 });
 
+test('the answer does not wait for the cache write', async () => {
+  const sw = worker({ holdPut: true, network: async () => ok('fresh') });
+  const answer = await Promise.race([sw.dispatch('fetch', get('engines/word/assets/app.js')), new Promise(resolve => setTimeout(() => resolve('blocked'), 1000))]);
+  assert.notEqual(answer, 'blocked', 'respondWith waited for cache.put');
+  assert.equal(await answer.text(), 'fresh');
+});
+
 test('offline requests fall back to the copy stored under the extensionless URL', async () => {
   let online = true;
   const sw = worker({ network: async url => { if (!online) throw new TypeError('offline'); return ok('page ' + new URL(url).pathname); } });
   await sw.dispatch('fetch', get('word'));
   await sw.dispatch('fetch', get('engines/word/'));
+  await sw.settled();
   online = false;
   assert.equal(await (await sw.dispatch('fetch', get('word.html'))).text(), 'page /word');
   assert.equal(await (await sw.dispatch('fetch', get('engines/word/index.html'))).text(), 'page /engines/word/');

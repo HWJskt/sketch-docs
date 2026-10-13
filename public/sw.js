@@ -41,7 +41,8 @@ function offlineCandidates(href) {
   }
   return result;
 }
-async function respond(request) {
+async function respond(event) {
+  const request = event.request;
   let response;
   try {
     response = await fetch(request);
@@ -52,10 +53,14 @@ async function respond(request) {
     }
     throw error;
   }
-  // Storage is best effort: a full or unavailable cache never replaces a network answer.
+  // Storage is best effort and runs after the answer: a full or slow cache never replaces or delays it
+  // (the page reads the body as it arrives to show download progress).
   if (response.ok && response.type === 'basic') {
-    try { await store(await caches.open(CACHE), request, response); }
-    catch (error) { console.warn('[sw] cache write failed', error); }
+    const copy = response.clone();
+    event.waitUntil((async () => {
+      try { await store(await caches.open(CACHE), request, copy); }
+      catch (error) { console.warn('[sw] cache write failed', error); }
+    })());
   }
   return response;
 }
@@ -63,5 +68,5 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
   if (['./rhwp/', './legal/'].some(path => url.pathname.startsWith(new URL(path, self.location.href).pathname))) return;
-  event.respondWith(respond(event.request));
+  event.respondWith(respond(event));
 });
