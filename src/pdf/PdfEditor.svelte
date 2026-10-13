@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Document, Find, PageNav, Viewer, Zoom } from 'svelte-pdf-mini';
+    import { Document, Find, Outline, PageNav, Thumbnails, Viewer, Zoom } from 'svelte-pdf-mini';
     import type { ZoomMode } from 'svelte-pdf-mini';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
@@ -12,6 +12,7 @@
     let pages = $state(0);
     let zoom = $state(1);
     let current = $state(1);
+    let panel = $state<'outline' | 'thumbnails' | null>(null);
     let zoomMode = $state<ZoomMode>('page-width');
     let error = $state('');
     let input = $state<HTMLInputElement>();
@@ -51,6 +52,8 @@
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
                     <div class="view-tools" role="toolbar" aria-label="보기">
+                        <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
+                        <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>
                         <Zoom.Out>−</Zoom.Out>
                         <span class="zoom">{Math.round(zoom * 100)}%</span>
                         <Zoom.In>+</Zoom.In>
@@ -68,6 +71,18 @@
                             <Find.Next>↓</Find.Next>
                         </span>
                     </div>
+                    <div class="body">
+                    {#if panel === 'outline'}
+                        <aside class="panel" aria-label="목차">
+                            <Outline.Root><Outline.Tree>{#snippet empty()}<p class="none">목차가 없습니다.</p>{/snippet}</Outline.Tree></Outline.Root>
+                        </aside>
+                    {:else if panel === 'thumbnails'}
+                        <aside class="panel" aria-label="썸네일">
+                            <Thumbnails.Root width={110}>
+                                {#each { length: pages }, index (index)}<Thumbnails.Item pageNumber={index + 1} />{/each}
+                            </Thumbnails.Root>
+                        </aside>
+                    {/if}
                     <Viewer.Viewport class="viewport">
                         <Viewer.Pages>
                             {#snippet children({ pageNumber })}
@@ -75,6 +90,7 @@
                             {/snippet}
                         </Viewer.Pages>
                     </Viewer.Viewport>
+                    </div>
                     </Find.Root>
                 </Viewer.Root>
             </Document.Root>
@@ -92,7 +108,12 @@
     .problem {margin:8px 12px;color:#9a4b00;font-size:13px}
     .empty {margin:auto;font-size:14px}
     .pdf-editor :global(.viewer) {flex:1;min-height:0;display:flex;flex-direction:column}
-    .pdf-editor :global(.viewport) {flex:1;min-height:0}
+    .pdf-editor :global(.viewport) {flex:1;min-width:0;height:100%}
+    .body {flex:1;min-height:0;display:flex}
+    .panel {width:180px;flex:none;overflow:auto;border-right:1px solid #dce1e8;background:#f8f9fb;padding:8px;box-sizing:border-box;font-size:13px}
+    .panel :global([data-pdf-thumbnail]), .panel :global(button) {display:block;margin:0 auto 8px;border:1px solid transparent;background:none;cursor:pointer;font:inherit;color:#243047;text-align:left}
+    .view-tools button[aria-pressed='true'] {border-color:#2563eb;color:#1d4ed8}
+    .none {color:#5b6980}
     .view-tools {display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid #dce1e8;background:#f8f9fb;font-size:13px}
     .view-tools :global(button) {font:inherit;padding:3px 10px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;color:#243047;cursor:pointer}
     .view-tools :global(button[data-active]) {border-color:#2563eb;color:#1d4ed8}

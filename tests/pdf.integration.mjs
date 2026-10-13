@@ -155,6 +155,31 @@ const scenarios = [
         assert.deepEqual(errors, []);
         await page.close();
     }],
+    ['the outline lists the document headings and jumps to their page', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '목차' }).click();
+        const outline = page.getByRole('complementary', { name: '목차' });
+        await outline.getByRole('treeitem').nth(1).waitFor();
+        assert.deepEqual((await outline.getByRole('treeitem').allTextContents()).map(text => text.trim()), ['Introduction', 'Chapter 2']);
+        await outline.getByRole('treeitem', { name: 'Chapter 2' }).getByRole('button').click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.page === '2');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['thumbnails show every page and jump to the one clicked', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '썸네일' }).click();
+        const items = page.getByRole('complementary', { name: '썸네일' }).getByRole('option');
+        await items.nth(2).waitFor();
+        assert.deepEqual((await items.allTextContents()).map(text => text.trim()), ['1', '2', '3']);
+        await page.waitForFunction(() => document.querySelector('.panel [data-pdf-thumbnail][data-rendered] canvas'), null, { timeout: 15000 });
+        await items.nth(2).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.page === '3');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;
