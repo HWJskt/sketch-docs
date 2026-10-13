@@ -146,9 +146,9 @@ try {
   assert.equal(new URL(page.url()).pathname, '/hwp.html');
   const hangulBounds = await header.boundingBox();
   assert.equal(hangulBounds.x + hangulBounds.width, headerBounds.x + headerBounds.width);
-  assert.deepEqual(await buttonRects(), wordButtonRects, 'all three button rectangles are identical across editors');
+  assert.deepEqual(await buttonRects(), wordButtonRects, 'all four button rectangles (W, 한, PDF, info) are identical across editors');
   assert.equal(await header.locator('..').evaluate(el => el.getBoundingClientRect().height),36);
-  assert.equal(1440 - (wordButtonRects[2].x + wordButtonRects[2].width),10, 'info right padding adds 4px to previous 6px');
+  assert.equal(1440 - (wordButtonRects.at(-1).x + wordButtonRects.at(-1).width),10, 'info right padding adds 4px to previous 6px');
   assert.equal(await wordElement.evaluate(el => el.parentElement.inert), true);
 
   const status = text => page.getByRole('status').filter({ hasText: text });

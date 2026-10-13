@@ -4,7 +4,9 @@
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
     import { messages } from './messages';
+    import type { EditorStatus } from '../editorState';
     setupPdf();
+    let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
 
     interface Opened { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null }
     const pickers = window as Window & { showOpenFilePicker?: (options: unknown) => Promise<FileSystemFileHandle[]> };
@@ -18,6 +20,9 @@
     let input = $state<HTMLInputElement>();
     // pdf.js takes ownership of the buffer it is given; the original bytes stay ours for saving.
     const src = $derived(opened ? opened.bytes.slice() : null);
+    // Annotations and saving come later (plan steps 8-10); until then a PDF is never dirty or busy.
+    export function getState(): EditorStatus { return { ready: true, busy: false, dirty: false, name: opened?.name ?? '' }; }
+    $effect(() => { void opened; onState(getState()); });
 
     async function load(file: File, handle: FileSystemFileHandle | null) {
         error = ''; pages = 0;

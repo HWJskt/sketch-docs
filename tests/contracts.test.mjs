@@ -86,12 +86,12 @@ test('upstream replacements insert overlay text literally, including $ sequences
 
 test('editor mode follows both .html and extensionless paths', async () => {
   const { modeFromPath } = await import('../src/routes.ts');
-  for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word']]) assert.equal(modeFromPath(path), mode, path);
+  for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word'], ['/pdf.html', 'pdf'], ['/pdf', 'pdf'], ['/app/pdf', 'pdf'], ['/pdfs', 'word'], ['/pdf/', 'word']]) assert.equal(modeFromPath(path), mode, path);
 });
 
 test('the start page path is recognised with and without index.html', async () => {
   const { isHomePath } = await import('../src/routes.ts');
-  for (const [path, home] of [['/', true], ['/index.html', true], ['/index', true], ['/app/', true], ['/word', false], ['/hwp.html', false], ['/indexes', false]]) assert.equal(isHomePath(path), home, path);
+  for (const [path, home] of [['/', true], ['/index.html', true], ['/index', true], ['/app/', true], ['/word', false], ['/hwp.html', false], ['/indexes', false], ['/pdf', false], ['/pdf.html', false]]) assert.equal(isHomePath(path), home, path);
 });
 
 test('deploy output must fit Cloudflare Pages file limits', async () => {

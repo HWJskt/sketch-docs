@@ -54,9 +54,10 @@ async function open(browser, path) {
 }
 
 const scenarios = [
-    ['the standalone PDF editor opens without requests to other origins', async browser => {
+    ['the PDF editor opens in the shell without requests to other origins', async browser => {
         const { page, errors, external } = await open(browser, '/pdf.html');
         await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'PDF', exact: true }).getAttribute('aria-pressed'), 'true');
         assert.deepEqual(errors, []);
         assert.deepEqual(external, []);
         await page.close();
@@ -221,6 +222,26 @@ const scenarios = [
         assert.ok(await ink(page) > 200, 'the decrypted page is drawn');
         assert.deepEqual(errors, []);
         assert.deepEqual(external, []);
+        await page.close();
+    }],
+    ['switching to Word and Hangul and back keeps the open PDF, its page and name', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '다음 쪽' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.page === '2');
+        assert.equal(await page.getByLabel('현재 파일 이름').textContent(), 'a-basic.pdf');
+        await page.getByRole('button', { name: 'Word', exact: true }).click();
+        await page.locator('iframe[title="Word 문서 편집기"]').contentFrame().locator('.tiptap').first().waitFor({ timeout: 60000 });
+        await page.locator('iframe[title="Word 문서 편집기"]').contentFrame().locator('.product-header').getByRole('button', { name: '한글', exact: true }).click();
+        await page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor({ timeout: 60000 });
+        await page.locator('iframe[title="한글 문서 편집기"]').contentFrame().locator('.product-header').getByRole('button', { name: 'PDF', exact: true }).click();
+        await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
+        assert.equal(await page.locator('.pdf-editor').getAttribute('data-page'), '2');
+        assert.equal(await page.locator('.pdf-editor').getAttribute('data-pages'), '3');
+        assert.equal(await page.getByLabel('현재 파일 이름').textContent(), 'a-basic.pdf');
+        assert.ok(await ink(page) > 1000, 'the page is still drawn');
+        assert.equal(new URL(page.url()).pathname, '/pdf.html');
+        assert.deepEqual(errors, []);
         await page.close();
     }],
 ];

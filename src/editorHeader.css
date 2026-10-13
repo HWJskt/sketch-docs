@@ -5,9 +5,12 @@
 .sketch-menu-row #menu-bar > .menu-item > .menu-dropdown,
 .sketch-menu-row .product-file-dropdown {position:fixed;top:36px;left:8px}
 }
-.product-header {box-sizing:border-box;display:flex;align-items:center;padding:0;height:36px;flex:0 0 116px;width:116px;color:inherit;font:13px system-ui,sans-serif}
-.product-switches {box-sizing:border-box;display:grid;grid-template-columns:54px 26px;column-gap:14px;align-items:center;flex:0 0 116px;width:116px;height:36px;padding:0 10px 0 12px}
-.product-header nav {display:flex;gap:2px;width:54px;height:24px}
+/* 150px wide; EditorShell.svelte keeps the same width clear in Word's modern toolbar. */
+.product-header {box-sizing:border-box;display:flex;align-items:center;padding:0;height:36px;flex:0 0 150px;width:150px;color:inherit;font:13px system-ui,sans-serif}
+.product-switches {box-sizing:border-box;display:grid;grid-template-columns:88px 26px;column-gap:14px;align-items:center;flex:0 0 150px;width:150px;height:36px;padding:0 10px 0 12px}
+.product-header nav {display:flex;gap:2px;width:88px;height:24px}
+/* W and 한 are one glyph; PDF needs a wider button (nav = 26 + 26 + 32 + 2 gaps). */
+.product-header nav button[aria-label="PDF"] {width:32px;min-width:32px;max-width:32px;font-size:11px}
 .product-header button {box-sizing:border-box;font:inherit;cursor:pointer;border:1px solid transparent;background:transparent;color:inherit;border-radius:4px;height:24px;width:26px;min-width:26px;max-width:26px;padding:0;line-height:22px}
 .product-header button.chosen {background:#e8eff8;color:#284f79;border-color:#9cb4d2;font-weight:700;box-shadow:inset 0 -2px #466d9b}
 .product-header button:hover:enabled {background:#e8eef5;color:#284f79}
@@ -16,7 +19,7 @@
 .product-header .info {font-size:21px;margin:0}
 .editor-shell > .product-header {position:absolute;right:0;top:0;z-index:2;background:#f8fafc}
 
-.product-header.with-name {width:auto;flex-basis:auto;max-width:48%;min-width:116px}
+.product-header.with-name {width:auto;flex-basis:auto;max-width:48%;min-width:150px}
 .product-document-meta {display:flex;align-items:center;gap:6px;min-width:0;padding-left:8px}
 .product-document-dirty {flex-shrink:0;font-size:11px;color:var(--w-text-dim,#8a5a24)}
 .product-document-name {min-width:0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:inherit}
@@ -28,8 +31,8 @@
 
 /* Keep the native toggle in its menu event container, beside the document name. */
 .sketch-menu-row {position:relative}
-.sketch-menu-row #toolbox-basic-toggle {position:absolute;right:116px;top:6px;margin:0;width:28px;height:24px;z-index:1}
+.sketch-menu-row #toolbox-basic-toggle {position:absolute;right:150px;top:6px;margin:0;width:28px;height:24px;z-index:1}
 .product-header.with-name .product-document-meta {margin-right:28px}
-.product-header.with-name {min-width:144px}
+.product-header.with-name {min-width:178px}
 .sketch-menu-row .ribbon-tab-file {background:none;color:var(--w-text);padding:5px 9px;margin-right:0;border-radius:4px 4px 0 0}
 .sketch-menu-row .ribbon-tab-file:hover,.sketch-menu-row .ribbon-tab-file.open {background:none;color:var(--w-accent)}

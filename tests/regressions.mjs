@@ -120,6 +120,35 @@ try {
     await context.setOffline(false);
   });
 
+  await scenario('clean URLs: the PDF editor through the header, direct URLs, reload and history', async page => {
+    const pdfShown = () => page.waitForFunction(() => !document.querySelector('.engine:has(.pdf-editor)')?.hidden && document.querySelector('.pdf-editor'));
+    const wordShown = () => page.waitForFunction(() => document.querySelector('.engine:not([hidden]) iframe')?.title === 'Word 문서 편집기');
+    await page.goto(origin + '/pdf');
+    await pdfShown();
+    assert.equal(await page.title(), 'PDF 문서 · Sketch Docs');
+    await page.reload();
+    await pdfShown();
+    await page.getByRole('button', { name: 'Word', exact: true }).click();
+    await wordShown();
+    await page.waitForURL(url => /^\/word(?:\.html)?$/.test(new URL(url).pathname));
+    await page.goBack();
+    await pdfShown();
+    assert.equal(new URL(page.url()).pathname, '/pdf');
+    await page.goForward();
+    await wordShown();
+    await wordFrame(page).locator('.product-header').getByRole('button', { name: 'PDF', exact: true }).click();
+    await pdfShown();
+    await page.waitForURL(url => /^\/pdf(?:\.html)?$/.test(new URL(url).pathname));
+    await page.goto(origin + '/pdf.html');
+    await page.waitForURL(origin + '/pdf');
+    await pdfShown();
+    await page.goto(origin + '/hwp');
+    await page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor();
+    await page.locator('iframe[title="한글 문서 편집기"]').contentFrame().locator('.product-header').getByRole('button', { name: 'PDF', exact: true }).click();
+    await pdfShown();
+    await page.waitForURL(url => /^\/pdf(?:\.html)?$/.test(new URL(url).pathname));
+  });
+
   await scenario('service worker install failure still opens Word online', async page => {
     failShell = true;
     try {
@@ -151,6 +180,10 @@ try {
     await page.evaluate(() => localStorage.setItem('edentext-chrome', 'modern'));
     await page.reload();
     const word = wordFrame(page);
+    // The shell header floats over the right end of this toolbar; it must not cover toolbar buttons.
+    await word.locator('.save-chevron').waitFor();
+    const header = await page.locator('.editor-shell > .product-header').boundingBox();
+    for (const box of await word.locator('.header-actions button').evaluateAll(buttons => buttons.filter(b => b.offsetParent).map(b => { const r = b.getBoundingClientRect(); return { x: r.x, right: r.right, label: b.getAttribute('aria-label') ?? b.title ?? b.textContent }; }))) assert.ok(box.right <= header.x, `${box.label} (${box.x}-${box.right}) is under the header from ${header.x}`);
     await word.locator('.save-chevron').click();
     const items = (await word.locator('.theme-dropdown [role="menuitem"]').allTextContents()).join('\n');
     assert.match(items, /\(\.docx\)/);
