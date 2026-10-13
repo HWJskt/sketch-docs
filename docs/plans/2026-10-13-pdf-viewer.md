@@ -5,7 +5,8 @@
 개정 이력:
 - 초안(`c27c593`, `8c1ce1a`)
 - Codex 계획 리뷰 1차 2회(고유 지적 13건, 모두 수용) → `e353ae2`
-- Codex 계획 리뷰 2차 2회(고유 지적 10건, 모두 수용. 1차와 겹치지 않는 새 지적: 여러 탭 저장, 복구 사본, 보존 검사 범위, 엔진 목록 시작점, 번들 시험 순서, 서명 픽스처) → 이 판
+- Codex 계획 리뷰 2차 2회(고유 지적 10건, 모두 수용. 1차와 겹치지 않는 새 지적: 여러 탭 저장, 복구 사본, 보존 검사 범위, 엔진 목록 시작점, 번들 시험 순서, 서명 픽스처) → `790ec0c`
+- Codex 계획 리뷰 3차 2회(herdr pane, 고유 지적 10건, 모두 수용: 증분 저장 접두부 검사 무효, 열거식 보존 검사, 복구 사본 확인 시점, 5단계 순서, PDF 브라우저 시험 게이트 등록, 청크 안 모듈 식별, 전환 시험 강도, 단계 분할, 외부 계약 합격 조건, 라이선스 수집 분리) → 이 판
 
 ## 사용자 결정 (2026-10-13)
 
@@ -15,23 +16,19 @@
 - 엔진 미리 받기: DOCX·HWPX·PDF 엔진 모두 첫 화면에서 백그라운드로 받는다. 순서는 마지막에 쓴 편집기 → DOCX → HWPX → PDF.
 - 참고: [xivly](https://github.com/julien-blanchon/xivly)(MIT, 같은 라이브러리로 만든 리더)의 주석 도구막대·저장 흐름·pdf.js 자산 설정. 코드를 그대로 가져오면 그 파일에 MIT 고지를 단다.
 
-**사용자 확인 필요(계획 2차 리뷰에서 생김):** 아래 "복구 사본"과 "원본 복원" 메뉴. 확인 전에는 10c단계를 시작하지 않는다.
+**사용자 확인 필요(계획 2차 리뷰에서 생김):** 아래 "복구 사본"과 "원본 복원" 메뉴. 확인 결과를 이 절에 기록하기 전에는 원본 덮어쓰기를 켜는 10c와 복원 메뉴 10d를 시작하지 않는다. 10a·10b(가짜 핸들 시험, 다른 이름으로 저장만)는 진행할 수 있다.
 
 ## 저장 정책
 
 - **열린 파일에 저장(Ctrl+S):** PDF를 열 때의 파일 핸들과 기준 해시를 저장 대상으로 삼는다. 한글과 다르다. 한글은 형식 변환 손실 때문에 원본 덮어쓰기를 막는다. PDF는 원본에 주석만 더하고, 아래 보존 검사와 복구 사본을 통과할 때만 쓴다.
-- **보존 방식:** 0단계 결과로 둘 중 하나를 정한다.
-  - **A. 증분 저장(우선):** 원본 바이트는 그대로 두고 바뀐 객체를 뒤에 덧붙인다. 보존 검사는 두 가지다.
-    1. 출력의 앞 `원본 길이` 바이트가 원본과 같다.
-    2. 다시 읽었을 때 쪽마다 주석이 "기존 주석 + 우리가 만든 주석"과 같다.
-  - **B. 재작성:** 원본 바이트가 남지 않는다. 내보낸 PDF를 다시 읽어 아래 객체를 원본과 비교하고, 하나라도 다르면 쓰지 않는다.
-    - 쪽 수
-    - 쪽마다 `MediaBox`·`CropBox`·`Rotate`
-    - `Contents`와 `Resources`가 참조하는 객체 그래프의 해시(이미지·글꼴·XObject 포함, `/Annots` 제외)
-    - 기존 주석의 사전과 appearance 스트림 해시
-    - 문서 카탈로그 부가 객체(`AcroForm` 필드 값, `Names`, `Outlines`, `OpenAction`, `Metadata`)의 해시
-    - 비교 코드가 모르는 객체 유형이 있으면 판정 불가로 보고 거절한다.
-  - B로 가게 되면 9단계 전에 사용자에게 보고한다(저장을 거절하는 문서가 늘 수 있음).
+- **보존 검사:** 저장 방식(증분 저장이든 재작성이든)과 상관없이 같은 검사를 한다. 증분 저장도 원본 객체를 뒤에서 재정의할 수 있어서 "앞부분 바이트가 원본과 같다"는 보존 증거가 아니다.
+  - 원본과 출력을 각각 최종 xref로 해석한다. trailer의 `/Root`·`/Info`에서 시작해 도달하는 객체 그래프 전체를 값으로 비교한다(참조는 따라가서 비교, 객체 번호는 무시, 스트림은 해석한 바이트의 해시).
+  - **허용하는 차이**만 명시한다. 그 밖의 차이는 하나라도 있으면 쓰지 않는다.
+    - 각 쪽의 `/Annots` 배열: 원본 항목이 같은 순서로 모두 남고, 뒤에 snapshot의 새 주석만 더해짐
+    - 새 주석 객체와 그 appearance 스트림: snapshot의 종류·좌표·색·내용과 같음
+    - 문서 정보의 `ModDate`·`Producer`
+  - 비교 코드가 해석하지 못하는 구조(예: 손상된 xref, 객체 스트림 해석 실패)는 판정 불가로 보고 거절한다.
+  - 0b에서 export가 증분 저장인지도 기록한다. 증분이면 복구가 쉬워지지만(원본 길이까지 자르면 됨) 검사를 줄이지는 않는다.
 - **복구 사본(사용자 확인 필요):**
   - 열린 파일에 처음 덮어쓰기 직전에 원본 바이트를 브라우저의 Origin Private File System에 저장한다.
   - 저장한 사본의 해시가 원본 해시와 같음을 확인한 뒤에만 쓴다. 사본을 못 만들면 쓰지 않는다.
@@ -83,17 +80,18 @@
 | DoD | 시험(파일) | 판정 |
 |---|---|---|
 | 1 | 회귀 `tests/regressions.mjs` | PDF 카드·헤더 전환·직접 URL·뒤로/앞으로·새로고침의 각 단계에서 PDF 화면과 주소 일치 |
-| 1(상태) | 통합 `tests/pdf.integration.mjs` | Word·한글·PDF에 각각 문서를 열고 편집 → W→한→PDF→W 전환 → 세 편집기의 문서 이름·dirty·undo 가능 여부가 전환 전과 같음 |
+| 1(보기 상태) | 통합 `tests/pdf.integration.mjs` (5c) | Word·한글·PDF에 서로 다른 문서와 저장 대상을 연결 → W→한→PDF→W 전환 → 각 편집기의 문서 본문(PDF는 현재 쪽·배율), 문서 이름이 전환 전과 같음 |
+| 1(편집 상태) | 통합 (8c) | 세 편집기에 구별되는 편집(Word·한글 본문, PDF 주석)과 서로 다른 파일 핸들 → 왕복 전환 → 실제 내용 비교, undo→redo 결과 비교. 각 편집기에서 저장 → 자기 대상만 바뀌고 나머지 두 파일 해시 그대로(10b 이후 PDF 포함). 이름·dirty는 보조 단언 |
 | 2 | 통합 | 픽스처 A: 쪽 수 3, 찾기 "Résumé"·"resume" 결과 수 같음, 목차 2번째 항목 → 2쪽, 썸네일 3개, 확대 후 scale 변화, 맞춤 두 종류의 쪽 너비 값, 선택 후 클립보드 문자열, `window.print` 호출. 픽스처 D: 틀린 비밀번호 → 다시 묻기, 맞는 비밀번호 → 1쪽 렌더 |
 | 3 | 통합 | A·C1·D에서 6종을 각각 그린 뒤 주석 목록(종류·좌표·색·내용), undo 6회 → 0개, redo 6회 → 6개 |
-| 4(보존) | 단위 `tests/pdf-preserve.test.mjs` | A·E 왕복 보존 통과. 변이마다 거절: 이미지 XObject 제거(E), `Rotate` 변경, 기존 주석 appearance 변경, 양식 값 변경, 앞부분 1바이트 변경(방식 A) |
+| 4(보존) | 단위 `tests/pdf-preserve.test.mjs` | A·E·F 왕복 보존 통과. 변이마다 거절(재작성 출력과, 원본 뒤에 덧붙인 증분 출력 두 형태로 각각): 이미지 XObject 제거(E), `Contents` 비우기, `Rotate` 변경, `UserUnit`·`Group` 삭제(F), `PageLabels` 삭제(F), 기존 주석 appearance 변경, 양식 값 변경, snapshot에 없는 주석 추가. 손상 xref → 판정 불가 거절 |
 | 4(판별) | 단위 `tests/pdf-preserve.test.mjs` | C1·D 거절, C2 저장 가능 |
 | 4(트랜잭션) | 단위 `tests/pdf-save.test.mjs`(가짜 파일 핸들) | snapshot·직렬화·늦은 응답 무시. 권한 거절, `createWritable`·`write`·`close` 실패 주입 → 원본 해시·저장 대상·dirty·주석 이력 유지, busy 해제. 복구 사본 실패 → writable 생성 0회. 잠금 안 해시 재확인 |
 | 4(UI) | 통합 | 저장 왕복 후 주석 목록이 저장 전과 같음. 거절 경우마다 writable 생성 0회와 원본 해시 같음. 같은 파일을 연 두 페이지가 동시에 저장 → 한쪽 성공, 다른 쪽 "밖에서 바뀐 파일" 거절·dirty 유지. 원본 복원 결과 해시 = 원본 해시 |
 | 5 | 통합 | 승인·취소 양쪽, 3가지 경로 |
 | 6 | 통합 | Playwright 요청 로그에서 다른 출처 0건. 픽스처 B에서 같은 출처 cMap 응답 200, canvas 영역 비어 있지 않음. 변이: cMap 경로를 틀리게 하면 실패 |
 | 7 | `npm run verify` 전체 | 기존 시험 실패 0 |
-| 8 | 빌드 뒤 시험 `tests/bundle-boundary.mjs <outDir>`, 회귀(엔진 목록에 pdf) | PDF 모듈이 진입·셸 그래프에 0건. 목록의 `pdf` 파일이 실제 PDF 열기 요청과 같음 |
+| 8 | 빌드 뒤 시험 `tests/bundle-boundary.mjs <outDir>`, 회귀(엔진 목록에 pdf) | 빌드 훅이 기록한 청크별 모듈 ID로 판정: 진입·셸에서 정적으로 닿는 청크의 모듈 중 세 PDF 패키지 경로 0건. 목록의 `pdf` 파일이 실제 PDF 열기 요청과 같음. 변이: 각 패키지에서 실제로 쓰는 export 하나를 셸에 넣으면 실패 |
 | 9 | 단위 `tests/release-info.test.mjs` | LICENSE 없는 의존성 → 실패 |
 | 10 | `npm run verify`, `npm run upstream:check -- --current`, `npm run build` | 셋 다 통과, Pages 제한 검사 통과 |
 | 11 | 수동(명령과 결과를 이 문서에 기록) | `npm run dev` → `/pdf`에서 픽스처 B 열기 성공, worker 요청 200 |
@@ -111,6 +109,7 @@
 | C2 | 빈 서명 필드만 있음 |
 | D | 사용자 암호 `test` |
 | E | 이미지 XObject 1개를 쓰는 1쪽 |
+| F | 쪽에 `/UserUnit 2`·`/Group`, 카탈로그에 `/PageLabels`, 우리 비교 코드가 따로 다루지 않는 사용자 키 `/XSketchTest` |
 
 `node scripts/make-pdf-fixtures.mjs --check`는 다시 만든 바이트가 커밋된 파일과 같은지 비교한다(날짜·ID를 고정한다).
 
@@ -158,33 +157,39 @@
 - 단계마다 적힌 명령을 돌려 기대값을 확인한 뒤 커밋한다.
 - 새 단위 시험은 `package.json`의 `test:contracts`와 `scripts/verify.mjs`의 단위 시험 목록에 같은 커밋에서 등록한다.
 - 빌드 산출물을 읽는 시험은 단위 목록에 넣지 않는다. `verify.mjs`의 빌드 뒤 단계에서 `outDir`을 인자로 준다.
+- PDF 브라우저 시험은 `tests/pdf.integration.mjs` 하나에 모은다. 4a-1에서 `verify.mjs`의 빌드 뒤 브라우저 시험 목록(지금 `integration`·`regressions`)에 등록하고 같은 `TEST_DIST=outDir`을 준다. 그래서 일반·후보 검증과 push CI가 매번 돌린다. runner는 스스로 빌드하지 않는다.
+- `npm run test:pdf` = `npm run build && TEST_DIST=dist node tests/pdf.integration.mjs`. 4a-1에서 일부러 PDF 단언 하나를 틀리게 해 `test:pdf`·`verify`·`upstream:check -- --current`가 모두 실패하는지 확인한다.
 
 ### 0a. 픽스처
-- `scripts/make-pdf-fixtures.mjs`와 픽스처 A·B·C1·C2·D·E를 커밋한다.
+- `scripts/make-pdf-fixtures.mjs`와 픽스처 A·B·C1·C2·D·E·F를 커밋한다.
 - 명령: `node scripts/make-pdf-fixtures.mjs --check`. 기대: exit 0.
 - 픽스처가 pdf.js로 열리는지는 0b의 0번 항목에서 확인한다(pdf.js는 0b에서 설치).
 
 ### 0b. 라이브러리 실행 확인 (커밋은 시험 스크립트와 기록)
 - `scripts/pdf-probe/run.mjs --dir <임시폴더>`: 임시 폴더에 `svelte-pdf-mini@0.9.1`을 설치하고 아래를 차례로 확인해 JSON으로 출력한다. 시작한 서버·브라우저는 finally에서 닫는다.
-  0. 픽스처 6개를 pdf.js로 연다(D는 비밀번호 `test`). 기대: 쪽 수 A=3, 나머지 1. 안 열리면 0a로 돌아가 고친다.
-  1. 설치본의 무결성 값·`exports`·타입 선언, `pdfjs-dist` 실제 버전과 `cmaps/`·`standard_fonts/`·`wasm/`·`iccs/`·worker 경로
+  0. 픽스처 7개를 pdf.js로 연다(D는 비밀번호 `test`). 기대: 쪽 수 A=3, 나머지 1. 안 열리면 0a로 돌아가 고친다.
+  1. 설치본의 무결성 값·`exports`·타입 선언, peer, 전이 의존성 버전, `pdfjs-dist` 실제 버전과 `cmaps/`·`standard_fonts/`·`wasm/`·`iccs/`·worker 경로. 기대: 계획이 쓰는 공개 심볼이 타입 선언에 모두 있음 — 보기 컴포넌트, `configurePdf`, `svelte-pdf-mini/pdf-codec`의 주석 읽기·쓰기와 `exportPdf`(정확한 이름은 이 항목에서 확정해 기록)
   2. 렌더링: 시험 페이지를 우리 Vite로 빌드해 Chrome(playwright-core)으로 연다. `configurePdf`에 같은 출처 경로를 주고 B를 그린다. 기대: 외부 출처 요청 0건, cMap 응답 200, canvas 비어 있지 않음.
   3. 주석 왕복: 같은 페이지의 Web Worker에서 `pdf-codec`으로 A에 6종 주석을 쓰고 다시 읽는다. 기대: 종류·좌표(±0.01)·색·내용이 같음.
-  4. 증분 여부: 3의 출력 앞 `A 길이` 바이트가 A와 같은지. 기대값 없음(결과로 보존 방식 A/B를 정한다).
-  5. 판별·보존 검사 API: `@cantoo/pdf-lib`로 C1의 `/V`, C2의 빈 필드, D의 암호 표시, E의 XObject 그래프를 읽는다. 기대: 넷 다 읽힘.
+  4. 증분 여부: 3의 출력 앞 `A 길이` 바이트가 A와 같은지. 기대값 없음(기록만 한다).
+  5. 판별·보존 검사 API: `@cantoo/pdf-lib`로 C1의 `/V`, C2의 빈 필드, D의 암호 표시, E의 XObject 그래프, F의 `/UserUnit`·`/PageLabels`, 3의 출력의 최종 xref 객체를 읽는다. 기대: 모두 읽힘.
   6. 암호 보기: D를 비밀번호 `test`로 그린다. 기대: canvas 비어 있지 않음.
 - 명령: `node scripts/pdf-probe/run.mjs --dir <scratch>`. 기대: exit 0, 항목 0·1·2·3·5·6이 통과.
-- 결과는 `docs/validation/2026-10-13-pdf-probe.md`에 출력 JSON과 함께 적는다. "미확인 전제" 절을 실행 결과로 바꾼다.
-- **합격:** 0·1·2·3·5·6 통과. 하나라도 안 되면 여기서 멈추고 사용자에게 보고한다. 4가 거짓이면 방식 B로 가며, 9단계 전에 사용자에게 보고한다.
+- 결과는 `docs/validation/2026-10-13-pdf-probe.md`에 출력 JSON, 최소 실행 코드 경로, 확인한 xivly 커밋 전체 SHA와 함께 적는다. "미확인 전제" 절을 실행 결과로 바꾼다.
+- **합격:** 0·1·2·3·5·6 통과. 하나라도 안 되면 여기서 멈추고 사용자에게 보고한다. 합격 기록 전에는 1단계 이후를 시작하지 않는다.
 
 ### 1. Svelte 업그레이드만
 - 시작 전에 첫 화면·Word·한글 진입 청크 크기를 기록한다.
 - `svelte`를 ≥5.57로 올린다.
 - 명령: `npm run verify`. 기대: 단위·통합·회귀 실패 0(현재 단위 40·회귀 14).
 
-### 2a. 라이선스 수집기 (동작 보존)
-- `release-info.mjs`가 하드코딩 목록 대신 `npm ls --omit=dev --all --json`으로 런타임 의존성 전체의 LICENSE를 모은다. 없으면 실패한다.
-- 명령: `npm run test:contracts`. 기대: 지금 의존성으로 만든 `legal/` 목록이 바꾸기 전과 같음(시험으로 비교), LICENSE 없는 가짜 의존성 → 실패.
+### 2a-1. 라이선스 수집기 정리 (동작 보존)
+- 지금 하드코딩한 npm 4개(`canvaskit-wasm`·`@noble/hashes`·`fflate`·`svelte`)의 수집을 함수로 뺀다. 목록은 그대로다.
+- 명령: `npm run test:contracts`. 기대: 만든 `legal/` 파일 목록과 `notices.txt` 바이트가 바꾸기 전과 같음(시험으로 비교).
+
+### 2a-2. 런타임 전이 의존성 전체로 확대 (동작 변경)
+- `npm ls --omit=dev --all --json`으로 런타임 의존성 전체를 모은다. 지금 lock에서도 24개다(`clsx`·`esm-env`·`acorn`·`@webgpu/types` 등). LICENSE 파일이 없으면 실패한다.
+- 명령: `npm run test:contracts`, `npm run verify`. 기대: `legal/`에 lock의 런타임 패키지 24개 전부, LICENSE 없는 가짜 의존성 → 실패.
 
 ### 2b. 의존성 추가
 - `svelte-pdf-mini`와 `@cantoo/pdf-lib`(보존 검사용, 0b에서 확인한 버전)를 정확한 버전으로 넣는다. 이 단계에서는 import하지 않는다.
@@ -195,31 +200,60 @@
 - dev 서버도 같은 경로를 쓴다(`npm run dev`가 `build-engines` 뒤에 시작함).
 - 명령: `npm run verify`, `npm run upstream:check -- --current`. 기대: 두 산출물에 `pdfjs/<버전>/` 존재, Pages 제한 통과. 파일 수와 가장 큰 파일 크기를 이 문서에 적는다.
 
-### 4a. 독립 보기: 열기·그리기·확대·쪽 이동
-- `src/pdf/PdfEditor.svelte`와 `src/pdf/setup.ts`(`configurePdf`, 이 모듈 안에서만 import)를 만든다.
+### 4a-1. 독립 진입과 자산 설정
+- `src/pdf/setup.ts`(`configurePdf`, 이 모듈 안에서만 import)와 빈 `src/pdf/PdfEditor.svelte`를 만든다.
 - 시험용 진입 `pdf.html`이 셸 없이 `PdfEditor`를 띄운다. `vite.config.ts`에 `optimizeDeps.exclude: ['pdfjs-dist']`와 입력 `pdf`를 더한다. `verify.mjs`의 `productHash` 목록에 `pdf.html`을 더한다.
-- 명령: `npm run test:pdf`(신규 `tests/pdf.integration.mjs`), `npm run verify`. 기대: DoD 2의 확대·맞춤·쪽 이동, DoD 6 통과, cMap 변이 실패.
+- `tests/pdf.integration.mjs`와 `test:pdf`를 만들고 verify에 등록한다(공통 규칙).
+- 명령: `npm run test:pdf`, `npm run verify`. 기대: `/pdf.html`이 뜨고 외부 출처 요청 0건. 등록 변이 확인.
 
-### 4b. 찾기·목차·썸네일
-- 명령: `npm run test:pdf`. 기대: DoD 2의 찾기·목차·썸네일 항목.
+### 4a-2. 열기·그리기
+- 명령: `npm run test:pdf`. 기대: A 1쪽 canvas가 비어 있지 않음, B에서 DoD 6(cMap 200, 변이 실패).
 
-### 4c. 선택·복사·인쇄
-- 명령: `npm run test:pdf`. 기대: 클립보드 문자열, `window.print` 호출.
+### 4a-3. 확대·맞춤
+- 명령: `npm run test:pdf`. 기대: 확대 후 scale 변화, 맞춤 두 종류의 쪽 너비 값.
+
+### 4a-4. 쪽 이동
+- 명령: `npm run test:pdf`. 기대: 다음·이전·번호 입력으로 현재 쪽 1→2→3→1.
+
+### 4b-1. 찾기
+- 명령: `npm run test:pdf`. 기대: A에서 "Résumé"·"resume" 결과 수 같음.
+
+### 4b-2. 목차
+- 명령: `npm run test:pdf`. 기대: 목차 2번째 항목 → 2쪽.
+
+### 4b-3. 썸네일
+- 명령: `npm run test:pdf`. 기대: 썸네일 3개, 3번째 클릭 → 3쪽.
+
+### 4c-1. 선택·복사
+- 명령: `npm run test:pdf`. 기대: 클립보드 문자열.
+
+### 4c-2. 인쇄
+- 명령: `npm run test:pdf`. 기대: `window.print` 호출.
 
 ### 4d. 암호 PDF 보기
 - 비밀번호 입력 창. 틀리면 다시 묻는다.
 - 명령: `npm run test:pdf`. 기대: DoD 2의 픽스처 D 항목.
 
-### 5. 셸 연결
-- `EditorMode`에 `pdf`를 더한다. `modeFromPath`·`isHomePath` 시험에 PDF 경로를 추가한다.
-- `EditorControls`에 PDF 버튼, `EditorShell`에 동적 import 마운트, 첫 화면 PDF 카드, `home.ts` 카드 가로채기 대상을 추가한다.
-- `EditorShell`의 `states()`·`blocked`·이탈 판단에 PDF 상태를 더한다.
-- `pdf.html`을 셸 진입으로 바꾼다.
-- 명령: `npm run verify`. 기대: DoD 1 회귀, DoD 1(상태) 통합, 기존 회귀 14개 통과.
+### 5a. PDF 엔진 타입과 목록 없는 엔진 처리
+- `enginePreload`의 `Engine`에 `pdf`를 더하고, `EngineProgress`의 라벨을 더한다.
+- 목록(`engines/manifest.json`)에 해당 엔진 항목이 없으면 `prepare`가 `ManifestError`를 던져 진행 화면 없이 열게 한다(dev 서버, 6a 전 빌드).
+- 명령: `npm run test:contracts`, `npm run verify`. 기대: `enginePreload` 단위 시험 "목록에 없는 엔진 → ManifestError" 통과, 기존 시험 통과.
+
+### 5b. 경로
+- `EditorMode`에 `pdf`를 더한다. `modeFromPath`·`isHomePath` 시험에 `/pdf`·`/pdf.html`을 추가한다.
+- 명령: `npm run test:contracts`. 기대: 계약 시험 통과.
+
+### 5c. 셸 마운트·헤더
+- `EditorControls`에 PDF 버튼, `EditorShell`에 `PdfEditor` 동적 import 마운트(필요하면 `EngineProgress engine="pdf"`)를 추가한다. `states()`·`blocked`·이탈 판단에 PDF 상태를 더한다. `pdf.html`을 셸 진입으로 바꾼다.
+- 명령: `npm run verify`. 기대: DoD 1의 헤더 전환·직접 URL·뒤로/앞으로·새로고침 회귀, DoD 1(보기 상태) 통합, 기존 회귀 14개.
 - 수동: `npm run dev` → `/pdf`에서 픽스처 B 열기, worker 요청 200(DoD 11). 결과를 이 문서에 적는다.
 
+### 5d. 첫 화면 카드
+- 첫 화면 PDF 카드와 `home.ts` 카드 가로채기 대상을 추가한다.
+- 명령: `npm run verify`. 기대: DoD 1의 PDF 카드 회귀(같은 화면에서 열림).
+
 ### 6a. PDF 엔진 목록
-- `vite.config.ts`에 `build.manifest: true`를 켠다.
+- `vite.config.ts`에 `build.manifest: true`를 켠다. 산출물의 `.vite/`(manifest와 6c의 모듈 목록)는 검사 자료라 배포 파일에서 뺀다. `outputHash`·Pages 제한 검사·`deploy`가 같은 목록을 쓰는지 시험한다.
 - 셸 빌드 뒤 단계(`scripts/pdf-manifest.mjs`)가 Vite manifest에서 `src/pdf/PdfEditor.svelte`의 동적 청크를 시작점으로 정적 의존 JS·CSS를 모은다. 여기에 3단계의 worker 파일을 더해, 실제 출력 폴더의 `engines/manifest.json`에 `pdf`로 넣는다.
 - 이 단계를 `verify.mjs`(일반·후보)와 `npm run build` 모두에서 부른다. `outputHash`보다 먼저 돈다.
 - 단위 시험: 가짜 Vite manifest로 시작점·의존 수집·누락 파일 실패.
@@ -227,25 +261,32 @@
 
 ### 6b. 미리 받기 순서
 - `engines.ts` 순서에 `pdf`를 더한다.
-- dev 서버처럼 목록에 `pdf`가 없으면 진행 화면 없이 연다(`ManifestError`와 같은 경로). `enginePreload`의 단위 시험에 "없는 엔진 항목"을 더한다.
 - 명령: `npm run verify`. 기대: 회귀 "첫 화면 미리 받기 순서"에 PDF 포함, 단위 통과. 첫 화면에서 받는 총량을 엔진 미리 받기 문서에 적는다.
 
 ### 6c. 번들 경계 시험
-- `tests/bundle-boundary.mjs <outDir>`: Vite manifest로 첫 화면·Word·한글 진입과 셸 청크의 정적 import 그래프를 따라가 PDF 모듈이 0건인지 본다.
+- Vite manifest에는 청크 안에 들어간 모듈 목록이 없다. 그래서 빌드 플러그인이 `generateBundle`에서 청크별 `moduleIds`를 `.vite/chunk-modules.json`으로 기록한다(배포 파일에서는 뺀다).
+- `tests/bundle-boundary.mjs <outDir>`: manifest로 첫 화면·Word·한글 진입과 셸 청크에서 정적으로 닿는 청크를 모으고, 그 청크들의 모듈 ID에 `svelte-pdf-mini`·`pdfjs-dist`·`@cantoo/pdf-lib` 경로가 0건인지 본다.
 - `verify.mjs`가 셸 빌드와 6a 뒤에 실제 `outDir`(일반 `dist/`, 후보 `candidate-dist/`)로 부른다.
-- 명령: `npm run verify`, `rm -rf dist && npm run upstream:check -- --current`. 기대: 둘 다 통과. 변이(셸이 `svelte-pdf-mini`를 정적 import) → 실패.
+- 명령: `npm run verify`, `rm -rf dist && npm run upstream:check -- --current`. 기대: 둘 다 통과. 변이 세 개(세 패키지에서 각각 실제로 쓰는 export 하나를 셸에서 호출) → 각각 실패.
 
 ### 7. 파일 선택·쓰기 공용화 (동작 보존 리팩터링)
 - 7a: 파일 선택기 래퍼를 공용 모듈로 뺀다. 7b: 해시·쓰기를 공용 모듈로 뺀다. 각각 따로 커밋한다.
 - 공용 모듈을 `build-engines.mjs`의 Word 엔진 복사 목록에 더한다.
 - 명령(각 커밋): `npm run verify`. 기대: 루트·Word 엔진 타입 검사 통과, 한글 저장·취소·외부 변경·원본 보호 시험이 리팩터링 전과 같은 결과.
 
-### 8. 주석(저장 없음)
-- `Annotations` 도구막대(6종·색·실행 취소/다시 실행). 구성은 xivly `AnnotationToolbar`를 참고한다.
-- 명령: `npm run test:pdf`, `npm run verify`. 기대: DoD 3 통과.
+### 8a. 주석 상태·이력
+- 주석 목록과 실행 취소·다시 실행 저장소. dirty를 셸 상태로 보낸다. 도구막대 구성은 xivly `AnnotationToolbar`를 참고한다.
+- 명령: `npm run test:contracts`(신규 `tests/pdf-annotations.test.mjs`). 기대: 추가 6회 → undo 6회 → 0개 → redo 6회 → 6개, dirty 전이.
+
+### 8b. 도구별 그리기
+- 하이라이트·밑줄·취소선 → 메모 → 펜 → 사각형 순으로 하나씩 추가하고, 도구마다 따로 커밋한다.
+- 명령(각 커밋): `npm run test:pdf`. 기대: 그 도구로 그린 주석의 종류·좌표·색·내용. 6개가 끝나면 DoD 3 전체(A·C1·D).
+
+### 8c. 세 편집기 편집 상태 보존
+- 명령: `npm run test:pdf`, `npm run verify`. 기대: DoD 1(편집 상태) 표에서 저장 부분을 뺀 전부(PDF 저장 비교는 10b에서 더함).
 
 ### 9a. 보존 검사 모듈
-- `src/pdf/preserve.ts`: 원본과 출력 바이트를 받아 0b에서 정한 방식(A 또는 B)으로 판정한다.
+- `src/pdf/preserve.ts`: 원본 바이트, 출력 바이트, 주석 snapshot을 받아 "보존 검사"대로 판정한다.
 - 명령: `npm run test:contracts`(신규 `tests/pdf-preserve.test.mjs`). 기대: DoD 4(보존) 표의 통과·거절 경우 전부.
 
 ### 9b. 서명·암호 판별
@@ -256,18 +297,22 @@
 - 명령: `npm run test:pdf`. 기대: A 왕복 보존 통과, 상한 초과 주입 → 거절·worker 재시작.
 
 ### 10a. 저장 조정자 (UI 없음)
-- `src/pdf/save.ts`: snapshot 직렬화, Web Locks 안에서 해시 재확인, 복구 사본 저장과 해시 확인, writable 쓰기, revision 반영.
+- `src/pdf/save.ts`: snapshot 직렬화, Web Locks 안에서 해시 재확인, 복구 사본 저장과 해시 확인, writable 쓰기, revision 반영. 복구 사본 저장소는 주입받는다(시험은 가짜).
 - 명령: `npm run test:contracts`(신규 `tests/pdf-save.test.mjs`). 기대: DoD 4(트랜잭션) 표 전부.
 
-### 10b. 저장 UI
-- 파일 메뉴의 저장·다른 이름으로 저장·Ctrl+S, 거절 이유 표시.
-- 명령: `npm run test:pdf`, `npm run verify`. 기대: DoD 4(UI)의 왕복·거절·두 탭 동시 저장.
+### 10b. 다른 이름으로 저장
+- 파일 메뉴의 다른 이름으로 저장. 새 파일에만 쓰므로 복구 사본이 필요 없다.
+- 명령: `npm run test:pdf`, `npm run verify`. 기대: 저장 왕복 후 주석 목록 같음, 거절 경우(보존 실패·C1·D)에 writable 생성 0회. DoD 1(편집 상태)에 PDF 저장 비교를 더함.
 
-### 10c. 원본 복원 (사용자 확인 뒤)
+### 10c. 열린 파일에 저장 (사용자 확인 기록 뒤)
+- 실제 복구 사본 저장소(OPFS), 파일 메뉴의 저장·Ctrl+S, 거절 이유 표시.
+- 명령: `npm run test:pdf`, `npm run verify`. 기대: DoD 4(UI)의 Ctrl+S 왕복·외부 변경 거절·두 탭 동시 저장·복구 사본 실패 시 writable 0회.
+
+### 10d. 원본 복원 (사용자 확인 기록 뒤)
 - 파일 메뉴 "저장 전 원본 복원".
 - 명령: `npm run test:pdf`. 기대: 복원 파일 해시 = 원본 해시, 사본이 없으면 메뉴 비활성.
 
-### 10d. 이탈 확인
+### 10e. 이탈 확인
 - 명령: `npm run test:pdf`, `npm run verify`. 기대: DoD 5.
 
 ### 11. 검증·문서·리뷰
@@ -281,30 +326,30 @@
 
 - **Svelte 5.57 업그레이드:** 셸의 `$effect`·`untrack` 동작이 바뀔 수 있다. 1단계를 따로 커밋한다.
 - **0.x 라이브러리:** API가 바뀔 수 있다. 정확한 버전으로 고정하고, 올릴 때는 PDF 통합 시험으로 판정한다. 주간 upstream-watch에 npm 최신판 검사를 넣을지는 11단계에서 정한다.
-- **보존 방식 B:** 비교 코드가 모르는 객체가 있으면 거절하므로, 실제 PDF에서 저장 거절이 잦을 수 있다. 0b 결과로 B가 되면 사용자에게 보고한다.
+- **보존 검사 거절률:** 허용 차이 밖의 변경이 있으면 거절하므로, export가 쓸데없이 객체를 바꾸는 라이브러리라면 실제 PDF에서 저장 거절이 잦을 수 있다. 9c에서 A·E·F와 실제 PDF 몇 개로 거절 사유를 기록하고, 거절이 잦으면 사용자에게 보고한다.
 - **복구 사본 용량:** OPFS 저장 공간이 모자라면 덮어쓰기를 거절한다(다른 이름으로 저장은 된다).
 - **pdfjs-dist 크기:** 대부분 소스맵·legacy 빌드라 실제로 배포하는 파일은 일부다. 3단계에서 재고, Pages 제한을 verify가 확인한다.
 - **미리 받기 양:** PDF 엔진이 더해지면 첫 화면에서 받는 양이 늘어난다. 6b단계에서 재서 기록한다.
-- **CSS 층:** 라이브러리 스타일이 `@layer svelte-pdf-mini`에 있다. 셸 CSS와의 우선순위를 4a단계에서 확인한다.
+- **CSS 층:** 라이브러리 스타일이 `@layer svelte-pdf-mini`에 있다. 셸 CSS와의 우선순위를 4a-2단계에서 확인한다.
 
 ## 진행
 
 | 단계 | 상태 | 커밋 |
 |---|---|---|
-| 계획 | Codex 계획 리뷰 2차 반영 | (이 커밋) |
+| 계획 | Codex 계획 리뷰 3차 반영 | (이 커밋) |
 | 0a. 픽스처 | 대기 | |
 | 0b. 라이브러리 실행 확인 | 대기 | |
 | 1. Svelte 업그레이드 | 대기 | |
-| 2a. 라이선스 수집기 | 대기 | |
+| 2a-1·2a-2. 라이선스 수집기 | 대기 | |
 | 2b. 의존성 추가 | 대기 | |
 | 3. pdf.js 자산 | 대기 | |
-| 4a~4d. 독립 보기 | 대기 | |
-| 5. 셸 연결 | 대기 | |
+| 4a-1~4d. 독립 보기 | 대기 | |
+| 5a~5d. 엔진 타입·경로·셸·첫 화면 | 대기 | |
 | 6a. 엔진 목록 | 대기 | |
 | 6b. 미리 받기 순서 | 대기 | |
 | 6c. 번들 경계 시험 | 대기 | |
 | 7a·7b. 공용화 리팩터링 | 대기 | |
-| 8. 주석 | 대기 | |
+| 8a~8c. 주석·편집 상태 보존 | 대기 | |
 | 9a~9c. 보존 검사·판별·worker | 대기 | |
-| 10a~10d. 저장·복원·이탈 확인 | 대기 | |
+| 10a~10e. 저장·복원·이탈 확인 | 대기 | |
 | 11. 검증·문서·리뷰 | 대기 | |
