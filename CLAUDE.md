@@ -18,7 +18,7 @@
 - 대상: Cloudflare Pages 프로젝트 `sketch-docs` → `docs.sketchps.app`.
 - 절차: `npm run verify` → 커밋을 `origin/main`에 push → `npm run mirrors:check`(필요하면 `mirrors:pin`) → `npm run deploy`.
   - `deploy`는 다음을 모두 확인한 뒤에만 wrangler로 `dist/`를 올린다: 검증 보고와 커밋·코드·`dist` 해시 일치, 깨끗한 작업 트리, push된 커밋, 보존 fork의 고정 커밋 태그.
-- **다음 배포 전에 할 일 (2026-10-13):** wrangler 4.142에 npm audit 높음 권고(포함된 undici·sharp·miniflare)가 있다. 해결판은 4.149.0 이상이다. 출시 2주가 지난 판(4.149.0은 10/22 이후)으로 올리고, `wrangler whoami`·`wrangler pages project list`로 확인한 뒤 배포한다.
+- wrangler는 4.149.0(2026-10-14 업그레이드: 4.142의 undici·sharp·miniflare npm audit 권고 해결, `npm audit` 0건). 업그레이드 뒤 `wrangler whoami`·`wrangler pages project list`로 확인했다.
 - 배포 뒤 `npm run test:live`(기본 `https://docs.sketchps.app`, `LIVE_ORIGIN`으로 바꿈)로 실제 URL에서 브라우저 회귀 시험을 돌린다.
 - 프로젝트는 기존 Pages 방식이다. wrangler 4.142의 `pages project create`는 Workers로 넘기려다 실패해서 `--force`로 한 번 만들었다(2026-10-12). 이후 명령에는 `--force`를 쓰지 않는다. 첫 배포는 `Failed to publish your Function. Unknown internal error`로 실패했고, 같은 명령을 한 번 다시 실행해 성공했다.
 - `docs.sketchps.app` DNS는 대시보드에서 관리한다(CNAME → `sketch-docs.pages.dev`, **DNS only**). wrangler OAuth 토큰에는 DNS 쓰기 권한이 없다.
