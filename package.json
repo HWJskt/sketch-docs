@@ -17,7 +17,7 @@
     "dev": "vite --host localhost",
     "build": "npm run prepare:engines && vite build && node scripts/pdf-manifest.mjs dist",
     "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
-    "test:contracts": "node --import ./tests/ts-resolve.mjs --test tests/contracts.test.mjs tests/upstream-git.test.mjs tests/release-info.test.mjs tests/service-worker.test.mjs tests/engine-manifest.test.mjs tests/engine-preload.test.mjs tests/pdf-assets.test.mjs tests/pdf-manifest.test.mjs tests/file-access.test.mjs tests/pdf-annotations.test.mjs tests/pdf-preserve.test.mjs",
+    "test:contracts": "node --import ./tests/ts-resolve.mjs --test tests/contracts.test.mjs tests/upstream-git.test.mjs tests/release-info.test.mjs tests/service-worker.test.mjs tests/engine-manifest.test.mjs tests/engine-preload.test.mjs tests/pdf-assets.test.mjs tests/pdf-manifest.test.mjs tests/file-access.test.mjs tests/pdf-annotations.test.mjs tests/pdf-preserve.test.mjs tests/pdf-protection.test.mjs",
     "test:integration": "node tests/integration.mjs",
     "test:regressions": "node tests/regressions.mjs",
     "test:pdf": "npm run build && TEST_DIST=dist node tests/pdf.integration.mjs",
