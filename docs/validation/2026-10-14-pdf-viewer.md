@@ -36,7 +36,7 @@
 
 - 산출물에 쓰지 않는 파일: 라이브러리가 Vite `?url`로 묶는 pdf.js worker 사본 2개(각 1.26MB, 우리는 `pdfjs/`의 것을 씀)와 KaTeX 글꼴 59개(1.1MB). 기능에는 영향이 없고 Pages 제한 안이다.
 - 주간 upstream-watch에 `svelte-pdf-mini` 최신판 검사를 넣을지는 아직 정하지 않았다.
-- wrangler 4.142의 npm audit 권고: 다음 배포 전에 출시 2주가 지난 해결판으로 올린다(CLAUDE.md 배포 절).
+- (해결) wrangler 4.142의 npm audit 권고: 배포 전에 4.149.0으로 올렸다(`npm audit` 0건).
 
 ## 배포 (2026-10-14)
 
