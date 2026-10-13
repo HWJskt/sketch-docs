@@ -313,6 +313,18 @@ try {
     await hangulReady(page);
   }, { contextOptions: { serviceWorkers: 'block' } }); // page.route cannot hold requests a service worker answers
 
+  await scenario('start page: the PDF card opens the PDF editor on the same page, and Back returns', async page => {
+    await page.goto(origin + '/');
+    await page.evaluate(() => { window.startPageMarker = true; });
+    await page.getByRole('link', { name: /PDF 문서/ }).click();
+    await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
+    assert.match(new URL(page.url()).pathname, /^\/pdf(?:\.html)?$/);
+    assert.equal(await page.evaluate(() => window.startPageMarker), true, 'opened without loading a new page');
+    assert.equal(await page.getByRole('button', { name: 'PDF', exact: true }).getAttribute('aria-pressed'), 'true');
+    await page.goBack();
+    await page.getByRole('heading', { name: '어떤 문서를 작성할까요?' }).waitFor();
+  });
+
   await scenario('start page: Back from an unsaved document asks first and keeps the editor when cancelled', async page => {
     await page.goto(origin + '/');
     await page.getByRole('link', { name: /Word 문서/ }).click();
