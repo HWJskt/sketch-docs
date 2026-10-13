@@ -38,6 +38,8 @@
 - KaTeX 글꼴 59개(1.1MB)는 쓰지 않는 파일이 아니었다: 메모에 `$…$` 수식을 쓰면 라이브러리가 KaTeX와 글꼴을 불러온다(`svelte-pdf-mini/dist/internal/markdown.js`). 그대로 둔다.
 - (정함, 2026-10-14) 주간 upstream-watch의 `npm` job이 `svelte-pdf-mini` npm 최신판과 고정판을 비교하고 lockfile로 `npm audit --omit=dev`를 돌린다(설치·패키지 코드 실행 없음). 하나라도 걸리면 쓰기 권한만 가진 별도 job이 이슈 "npm check needs attention"을 열거나 댓글을 단다. 새 판 시험은 사람이 한다.
 - (해결) wrangler 4.142의 npm audit 권고: 배포 전에 4.149.0으로 올렸다(`npm audit` 0건).
+- 수동 확인(사람): 저장한 PDF를 Acrobat Reader·Chrome 내장 뷰어로 열기, 실제 OS 파일 선택기·권한 창, Safari, 수십 MB PDF의 보존 검사·내보내기 시간.
+- 정하지 않음(PDF와 무관, 2026-10-14 발견): Word는 `navigator.language`의 맞춤법 사전을 편집기를 연 뒤 받는다(영어 1.3MB, 한국어는 사전 없음). 엔진 미리 받기 목록에 없어 영어 브라우저에서는 미리 받지 않는다. 오프라인에서도 맞춤법 검사가 되어야 하는지 정해야 한다.
 
 ## 배포 (2026-10-14)
 
