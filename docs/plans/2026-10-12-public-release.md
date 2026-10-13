@@ -53,7 +53,7 @@
 | 3. upstream 최신 검사·Actions·배포 스크립트 | 완료 | f65569e 8dfcd28 |
 | 4. Codex 리뷰·반영 | 완료 (지적 7건: 수용 6, 배포 때 확인 1) | d3fb04c |
 | 5. 저장소·fork 생성, push, Actions 실행 | 완료 — Actions verify·upstream-watch 성공 | 3cba22d |
-| 6. Cloudflare 배포·실 URL 확인 | `sketch-docs.pages.dev` 배포·live 시험 완료, `docs.sketchps.app`은 CNAME 대기 | 3cba22d 배포 |
+| 6. Cloudflare 배포·실 URL 확인 | 완료: `docs.sketchps.app` 연결, live 시험 3회 각 4개 통과 | 3cba22d 배포 |
 
 ## 기록
 
@@ -69,3 +69,8 @@
   - 같은 URL에서 live 시험 4개 통과(서버 조작 시나리오 2개는 건너뜀)
   - GitHub 소스·fork 링크 4개 모두 익명 200
 - wrangler의 막힌 install script는 `pages deploy`를 막지 않았다(리뷰 지적 E 확인).
+- `docs.sketchps.app` 연결(2026-10-13): CNAME `docs` → `sketch-docs.pages.dev`.
+  - 프록시(주황 구름)를 켰을 때 KT(KORNET) 회선에서 zone 무료 플랜 IP(104.21.x·172.67.x)가 AMS·LHR·SEA·BOS로 갔다. rhwp WASM 11.8MB가 2.4~3.7초, 나쁠 때는 90초에 4MB였다. live 시험 6회 중 4회가 한글 편집기 로딩 대기 한도를 넘었다.
+  - 같은 호스트를 Pages IP(172.66.x)로 붙이면 ICN, 0.29~0.33초였다.
+  - 그래서 프록시를 껐다(DNS only, 사용자 결정). 프록시는 레코드 단위라 다른 하위 도메인에는 영향이 없다.
+  - 끈 뒤 실측: colo ICN, Pages 도메인 상태 active, 인증서 Google Trust Services(2027-01-10 만료), `http://` → 301 `https://`, `.html` 308, `_headers` 적용. `npm run test:live` 3회 각 PASS 4·SKIP 2.
