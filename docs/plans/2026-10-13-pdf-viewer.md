@@ -25,9 +25,13 @@
   - **허용하는 차이**만 명시한다. 그 밖의 차이는 하나라도 있으면 쓰지 않는다.
     - 각 쪽의 `/Annots` 배열: 원본 항목이 같은 순서로 모두 남고, 뒤에 snapshot의 새 주석만 더해짐
     - 새 주석 객체와 그 appearance 스트림: snapshot의 종류·좌표·색·내용과 같음
+    - 내용이 있는 새 주석에 붙는 Popup 주석
+    - 라이브러리의 주석 모델 JSON 첨부 파일과 그 연결(카탈로그 `/Names`의 `/EmbeddedFiles`, `/AF`). 원본에 있던 다른 첨부 파일은 그대로여야 한다.
+    - 이전 저장에서 우리가 쓴 주석(라이브러리가 자기 것으로 판별하는 것)의 교체·삭제
     - 문서 정보의 `ModDate`·`Producer`
   - 비교 코드가 해석하지 못하는 구조(예: 손상된 xref, 객체 스트림 해석 실패)는 판정 불가로 보고 거절한다.
-  - 0b에서 export가 증분 저장인지도 기록한다. 증분이면 복구가 쉬워지지만(원본 길이까지 자르면 됨) 검사를 줄이지는 않는다.
+  - export는 기본이 증분 저장이다(0b 확인). 복구는 쉬워지지만(원본 길이까지 자르면 됨) 검사를 줄이지는 않는다.
+  - foreign 주석(우리가 쓰지 않은 기존 주석)은 PDF 편집기에서 읽기 전용으로 둔다. 라이브러리는 UI에서 고친 foreign 주석을 다시 쓰는데, 그러면 보존 검사에 걸린다.
 - **복구 사본(2026-10-13 사용자 결정):**
   - 열린 파일에 처음 덮어쓰기 직전에 원본 바이트를 브라우저의 Origin Private File System에 저장한다.
   - 저장한 사본의 해시가 원본 해시와 같음을 확인한 뒤에만 쓴다. 사본을 못 만들면 쓰지 않는다.
@@ -122,19 +126,21 @@
 - 외부 프로그램과의 파일 잠금
 - 모바일 터치 주석 최적화, Safari
 
-## 사실과 미확인 전제
+## 확인한 사실
 
-### 미확인 전제 (0단계 실행 전까지 사실로 쓰지 않는다)
+### 라이브러리 (0b에서 실행으로 확인, 2026-10-13)
 
-저장소 clone과 `npm view`로 읽은 내용이다. 설치·실행으로는 아직 확인하지 않았다.
+기록: `docs/validation/2026-10-13-pdf-probe.md`. 요약:
 
-- `svelte-pdf-mini` 0.9.1(npm, MIT, 풀었을 때 1.0MB)
-  - 의존성: `pdfjs-dist` ^6.4.299(Apache-2.0, 풀었을 때 34.9MB), `@cantoo/pdf-lib`, `dompurify`, `katex`, `marked`, `perfect-freehand`, `runed`, `svelte-toolbelt`
-  - peer: `svelte` ^5.57.0. 우리 셸은 5.55.9다. EdenText 엔진은 따로 빌드하므로 영향 범위는 우리 셸이다.
-  - README: 기본값으로 cMap·글꼴·wasm·ICC를 jsDelivr에서 받는다. `configurePdf()`로 자체 경로를 준다. `vite dev`에는 `optimizeDeps.exclude: ['pdfjs-dist']`가 필요하다. `svelte-pdf-mini/pdf-codec`이 주석 읽기·쓰기를 하고 worker에서도 돈다.
-- xivly 0.8.0(MIT, 커밋 `3cd2006`)
-  - `src/lib/pdf.ts`: `configurePdf`로 cMap 등을 자체 경로로 준다.
-  - `src/lib/export.ts`: `exportPdf`를 Web Worker에서 돌리고 120초 상한과 worker 재시작을 둔다.
+- `svelte-pdf-mini` 0.9.1(MIT). peer `svelte ^5.57.0`. 공개 심볼 `configurePdf`·`Document`·`Viewer`·`Zoom`·`PageNav`·`Find`·`Outline`·`Thumbnails`·`Annotations`, `pdf-codec`의 `exportPdf`·`importAnnotations`·`saveSupport`·`PdfSaveError`.
+- `pdfjs-dist` 6.4.299. `configurePdf`에 같은 출처 경로를 주면 외부 요청 0건으로 한국어 CID PDF가 그려진다. 암호 PDF는 `password`로 열린다.
+- `pdf-codec`은 Web Worker에서 6종 주석을 쓰고 다시 읽는다. 차이 0건.
+- `exportPdf`는 기본이 증분 저장이다. 원본 바이트가 출력 앞에 그대로 남는다.
+- 저장할 때 라이브러리가 Popup 주석과 주석 모델 JSON 첨부 파일을 더한다. 다시 저장하면 자기가 쓴 주석을 바꿔 쓴다.
+- `saveSupport()`는 암호 파일만 막는다. 서명 판별은 우리가 한다.
+- 런타임 전이 의존성 22개 모두 LICENSE 파일이 있다. `svelte-toolbelt`는 package.json에 `license` 필드가 없다.
+- Vite worker는 `worker: { format: 'es' }`가 필요하다.
+- xivly 참고 커밋 `3cd200662247a19cb559fd8929445d6c1f154cc1`에 `src/lib/export.ts`·`src/lib/pdf.ts`가 있다.
 
 ### 우리 저장소에서 확인한 사실 (2026-10-13)
 
@@ -187,7 +193,7 @@
 - 명령: `npm run test:contracts`. 기대: 만든 `legal/` 파일 목록과 `notices.txt` 바이트가 바꾸기 전과 같음(시험으로 비교).
 
 ### 2a-2. 런타임 전이 의존성 전체로 확대 (동작 변경)
-- `npm ls --omit=dev --all --json`으로 런타임 의존성 전체를 모은다. 지금 lock에서도 24개다(`clsx`·`esm-env`·`acorn`·`@webgpu/types` 등). LICENSE 파일이 없으면 실패한다.
+- `npm ls --omit=dev --all --json`으로 런타임 의존성 전체를 모은다. 지금 lock에서도 24개다(`clsx`·`esm-env`·`acorn`·`@webgpu/types` 등). LICENSE 파일이 없으면 실패한다. package.json의 `license` 필드가 아니라 파일로 판정한다(`svelte-toolbelt`는 필드가 없다).
 - 명령: `npm run test:contracts`, `npm run verify`. 기대: `legal/`에 lock의 런타임 패키지 24개 전부, LICENSE 없는 가짜 의존성 → 실패.
 
 ### 2b. 의존성 추가
@@ -201,12 +207,12 @@
 
 ### 4a-1. 독립 진입과 자산 설정
 - `src/pdf/setup.ts`(`configurePdf`, 이 모듈 안에서만 import)와 빈 `src/pdf/PdfEditor.svelte`를 만든다.
-- 시험용 진입 `pdf.html`이 셸 없이 `PdfEditor`를 띄운다. `vite.config.ts`에 `optimizeDeps.exclude: ['pdfjs-dist']`와 입력 `pdf`를 더한다. `verify.mjs`의 `productHash` 목록에 `pdf.html`을 더한다.
+- 시험용 진입 `pdf.html`이 셸 없이 `PdfEditor`를 띄운다. `vite.config.ts`에 `optimizeDeps.exclude: ['pdfjs-dist']`, `worker: { format: 'es' }`, 입력 `pdf`를 더한다. `verify.mjs`의 `productHash` 목록에 `pdf.html`을 더한다.
 - `tests/pdf.integration.mjs`와 `test:pdf`를 만들고 verify에 등록한다(공통 규칙).
 - 명령: `npm run test:pdf`, `npm run verify`. 기대: `/pdf.html`이 뜨고 외부 출처 요청 0건. 등록 변이 확인.
 
 ### 4a-2. 열기·그리기
-- 명령: `npm run test:pdf`. 기대: A 1쪽 canvas가 비어 있지 않음, B에서 DoD 6(cMap 200, 변이 실패).
+- 명령: `npm run test:pdf`. 기대: A 1쪽 canvas가 비어 있지 않음, B에서 DoD 6(cMap 200, 변이 실패). cMap 경로가 틀리면 문서는 열리고 칠해진 픽셀이 0이다(0b 확인) — 변이 판정은 픽셀로 한다.
 
 ### 4a-3. 확대·맞춤
 - 명령: `npm run test:pdf`. 기대: 확대 후 scale 변화, 맞춤 두 종류의 쪽 너비 값.
@@ -337,7 +343,7 @@
 |---|---|---|
 | 계획 | Codex 계획 리뷰 3차 반영 | (이 커밋) |
 | 0a. 픽스처 | 완료: `--check` exit 0, 7개 xref 오프셋·스트림 길이 직접 검사 0건 오류, pdf.js 6.4.299로 열림(D는 비밀번호 필요) | (이 커밋) |
-| 0b. 라이브러리 실행 확인 | 대기 | |
+| 0b. 라이브러리 실행 확인 | 완료: `node scripts/pdf-probe/run.mjs` exit 0, 필수 항목 6개 통과 | (이 커밋) |
 | 1. Svelte 업그레이드 | 대기 | |
 | 2a-1·2a-2. 라이선스 수집기 | 대기 | |
 | 2b. 의존성 추가 | 대기 | |

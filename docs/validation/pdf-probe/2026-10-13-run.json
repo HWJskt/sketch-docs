@@ -1,0 +1,189 @@
+{
+  "package": "svelte-pdf-mini@0.9.1",
+  "dir": "<scratch>",
+  "items": {
+    "1-metadata": {
+      "pass": true,
+      "version": "0.9.1",
+      "integrity": "sha512-uUkB2EIPmF3G8fS80v/GqwKwrBUNodFeH5v0zAFUxyFBxdqivS/tQdRWPR6t4aCx3m0GFWLZYvwEWDBe8XxJcA==",
+      "license": "MIT",
+      "peer": {
+        "svelte": "^5.57.0"
+      },
+      "installedSvelte": "5.57.2",
+      "exports": [
+        ".",
+        "./core",
+        "./pdf-codec",
+        "./state",
+        "./styles.css"
+      ],
+      "dependencies": [
+        {
+          "name": "@cantoo/pdf-lib",
+          "version": "2.11.1",
+          "license": "MIT"
+        },
+        {
+          "name": "dompurify",
+          "version": "3.4.17",
+          "license": "(MPL-2.0 OR Apache-2.0)"
+        },
+        {
+          "name": "katex",
+          "version": "0.19.0",
+          "license": "MIT"
+        },
+        {
+          "name": "marked",
+          "version": "18.1.1",
+          "license": "MIT"
+        },
+        {
+          "name": "pdfjs-dist",
+          "version": "6.4.299",
+          "license": "Apache-2.0"
+        },
+        {
+          "name": "perfect-freehand",
+          "version": "1.2.3",
+          "license": "MIT"
+        },
+        {
+          "name": "runed",
+          "version": "0.37.1",
+          "license": "MIT"
+        },
+        {
+          "name": "svelte-toolbelt",
+          "version": "0.10.6"
+        }
+      ],
+      "pdfjsVersion": "6.4.299",
+      "assets": {
+        "build/pdf.worker.min.mjs": true,
+        "cmaps/UniKS-UCS2-H.bcmap": true,
+        "standard_fonts": true,
+        "wasm": true,
+        "iccs": true
+      },
+      "missingSymbols": []
+    },
+    "0-fixtures": {
+      "pass": true,
+      "pages": {
+        "a-basic.pdf": {
+          "pages": 3,
+          "password": false
+        },
+        "b-korean-cid.pdf": {
+          "pages": 1,
+          "password": false
+        },
+        "c1-signed.pdf": {
+          "pages": 1,
+          "password": false
+        },
+        "c2-empty-signature.pdf": {
+          "pages": 1,
+          "password": false
+        },
+        "d-encrypted.pdf": {
+          "pages": 1,
+          "password": true
+        },
+        "e-image.pdf": {
+          "pages": 1,
+          "password": false
+        },
+        "f-page-attributes.pdf": {
+          "pages": 1,
+          "password": false
+        }
+      }
+    },
+    "5-pdf-lib": {
+      "pass": true,
+      "signed": true,
+      "emptySignature": false,
+      "encryptedLoadError": "Input document to `PDFDocument.load` is encrypted. You can use `PDFDocument.load(..., { ignoreEncryption: true })` if you wish to load the document anyways.",
+      "encryptedMarked": true,
+      "image": true,
+      "pageAttributes": true,
+      "catalogAttributes": true,
+      "exportedPage1Annots": 9,
+      "librarySaveSupport": {
+        "c1": {
+          "encrypted": false,
+          "canSave": true
+        },
+        "d": {
+          "encrypted": true,
+          "canSave": false,
+          "saveBlockedReason": "password"
+        }
+      }
+    },
+    "2-render": {
+      "pass": true,
+      "korean": {
+        "state": {
+          "loaded": true,
+          "numPages": 1
+        },
+        "ink": 4837,
+        "external": [],
+        "cmaps": [
+          "200 /pdfjs/cmaps/UniKS-UCS2-H.bcmap",
+          "200 /pdfjs/cmaps/Adobe-Korea1-UCS2.bcmap"
+        ],
+        "errors": []
+      },
+      "plainInk": 7002,
+      "plainExternal": [],
+      "missingCmap": {
+        "ink": 0,
+        "cmaps": [
+          "404 /pdfjs/missing-cmaps/UniKS-UCS2-H.bcmap"
+        ],
+        "state": {
+          "loaded": true,
+          "numPages": 1
+        },
+        "errors": []
+      }
+    },
+    "6-password": {
+      "pass": true,
+      "state": {
+        "loaded": true,
+        "numPages": 1
+      },
+      "ink": 6755,
+      "external": [],
+      "cmaps": [],
+      "errors": []
+    },
+    "3-codec-worker": {
+      "pass": true,
+      "problems": [],
+      "read": 7,
+      "foreign": 1,
+      "warnings": [],
+      "incrementalPrefix": true,
+      "originalBytes": 2472,
+      "outputBytes": 15930,
+      "saveSupport": {
+        "encrypted": false,
+        "canSave": true
+      },
+      "external": []
+    },
+    "4-incremental": {
+      "pass": true,
+      "incrementalPrefix": true,
+      "note": "recorded only"
+    }
+  },
+  "pass": true
+}
