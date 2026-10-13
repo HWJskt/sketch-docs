@@ -1,6 +1,7 @@
 import { customizeWord } from '../overlays/edentext/product-ui.mjs';
 import { writeReleaseInfo } from './release-info.mjs';
 import { writeEngineManifest } from './engine-manifest.mjs';
+import { copyPdfAssets } from './pdf-assets.mjs';
 import { build } from 'vite';
 import { cp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -124,6 +125,7 @@ else { startTabPresence(); void pruneOldDocuments(); }`);
   await cp(join(rhwp, 'LICENSE'), join(output, 'rhwp/LICENSE-rhwp'));
   await cp(join(hop, 'LICENSE'), join(output, 'rhwp/LICENSE-hop'));
   await writeFile(join(output, 'provenance.json'), JSON.stringify({ ...lock, wasmSha256: createHash('sha256').update(await readFile(join(vendor, 'rhwp_bg.wasm'))).digest('hex') }, null, 2));
+  await copyPdfAssets({ root, output });
   await writeEngineManifest(output);
   await verifySources(lock);
   await writeReleaseInfo({ root, output, lock });

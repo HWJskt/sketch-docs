@@ -11,3 +11,4 @@ artifacts/
 .venv-hwpx/
 .DS_Store
 public/legal/
+public/pdfjs/
