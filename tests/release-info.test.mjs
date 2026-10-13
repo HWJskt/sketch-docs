@@ -142,3 +142,13 @@ test('a listed exact version without a license file gets a notice from package.j
     await assert.rejects(writeReleaseInfo({ root, lock, exceptions }), /is-reference@3\.0\.4 has no license file/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('optional dependencies (native add-ons that differ per machine) are not listed', async () => {
+  const { root, put } = await fixture();
+  try {
+    await put('node_modules/svelte/package.json', JSON.stringify({ name: 'svelte', version: '1.0.0', optionalDependencies: { '@napi-rs/canvas': '^1' } }));
+    await put('node_modules/@napi-rs/canvas/package.json', pkgJson('@napi-rs/canvas', '1.0.11'));
+    await writeReleaseInfo({ root, lock });
+    assert.ok(!(await readdir(join(root, 'public/legal'))).some(name => name.includes('napi')));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

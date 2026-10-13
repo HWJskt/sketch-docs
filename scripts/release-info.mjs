@@ -10,8 +10,10 @@ export const upstreamNames = ['edentext', 'hop', 'rhwp'];
 export const upstreamTitles = { edentext: 'EdenText', hop: 'HOP', rhwp: 'rhwp' };
 
 /**
- * Every package the product ships: the root `dependencies` (and installed `optionalDependencies`)
- * and theirs, resolved the way Node does (nearest node_modules upward). Dev dependencies are build tools.
+ * Every package the product ships: the root `dependencies` and theirs, resolved the way Node does
+ * (nearest node_modules upward). Dev dependencies are build tools. `optionalDependencies` are skipped:
+ * in this tree they are native Node add-ons (pdfjs-dist -> @napi-rs/canvas) that never reach the
+ * browser, and which ones install depends on the machine, so the notices would differ between builds.
  */
 export async function runtimePackages(root) {
   const found = new Map();
@@ -24,10 +26,9 @@ export async function runtimePackages(root) {
     }
   };
   const visit = async (pkg, from) => {
-    const optional = new Set(Object.keys(pkg.optionalDependencies ?? {}));
-    for (const name of [...Object.keys(pkg.dependencies ?? {}), ...optional]) {
+    for (const name of Object.keys(pkg.dependencies ?? {})) {
       const dir = await locate(name, from);
-      if (!dir) { if (optional.has(name)) continue; throw new Error(`${pkg.name ?? 'package.json'} depends on ${name}, which is not installed`); }
+      if (!dir) throw new Error(`${pkg.name ?? 'package.json'} depends on ${name}, which is not installed`);
       if (found.has(dir)) continue;
       const own = await read(dir);
       found.set(dir, { name: own.name, version: own.version, dir });
