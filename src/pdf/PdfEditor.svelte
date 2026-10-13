@@ -49,6 +49,7 @@
     {#if src}
         {#key src}
             <Document.Root {src} onLoad={doc => { pages = doc.numPages; }} onError={reason => { error = `PDF를 열지 못했습니다. ${reason.message}`; }}>
+                {#snippet children({ document })}
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
                     <div class="view-tools" role="toolbar" aria-label="보기">
@@ -64,6 +65,7 @@
                         <PageNav.Input class="page-input" />
                         <span class="count">/ {pages}</span>
                         <PageNav.Next>›</PageNav.Next>
+                        <button type="button" onclick={() => void document.print()}>인쇄</button>
                         <span class="find">
                             <Find.Input class="find-input" placeholder="찾기" />
                             <Find.Count class="find-count" />
@@ -93,6 +95,7 @@
                     </div>
                     </Find.Root>
                 </Viewer.Root>
+                {/snippet}
             </Document.Root>
         {/key}
     {:else}

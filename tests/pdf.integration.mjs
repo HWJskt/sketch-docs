@@ -180,6 +180,32 @@ const scenarios = [
         assert.deepEqual(errors, []);
         await page.close();
     }],
+    ['selected text is copied to the clipboard', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+        await openPdf(page, 'a-basic.pdf');
+        const line = page.locator('.pdf-editor [data-pdf-text-layer] span', { hasText: 'Introduction text' }).first();
+        await line.waitFor();
+        await line.selectText();
+        await page.keyboard.press('ControlOrMeta+C');
+        await page.waitForFunction(async () => (await navigator.clipboard.readText()).includes('Introduction text'));
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['print hands the PDF to the browser print dialog', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        // Counts print() calls from any frame (the PDF is printed from a hidden frame).
+        await page.exposeFunction('__printed', () => { page.__prints = (page.__prints ?? 0) + 1; });
+        await page.context().addInitScript(() => { window.print = () => { window.top.__printed?.() ?? window.__printed?.(); }; });
+        await openPdf(page, 'a-basic.pdf');
+        const before = page.frames().length;
+        await page.getByRole('button', { name: '인쇄' }).click();
+        await page.waitForFunction(() => [...document.querySelectorAll('iframe')].some(frame => frame.src.startsWith('blob:')));
+        for (let i = 0; i < 40 && !page.__prints; i++) await page.waitForTimeout(250);
+        assert.equal(page.__prints, 1, `print called once (frames ${before} -> ${page.frames().length})`);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;
