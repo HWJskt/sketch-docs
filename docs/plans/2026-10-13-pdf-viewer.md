@@ -285,6 +285,7 @@
 - 명령: `npm run test:contracts`(신규 `tests/pdf-annotations.test.mjs`). 기대: 추가 6회 → undo 6회 → 0개 → redo 6회 → 6개, dirty 전이.
 
 ### 8b. 도구별 그리기
+- 첫 화면 PDF 카드·헤더 PDF 버튼 툴팁에 주석을 더한다(5d 이후에는 지금 되는 기능만 적어 둠: "PDF 문서 보기").
 - 하이라이트·밑줄·취소선 → 메모 → 펜 → 사각형 순으로 하나씩 추가하고, 도구마다 따로 커밋한다.
 - 명령(각 커밋): `npm run test:pdf`. 기대: 그 도구로 그린 주석의 종류·좌표·색·내용. 6개가 끝나면 DoD 3 전체(A·C1·D).
 
@@ -311,6 +312,7 @@
 - 명령: `npm run test:pdf`, `npm run verify`. 기대: 저장 왕복 후 주석 목록 같음, 거절 경우(보존 실패·C1·D)에 writable 생성 0회. DoD 1(편집 상태)에 PDF 저장 비교를 더함.
 
 ### 10c. 열린 파일에 저장
+- 첫 화면 PDF 카드 문구에 "PDF로 저장"을 더한다.
 - 실제 복구 사본 저장소(OPFS), 파일 메뉴의 저장·Ctrl+S, 거절 이유 표시.
 - 명령: `npm run test:pdf`, `npm run verify`. 기대: DoD 4(UI)의 Ctrl+S 왕복·외부 변경 거절·두 탭 동시 저장·복구 사본 실패 시 writable 0회.
 
