@@ -45,6 +45,21 @@ const server = createServer(async (request, response) => {
   } catch (error) { response.writeHead(500).end(String(error)); }
 });
 
+// Bytes of WASM that came over the network, including transfers cancelled midway (those never
+// finish, so counting finished transfers would miss a download that was dropped and restarted).
+async function wasmNetworkBytes(context, page) {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Network.enable');
+  const wasm = new Set(), cached = new Set();
+  let bytes = 0;
+  cdp.on('Network.requestWillBeSent', event => { if (event.request.url.endsWith('.wasm')) wasm.add(event.requestId); });
+  cdp.on('Network.requestServedFromCache', event => cached.add(event.requestId));
+  cdp.on('Network.responseReceived', event => { if (event.response.fromDiskCache || event.response.fromMemoryCache) cached.add(event.requestId); });
+  cdp.on('Network.dataReceived', event => { if (wasm.has(event.requestId) && !cached.has(event.requestId)) bytes += event.dataLength; });
+  return { cdp, bytes: () => bytes };
+}
+const wasmBytes = async page => (await (await page.request.get(origin + '/engines/manifest.json')).json()).engines.hwp.required.find(file => file.path.endsWith('.wasm')).bytes;
+
 let browser;
 // `persistent` gives the scenario a disk cache like a normal profile; the default context keeps
 // its HTTP cache in memory, which does not hold an 11.8MB WASM for reuse.
@@ -76,9 +91,10 @@ try {
   await scenario('clean URLs: navigation, reload, history and offline Word', async (page, context) => {
     await page.goto(origin + '/');
     await page.getByRole('link', { name: /Word 문서/ }).click();
-    await page.waitForURL(origin + '/word');
+    await page.waitForURL(url => /^\/word(?:\.html)?$/.test(new URL(url).pathname));
     await wordFrame(page).locator('.tiptap').first().waitFor();
     await page.reload();
+    await page.waitForURL(origin + '/word');
     await wordFrame(page).locator('.tiptap').first().waitFor();
     const header = wordFrame(page).locator('.product-header');
     await header.getByRole('button', { name: '한글', exact: true }).click();
@@ -176,19 +192,15 @@ try {
 
   const hangulReady = page => page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor();
   await scenario('a slow network shows engine download progress, then the editor opens from the downloaded files', async (page, context) => {
-    const cdp = await context.newCDPSession(page);
-    await cdp.send('Network.enable');
-    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 20, downloadThroughput: 2_000_000, uploadThroughput: 1_000_000 });
-    const transfers = [];
-    const urls = new Map();
-    cdp.on('Network.responseReceived', event => urls.set(event.requestId, event.response.url));
-    cdp.on('Network.loadingFinished', event => { if (urls.get(event.requestId)?.endsWith('.wasm')) transfers.push(event.encodedDataLength); });
+    const traffic = await wasmNetworkBytes(context, page);
+    await traffic.cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 20, downloadThroughput: 2_000_000, uploadThroughput: 1_000_000 });
     await page.goto(origin + '/hwp');
     await page.getByRole('heading', { name: '한글 엔진 다운로드 중…' }).waitFor();
     await page.getByText(/^\d+\.\d \/ \d+\.\d MB$/).waitFor();
     await hangulReady(page);
     assert.equal(await page.getByRole('heading', { name: '한글 엔진 다운로드 중…' }).count(), 0);
-    assert.equal(transfers.filter(bytes => bytes > 1_000_000).length, 1, `the WASM crossed the network once (transfers: ${transfers})`);
+    const size = await wasmBytes(page);
+    assert.ok(traffic.bytes() <= size * 1.05, `the WASM crossed the network once (${traffic.bytes()} bytes received, file ${size})`);
   }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
 
   await scenario('a stalled or failed engine download offers a retry that opens the editor', async page => {
@@ -211,20 +223,35 @@ try {
   }, { contextOptions: { serviceWorkers: 'block' } });
 
   await scenario('the start page preloads engines in the background, last used first, so the editor opens without waiting', async (page, context) => {
-    const cdp = await context.newCDPSession(page);
-    await cdp.send('Network.enable');
-    const order = [], transfers = [];
-    const urls = new Map();
-    cdp.on('Network.requestWillBeSent', event => { const path = new URL(event.request.url).pathname; if (/^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path); });
-    cdp.on('Network.responseReceived', event => urls.set(event.requestId, event.response.url));
-    cdp.on('Network.loadingFinished', event => { if (urls.get(event.requestId)?.endsWith('.wasm')) transfers.push(event.encodedDataLength); });
+    const traffic = await wasmNetworkBytes(context, page);
+    const order = [];
+    traffic.cdp.on('Network.requestWillBeSent', event => { const path = new URL(event.request.url).pathname; if (/^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path); });
     await page.addInitScript(() => localStorage.setItem('sketch-docs-last-engine', 'hwp'));
     await page.goto(origin + '/');
     await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('.wasm') && entry.responseEnd > 0), null, { timeout: 60000 });
     assert.match(order[0] ?? '', /^\/rhwp\//, `the last used editor downloads first (order: ${order.slice(0, 3)})`);
     await page.getByRole('link', { name: /한글 문서/ }).click();
     await hangulReady(page);
-    assert.equal(transfers.filter(bytes => bytes > 1_000_000).length, 1, `the WASM crossed the network once (transfers: ${transfers})`);
+    const size = await wasmBytes(page);
+    assert.ok(traffic.bytes() <= size * 1.05, `the WASM crossed the network once (${traffic.bytes()} bytes received, file ${size})`);
+  }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
+
+  // Choosing a card opens the editor in the same document, so a half-finished preload continues.
+  await scenario('choosing a format during a slow preload continues the download, and Back returns to the start page', async (page, context) => {
+    const traffic = await wasmNetworkBytes(context, page);
+    await traffic.cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 20, downloadThroughput: 1_000_000, uploadThroughput: 1_000_000 });
+    await page.addInitScript(() => localStorage.setItem('sketch-docs-last-engine', 'hwp'));
+    await page.goto(origin + '/');
+    // At 1MB/s the rhwp WASM is still downloading after four seconds.
+    await page.waitForTimeout(4000);
+    assert.ok(traffic.bytes() > 0, 'the start page began the WASM download');
+    await page.getByRole('link', { name: /한글 문서/ }).click();
+    await page.waitForURL(url => /^\/hwp(?:\.html)?$/.test(new URL(url).pathname));
+    await hangulReady(page);
+    const size = await wasmBytes(page);
+    assert.ok(traffic.bytes() <= size * 1.05, `the WASM crossed the network once (${traffic.bytes()} bytes received, file ${size})`);
+    await page.goBack();
+    await page.getByRole('heading', { name: '어떤 문서를 작성할까요?' }).waitFor();
   }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
 
   await scenario('the start page does not preload on a Save-Data connection', async page => {

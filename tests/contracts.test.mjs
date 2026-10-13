@@ -89,6 +89,11 @@ test('editor mode follows both .html and extensionless paths', async () => {
   for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word']]) assert.equal(modeFromPath(path), mode, path);
 });
 
+test('the start page path is recognised with and without index.html', async () => {
+  const { isHomePath } = await import('../src/routes.ts');
+  for (const [path, home] of [['/', true], ['/index.html', true], ['/index', true], ['/app/', true], ['/word', false], ['/hwp.html', false], ['/indexes', false]]) assert.equal(isHomePath(path), home, path);
+});
+
 test('deploy output must fit Cloudflare Pages file limits', async () => {
   const { assertPagesLimits, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES } = await import('../scripts/verify.mjs');
   assert.doesNotThrow(() => assertPagesLimits([{ name: 'ok.wasm', size: PAGES_MAX_FILE_BYTES }]));

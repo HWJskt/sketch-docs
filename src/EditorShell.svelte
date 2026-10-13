@@ -8,7 +8,7 @@
     import AboutProduct from './AboutProduct.svelte';
     import { offlineReady } from './offline';
     import { rememberEngine } from './engines';
-    import { modeFromPath, type EditorMode } from './routes';
+    import { isHomePath, modeFromPath, type EditorMode } from './routes';
     import type { EditorStatus, HangulInput } from './editorState';
     type Mode = EditorMode;
     let { initialMode }: { initialMode: Mode } = $props();
@@ -66,6 +66,8 @@
         return true;
     }
     function popstate() {
+        // Back from an editor opened on the start page: load the start page (leaving asks first if a document is unsaved).
+        if (isHomePath(location.pathname)) { location.reload(); return; }
         const mode = modeFromPath(location.pathname);
         if (!switchMode(mode, false)) history.replaceState({mode: active}, '', new URL(active === 'word' ? './word.html' : './hwp.html', location.href));
     }
