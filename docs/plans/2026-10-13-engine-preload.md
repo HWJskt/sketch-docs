@@ -183,4 +183,4 @@ PDF 뷰어 계획(`2026-10-13-pdf-viewer.md`)보다 먼저 한다. PDF 엔진은
 | PDF | 1,909,881 | 0 |
 | 합계 | 18,455,675 | 4,087,449 |
 
-PDF가 더한 양은 필수 합계의 약 10%다. 회귀 "a start page used last for PDF preloads the PDF engine first…"가 순서와 worker 한 번 전송을 확인한다.
+PDF가 더한 양은 필수 합계의 약 10%다. 8단계(주석)에서 PDF를 열 때 pdf-lib(578KB)도 받게 되어 PDF 필수가 2,604,699바이트로 늘었다(합계 약 19.15MB). 회귀 "a start page used last for PDF preloads the PDF engine first…"가 순서와 worker 한 번 전송을 확인한다.

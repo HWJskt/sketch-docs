@@ -18,6 +18,11 @@ export default defineConfig({
     optimizeDeps: {exclude: ['pdfjs-dist']},
     worker: {format: 'es'},
     // .vite/manifest.json lists the PDF editor chunk for engines/manifest.json (scripts/pdf-manifest.mjs).
-    build: {manifest: true, rolldownOptions: {input: {home:'index.html', word:'word.html', hwp:'hwp.html', pdf:'pdf.html'}}},
+    build: {manifest: true, rolldownOptions: {
+        input: {home:'index.html', word:'word.html', hwp:'hwp.html', pdf:'pdf.html'},
+        // Rolldown's runtime helpers otherwise land in whichever chunk first needs them; once that was the
+        // pdf-lib chunk, and the shell imported all of it (tests/bundle-boundary.mjs). Keep them on their own.
+        output: {codeSplitting: {groups: [{name: 'rolldown-runtime', test: /rolldown\/runtime/, priority: 100}]}},
+    }},
     server: {host:'localhost'},
 });

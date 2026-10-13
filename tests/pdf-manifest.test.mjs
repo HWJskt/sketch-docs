@@ -12,9 +12,9 @@ const manifest = {
     'index.html': { file: 'assets/home-h.js', isEntry: true, imports: ['_runtime-d.js'] },
 };
 
-test('the PDF engine is the editor chunk and pdf.js with their static imports and CSS, plus our worker copy', () => {
+test('the PDF engine is the editor chunk, pdf.js and pdf-lib with their static imports and CSS, plus our worker copy', () => {
     assert.deepEqual(pdfEngineFiles(manifest, '6.4.299'), [
-        'assets/PdfEditor-a.js', 'assets/PdfEditor-c.css', 'assets/pdf-e.js', 'assets/runtime-d.js', 'assets/shared-b.js', 'pdfjs/6.4.299/pdf.worker.min.mjs',
+        'assets/PdfEditor-a.js', 'assets/PdfEditor-c.css', 'assets/pdf-e.js', 'assets/pdf-lib-g.js', 'assets/runtime-d.js', 'assets/shared-b.js', 'pdfjs/6.4.299/pdf.worker.min.mjs',
     ]);
 });
 

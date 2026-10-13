@@ -5,10 +5,11 @@ import { pdfjsVersion } from './pdf-assets.mjs';
 
 // The PDF editor is a chunk the shell imports when PDF is chosen, so its files are only known after the
 // shell build. This adds them to engines/manifest.json in the build output (plan step 6a), from Vite's
-// build manifest: the PdfEditor chunk and pdf.js (which it imports on the first document), each with
+// build manifest: the PdfEditor chunk, pdf.js and pdf-lib (which it imports on the first document), each with
 // their static imports and CSS, plus the pdf.js worker from pdfjs/<version>/ (scripts/pdf-assets.mjs).
 export const PDF_ENTRY = 'src/pdf/PdfEditor.svelte';
-export const PDF_REQUIRED_DYNAMIC = ['node_modules/pdfjs-dist/build/pdf.mjs'];
+// pdf.js draws the document; pdf-lib reads the annotations already in it when it opens.
+export const PDF_REQUIRED_DYNAMIC = ['node_modules/pdfjs-dist/build/pdf.mjs', 'node_modules/@cantoo/pdf-lib/es/index.js'];
 
 export function pdfEngineFiles(viteManifest, version) {
     const files = new Set();
