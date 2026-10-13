@@ -37,3 +37,9 @@
 - 산출물에 쓰지 않는 파일: 라이브러리가 Vite `?url`로 묶는 pdf.js worker 사본 2개(각 1.26MB, 우리는 `pdfjs/`의 것을 씀)와 KaTeX 글꼴 59개(1.1MB). 기능에는 영향이 없고 Pages 제한 안이다.
 - 주간 upstream-watch에 `svelte-pdf-mini` 최신판 검사를 넣을지는 아직 정하지 않았다.
 - wrangler 4.142의 npm audit 권고: 다음 배포 전에 출시 2주가 지난 해결판으로 올린다(CLAUDE.md 배포 절).
+
+## 배포 (2026-10-14)
+
+- `a345d0c`를 `npm run verify`(단위 137, 브라우저 50) → push → `npm run mirrors:check` → `npm run deploy`(wrangler 4.149.0, 526개 중 350개 업로드)로 배포했다.
+- `npm run test:live`(https://docs.sketchps.app): 15개 통과, 2개는 서버 제어가 필요해 건너뜀(서비스 워커 설치 실패·응답 지연).
+- 실제 Pages에서 미리 받기 회귀가 통과했다: 첫 화면에서 미리 받은 한글 WASM과 PDF worker가 편집기를 열 때 네트워크로 다시 오지 않았다(엔진 미리 받기 계획의 "배포 뒤 확인" 항목).
