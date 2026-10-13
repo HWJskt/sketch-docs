@@ -40,7 +40,7 @@ export async function productHash() {
     }
   }
   for (const path of ['src', 'scripts', 'overlays', 'tests']) await walk(path);
-  for (const path of ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'svelte.config.js', 'index.html', 'word.html', 'hwp.html', 'public/favicon.svg', 'public/sw.js', 'public/_headers', 'upstreams.lock.json']) hash.update(path).update(await readFile(join(root, path)));
+  for (const path of ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'svelte.config.js', 'index.html', 'word.html', 'hwp.html', 'pdf.html', 'public/favicon.svg', 'public/sw.js', 'public/_headers', 'upstreams.lock.json']) hash.update(path).update(await readFile(join(root, path)));
   return hash.digest('hex');
 }
 export async function verify({ candidate = false, lockPath = join(root, 'upstreams.lock.json') } = {}) {
@@ -61,7 +61,7 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   execFileSync('npm', ['run', 'check'], { cwd: join(cache, 'word'), stdio: 'inherit' });
   execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/release-info.test.mjs'), join(root, 'tests/upstream-git.test.mjs'), join(root, 'tests/service-worker.test.mjs'), join(root, 'tests/engine-manifest.test.mjs'), join(root, 'tests/engine-preload.test.mjs'), join(root, 'tests/pdf-assets.test.mjs')], { cwd: root, stdio: 'inherit' });
   await build({ root, publicDir, build: { outDir, emptyOutDir: true } });
-  for (const test of ['tests/integration.mjs', 'tests/regressions.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
+  for (const test of ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
   const output = await outputHash(outDir);
   assertPagesLimits(output.files);
   if (await productHash() !== before) throw new Error('Product files changed during validation; rerun verification');

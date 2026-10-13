@@ -336,7 +336,9 @@
 - **복구 사본 용량:** OPFS 저장 공간이 모자라면 덮어쓰기를 거절한다(다른 이름으로 저장은 된다).
 - **pdfjs-dist 크기:** 대부분 소스맵·legacy 빌드라 실제로 배포하는 파일은 일부다. 3단계에서 재고, Pages 제한을 verify가 확인한다.
 - **미리 받기 양:** PDF 엔진이 더해지면 첫 화면에서 받는 양이 늘어난다. 6b단계에서 재서 기록한다.
-- **서비스 워커:** 지금 `sw.js`는 `rhwp/`·`legal/` 밖의 같은 출처 GET을 모두 캐시한다. PDF 오프라인은 범위 밖이므로, `pdfjs/`와 PDF 편집기 청크를 캐시할지(쓸모없는 캐시 용량) 뺄지 4a-1에서 정하고 시험한다.
+- **서비스 워커:** `pdfjs/`는 저장하지 않는다(4a-1, rhwp와 같은 처리). PDF 편집기 JS 청크(`assets/`)는 다른 청크처럼 저장된다.
+- **안 쓰는 배포 파일(4a-1에서 발견):** 라이브러리가 Vite `?url`로 묶는 worker 사본 `assets/pdf.worker.min-*.mjs`(1.26MB, 우리는 `pdfjs/`의 것을 씀)와 KaTeX 글꼴 59개(1.1MB)가 산출물에 들어간다. 6a에서 엔진 목록을 만들 때 어느 쪽 worker를 쓸지 하나로 정하고, KaTeX 글꼴은 11단계에서 제외 방법을 찾는다.
+- **청크 분리 변화(4a-1):** PDF 진입이 생기자 Svelte 런타임이 공용 청크(`disclose-version-*.js`, 41.7kB)로 갈라졌다. 첫 화면 gzip 합계 약 20.6kB → 21.4kB.
 - **CSS 층:** 라이브러리 스타일이 `@layer svelte-pdf-mini`에 있다. 셸 CSS와의 우선순위를 4a-2단계에서 확인한다.
 
 ## 진행
@@ -351,7 +353,8 @@
 | 2a-2. 런타임 전이 의존성 전체 | 완료: 23개(lock 런타임 집합과 같음, svelte 5.57에서 1개 줄어 계획의 24가 아님). LICENSE 파일 없는 `is-reference@3.0.3`·`locate-character@3.0.0`은 정확한 버전 예외로 package.json 라이선스·저장소를 고지. verify 단위 44/44·통합 PASS·회귀 14 PASS, `dist/legal` 31개 | (이 커밋) |
 | 2b. 의존성 추가 | 완료: `svelte-pdf-mini` 0.9.1(10/8 출시, 사용자 고정판)·`@cantoo/pdf-lib` 2.11.1(9/15). 런타임 패키지 42개(선택 의존성 제외, lock 집합과 같음). `dompurify` 3.4.17·`marked` 18.1.1은 출시 1일이지만 보안 관련 수정이라 그대로 둠. verify 단위 45/45·통합 PASS·회귀 14 PASS, `dist/legal` 50개 | (이 커밋) |
 | 3. pdf.js 자산 | 완료: `pdfjs/6.4.299/` 202개 파일, 가장 큰 파일 `pdf.worker.min.mjs` 1,264,342바이트, 배포 파일 총 454개. `/pdfjs/*` immutable. verify 단위 47/47·통합 PASS·회귀 14 PASS, `upstream:check -- --current` 통과 | (이 커밋) |
-| 4a-1~4d. 독립 보기 | 대기 | |
+| 4a-1. 독립 진입·자산 설정 | 완료: `pdf.html`·`src/pdf/setup.ts`·`PdfEditor`(빈 화면), `test:pdf`, verify 브라우저 목록 등록(일반·후보 로그 모두 `PASS pdf`), 러너 변이 → exit 1. SW는 `pdfjs/`를 저장하지 않음(시험·변이). verify 단위 48/48 | (이 커밋) |
+| 4a-2~4d. 보기 기능 | 대기 | |
 | 5a~5d. 엔진 타입·경로·셸·첫 화면 | 대기 | |
 | 6a. 엔진 목록 | 대기 | |
 | 6b. 미리 받기 순서 | 대기 | |
