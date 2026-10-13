@@ -2,7 +2,8 @@
 // The static server mimics Cloudflare Pages: /x.html answers 308 → /x, and /x serves x.html.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { chromium } from 'playwright-core';
 
@@ -20,6 +21,13 @@ async function file(path) {
   if (!full.startsWith(dist + sep)) return undefined;
   return stat(full).then(s => s.isFile() ? full : undefined, () => undefined);
 }
+// Pages applies public/_headers; long-lived caching matters to the engine preloading scenarios.
+const headerRules = (await readFile(join(dist, '_headers'), 'utf8').catch(() => '')).split(/\n(?=\S)/).map(block => {
+  const [pattern, ...lines] = block.trim().split('\n');
+  const regex = new RegExp('^' + pattern.trim().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  return { regex, headers: Object.fromEntries(lines.map(line => line.trim().split(/:\s*/, 2))) };
+});
+const pagesHeaders = path => Object.assign({ 'Cache-Control': 'no-cache' }, ...headerRules.filter(rule => rule.regex.test(path)).map(rule => rule.headers));
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, origin);
@@ -32,15 +40,19 @@ const server = createServer(async (request, response) => {
     }
     const target = await file(path.endsWith('/') ? path + 'index.html' : path) ?? await file(path + '.html');
     if (!target) { response.writeHead(404).end('not found'); return; }
-    response.writeHead(200, { 'content-type': types[extname(target)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
+    response.writeHead(200, { ...pagesHeaders(path), 'content-type': types[extname(target)] ?? 'application/octet-stream' });
     response.end(await readFile(target));
   } catch (error) { response.writeHead(500).end(String(error)); }
 });
 
 let browser;
-const scenario = async (name, run, { needsServer = false, contextOptions = {} } = {}) => {
+// `persistent` gives the scenario a disk cache like a normal profile; the default context keeps
+// its HTTP cache in memory, which does not hold an 11.8MB WASM for reuse.
+const scenario = async (name, run, { needsServer = false, contextOptions = {}, persistent = false } = {}) => {
   if (live && needsServer) { console.log('SKIP (live)', name); return; }
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...contextOptions });
+  const options = { viewport: { width: 1280, height: 900 }, ...contextOptions };
+  const profile = persistent ? await mkdtemp(join(tmpdir(), 'sketch-docs-profile-')) : undefined;
+  const context = profile ? await chromium.launchPersistentContext(profile, { channel: 'chrome', headless: true, ...options }) : await browser.newContext(options);
   const errors = [];
   try {
     const page = await context.newPage();
@@ -50,7 +62,10 @@ const scenario = async (name, run, { needsServer = false, contextOptions = {} } 
     await run(page, context);
     assert.deepEqual(errors, [], name + ': page errors');
     console.log('PASS', name);
-  } finally { await context.close(); }
+  } finally {
+    await context.close();
+    if (profile) await rm(profile, { recursive: true, force: true });
+  }
 };
 const wordFrame = page => page.frameLocator('iframe[title="Word 문서 편집기"]');
 
@@ -154,6 +169,42 @@ try {
       const missing = engines[name].required.map(file => file.path).filter(path => !seen.has(path));
       assert.deepEqual(missing, [], `${name}: manifest requires files the editor never downloads`);
     }
+  }, { contextOptions: { serviceWorkers: 'block' } });
+
+  const hangulReady = page => page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor();
+  await scenario('a slow network shows engine download progress, then the editor opens from the downloaded files', async (page, context) => {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 20, downloadThroughput: 2_000_000, uploadThroughput: 1_000_000 });
+    const transfers = [];
+    const urls = new Map();
+    cdp.on('Network.responseReceived', event => urls.set(event.requestId, event.response.url));
+    cdp.on('Network.loadingFinished', event => { if (urls.get(event.requestId)?.endsWith('.wasm')) transfers.push(event.encodedDataLength); });
+    await page.goto(origin + '/hwp');
+    await page.getByRole('heading', { name: '한글 엔진 다운로드 중…' }).waitFor();
+    await page.getByText(/^\d+\.\d \/ \d+\.\d MB$/).waitFor();
+    await hangulReady(page);
+    assert.equal(await page.getByRole('heading', { name: '한글 엔진 다운로드 중…' }).count(), 0);
+    assert.equal(transfers.filter(bytes => bytes > 1_000_000).length, 1, `the WASM crossed the network once (transfers: ${transfers})`);
+  }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
+
+  await scenario('a stalled or failed engine download offers a retry that opens the editor', async page => {
+    let mode = 'hang';
+    const held = [];
+    await page.route('**/rhwp/assets/*.wasm', route => {
+      if (mode === 'hang') held.push(route);
+      else if (mode === 'fail') return route.fulfill({ status: 500, body: 'unavailable' });
+      else return route.continue();
+    });
+    await page.goto(origin + '/hwp');
+    await page.getByText('연결이 느립니다').waitFor({ timeout: 25000 });
+    mode = 'fail';
+    await page.getByRole('button', { name: '다시 시도' }).click();
+    await page.getByRole('alert').filter({ hasText: '엔진 파일을 받지 못했습니다 (500)' }).waitFor();
+    mode = 'pass';
+    await page.getByRole('button', { name: '다시 시도' }).click();
+    await hangulReady(page);
+    for (const route of held) await route.abort().catch(() => {});
   }, { contextOptions: { serviceWorkers: 'block' } });
 
   await scenario('direct Word engine URL opens the product shell', async page => {

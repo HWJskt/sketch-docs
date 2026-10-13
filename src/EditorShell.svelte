@@ -4,6 +4,7 @@
     import './editorHeader.css';
     import headerCss from './editorHeader.css?raw';
     import HangulEditor from './HangulEditor.svelte';
+    import EngineProgress from './EngineProgress.svelte';
     import AboutProduct from './AboutProduct.svelte';
     import { offlineReady } from './offline';
     import { modeFromPath, type EditorMode } from './routes';
@@ -13,6 +14,8 @@
     let active = $state<Mode>(untrack(() => initialMode));
     let wordLoaded = $state(untrack(() => initialMode === 'word'));
     let hangulLoaded = $state(untrack(() => initialMode === 'hwp'));
+    // An editor mounts only after its engine files are downloaded (EngineProgress shows the wait).
+    let wordFetched = $state(false), hangulFetched = $state(false);
     let onlineReady = $state(false);
     let frame = $state.raw<HTMLIFrameElement>();
     let hangul = $state.raw<HangulEditor>();
@@ -75,7 +78,7 @@
             async openHangul(file: HangulInput | undefined = undefined) {
                 // This request comes from Word's own open operation; only the target session can block it.
                 if (hangul?.getState().busy || (!file && states().some(state => state.busy))) throw new Error('파일 작업이 진행 중입니다.');
-                if (hangulLoaded) {
+                if (hangulLoaded && hangulFetched) {
                     await tick();
                     if (!await hangul!.openDocument(file)) return;
                 } else { initialFile = file; hangulLoaded = true; }
@@ -94,14 +97,22 @@
     {#if !controlsReady}<EditorControls mode={active} getBlocked={() => blocked} onSwitch={switchMode} onAbout={() => about = true} />{/if}
     {#if notice}<div class="notice" role="status">{notice}</div>{/if}
     <div class="engines">
-        {#if wordLoaded && onlineReady}
+        {#if wordLoaded}
             <div class="engine" hidden={active !== 'word'} inert={active !== 'word'}>
-                <iframe bind:this={frame} title="Word 문서 편집기" src="./engines/word/index.html" allow="clipboard-read; clipboard-write" onload={() => { wordStatus = frame?.contentWindow?.sketchWord?.state() ?? wordStatus; }}></iframe>
+                {#if wordFetched && onlineReady}
+                    <iframe bind:this={frame} title="Word 문서 편집기" src="./engines/word/index.html" allow="clipboard-read; clipboard-write" onload={() => { wordStatus = frame?.contentWindow?.sketchWord?.state() ?? wordStatus; }}></iframe>
+                {:else}
+                    <EngineProgress engine="word" onReady={() => wordFetched = true} />
+                {/if}
             </div>
         {/if}
         {#if hangulLoaded}
             <div class="engine" hidden={active !== 'hwp'} inert={active !== 'hwp'}>
-                <HangulEditor bind:this={hangul} {initialFile} onState={state => hangulStatus = state} onExit={() => switchMode('word')} embedded />
+                {#if hangulFetched}
+                    <HangulEditor bind:this={hangul} {initialFile} onState={state => hangulStatus = state} onExit={() => switchMode('word')} embedded />
+                {:else}
+                    <EngineProgress engine="hwp" onReady={() => hangulFetched = true} />
+                {/if}
             </div>
         {/if}
     </div>

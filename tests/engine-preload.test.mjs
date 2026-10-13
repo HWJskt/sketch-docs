@@ -110,3 +110,11 @@ test('an HTTP error is reported without retrying forever', { timeout: 5000 }, as
   const preloader = createPreloader({ base, fetch: async url => url.endsWith('manifest.json') ? Response.json(manifest) : new Response('gone', { status: 404 }) });
   await assert.rejects(preloader.prepare('word'), /엔진 파일을 받지 못했습니다 \(404\)/);
 });
+
+test('an unreadable file list is a ManifestError, so the editor can open without progress', { timeout: 5000 }, async () => {
+  const { ManifestError } = await import('../src/enginePreload.ts');
+  const offline = createPreloader({ base, fetch: async () => { throw new TypeError('offline'); } });
+  await assert.rejects(offline.prepare('word'), error => error instanceof ManifestError);
+  const missing = createPreloader({ base, fetch: async () => new Response('', { status: 404 }) });
+  await assert.rejects(missing.prepare('word'), error => error instanceof ManifestError && /404/.test(error.message));
+});

@@ -7,6 +7,8 @@ export interface Manifest { schemaVersion: number; engines: Record<Engine, Engin
 export interface Progress { loaded: number; total: number }
 
 interface Download { loaded: number; done: Promise<void>; controller: AbortController }
+/** The file list itself could not be read; callers may open the editor without progress. */
+export class ManifestError extends Error {}
 type Fetch = (url: string, init: RequestInit & { priority?: 'high' | 'low' }) => Promise<Response>;
 
 export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis) }: { base: string; fetch?: Fetch }) {
@@ -16,9 +18,9 @@ export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis
 
     function load(): Promise<Manifest> {
         manifest ??= fetch(new URL('engines/manifest.json', base).href, { cache: 'no-cache' }).then(async response => {
-            if (!response.ok) throw new Error(`엔진 목록을 받지 못했습니다 (${response.status}).`);
+            if (!response.ok) throw new ManifestError(`엔진 목록을 받지 못했습니다 (${response.status}).`);
             return response.json() as Promise<Manifest>;
-        }).catch(error => { manifest = undefined; throw error; });
+        }).catch(error => { manifest = undefined; throw error instanceof ManifestError ? error : new ManifestError(String(error)); });
         return manifest;
     }
 
