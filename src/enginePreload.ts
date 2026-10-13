@@ -1,9 +1,10 @@
 // Downloads editor engine files ahead of time into the browser HTTP cache (engines/manifest.json,
 // built by scripts/engine-manifest.mjs) and reports progress while the chosen editor waits for them.
-export type Engine = 'word' | 'hwp';
+export type Engine = 'word' | 'hwp' | 'pdf';
 export interface ManifestFile { path: string; bytes: number }
 export interface EngineFiles { required: ManifestFile[]; warm: ManifestFile[]; requiredBytes: number }
-export interface Manifest { schemaVersion: number; engines: Record<Engine, EngineFiles> }
+// An engine can be missing: the dev server and builds before the PDF list existed have no `pdf` entry.
+export interface Manifest { schemaVersion: number; engines: Partial<Record<Engine, EngineFiles>> }
 export interface Progress { loaded: number; total: number }
 
 // `wanted`: an editor is waiting on this file, so choosing another editor must not stop it.
@@ -24,6 +25,11 @@ export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis
             return response.json() as Promise<Manifest>;
         }).catch(error => { manifest = undefined; throw error instanceof ManifestError ? error : new ManifestError(String(error)); });
         return manifest;
+    }
+    async function files(engine: Engine): Promise<EngineFiles> {
+        const entry = (await load()).engines[engine];
+        if (!entry) throw new ManifestError(`엔진 목록에 ${engine} 항목이 없습니다.`);
+        return entry;
     }
 
     // One download per file; later callers share it. A failed or aborted download is forgotten so a retry starts over.
@@ -57,7 +63,7 @@ export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis
         /** Fetches every engine's files one at a time at low priority until an editor is chosen. */
         async background(order: Engine[]) {
             const { engines } = await load();
-            for (const engine of order) for (const file of [...engines[engine].required, ...engines[engine].warm]) {
+            for (const engine of order) for (const file of [...engines[engine]?.required ?? [], ...engines[engine]?.warm ?? []]) {
                 if (chosen) return;
                 await download(file, 'low').done.catch(() => {});
             }
@@ -69,33 +75,33 @@ export function createPreloader({ base, fetch = globalThis.fetch.bind(globalThis
          */
         async prepare(engine: Engine, { onProgress = () => {}, onStall = () => {}, stallMs = 15000 }: { onProgress?: (progress: Progress) => void; onStall?: () => void; stallMs?: number } = {}) {
             chosen = engine;
-            const { engines } = await load();
-            const mine = new Set([...engines[engine].required, ...engines[engine].warm].map(file => file.path));
+            const own = await files(engine);
+            const mine = new Set([...own.required, ...own.warm].map(file => file.path));
             for (const [path, entry] of downloads) if (!mine.has(path) && !entry.wanted) entry.controller.abort();
-            const files = engines[engine].required;
+            const required = own.required;
             // A stall only informs the caller; the download keeps going until restart().
             let last = -1, since = Date.now(), warned = false;
             const report = () => {
-                const current = progress(files);
+                const current = progress(required);
                 if (current.loaded !== last) { last = current.loaded; since = Date.now(); warned = false; }
                 else if (!warned && current.loaded < current.total && Date.now() - since >= stallMs) { warned = true; onStall(); }
                 onProgress(current);
             };
             const timer = setInterval(report, 200);
             try {
-                const waits = files.map(file => download(file, 'high').done);
-                for (const file of engines[engine].warm) void download(file, 'low').done.catch(() => {});
+                const waits = required.map(file => download(file, 'high').done);
+                for (const file of own.warm) void download(file, 'low').done.catch(() => {});
                 await Promise.all(waits);
             } finally { clearInterval(timer); report(); }
         },
         /** Abandons the chosen engine's unfinished files so the next prepare() starts them again. */
         async restart(engine: Engine) {
-            const { engines } = await load();
-            for (const file of [...engines[engine].required, ...engines[engine].warm]) {
+            const own = (await load()).engines[engine];
+            for (const file of [...own?.required ?? [], ...own?.warm ?? []]) {
                 const entry = downloads.get(file.path);
                 if (entry && entry.loaded < file.bytes) { downloads.delete(file.path); entry.controller.abort(); }
             }
         },
-        progress: async (engine: Engine) => progress((await load()).engines[engine].required),
+        progress: async (engine: Engine) => progress((await load()).engines[engine]?.required ?? []),
     };
 }

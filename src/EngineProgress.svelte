@@ -3,7 +3,7 @@
     import { ManifestError, type Engine, type Progress } from './enginePreload';
     import { preloader } from './engines';
     let { engine, onReady }: { engine: Engine; onReady: () => void } = $props();
-    const label = $derived({ word: 'Word', hwp: '한글' }[engine]);
+    const label = $derived({ word: 'Word', hwp: '한글', pdf: 'PDF' }[engine]);
     let progress = $state<Progress>({ loaded: 0, total: 0 });
     let stalled = $state(false);
     let failed = $state('');

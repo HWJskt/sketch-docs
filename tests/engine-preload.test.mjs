@@ -141,3 +141,19 @@ test('a file list request that never answers gives up as a ManifestError', { tim
   const preloader = createPreloader({ base, fetch: hanging, manifestLimitMs: 200 });
   await assert.rejects(preloader.prepare('word'), error => error instanceof ManifestError);
 });
+
+test('an engine missing from the file list is a ManifestError (dev server, older lists); the others still preload', { timeout: 5000 }, async () => {
+  const { ManifestError } = await import('../src/enginePreload.ts');
+  const net = network();
+  const preloader = createPreloader({ base, fetch: net.fetch });
+  await assert.rejects(preloader.prepare('pdf'), error => error instanceof ManifestError && /pdf/.test(error.message));
+  assert.deepEqual(await preloader.progress('pdf'), { loaded: 0, total: 0 });
+  await preloader.restart('pdf');
+  // A fresh page: choosing an editor (above) stops background preloading by design.
+  const start = createPreloader({ base, fetch: net.fetch });
+  const background = start.background(['pdf', 'hwp']);
+  (await net.stream('h.js')).end();
+  (await net.stream('h.wasm')).end();
+  await background;
+  assert.equal(net.fetched('h.wasm'), 1, 'the listed engine after the missing one is fetched');
+});
