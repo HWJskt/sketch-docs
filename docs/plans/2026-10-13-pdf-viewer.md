@@ -194,7 +194,8 @@
 
 ### 2a-2. 런타임 전이 의존성 전체로 확대 (동작 변경)
 - `npm ls --omit=dev --all --json`으로 런타임 의존성 전체를 모은다. 지금 lock에서도 24개다(`clsx`·`esm-env`·`acorn`·`@webgpu/types` 등). LICENSE 파일이 없으면 실패한다. package.json의 `license` 필드가 아니라 파일로 판정한다(`svelte-toolbelt`는 필드가 없다).
-- 명령: `npm run test:contracts`, `npm run verify`. 기대: `legal/`에 lock의 런타임 패키지 24개 전부, LICENSE 없는 가짜 의존성 → 실패.
+- 명령: `npm run test:contracts`, `npm run verify`. 기대: `legal/`에 lock의 런타임 패키지 전부, LICENSE 없는 가짜 의존성 → 실패.
+- 실제로 LICENSE 파일 없이 배포된 패키지는 `scripts/release-info.mjs`의 `licenseFileExceptions`에 정확한 버전으로 적고, package.json의 라이선스와 저장소를 고지한다. 버전이 바뀌면 다시 확인해 적는다.
 
 ### 2b. 의존성 추가
 - `svelte-pdf-mini`와 `@cantoo/pdf-lib`(보존 검사용, 0b에서 확인한 버전)를 정확한 버전으로 넣는다. 이 단계에서는 import하지 않는다.
@@ -346,7 +347,7 @@
 | 0b. 라이브러리 실행 확인 | 완료: `node scripts/pdf-probe/run.mjs` exit 0, 필수 항목 6개 통과 | (이 커밋) |
 | 1. Svelte 업그레이드 | 완료: 5.55.9 → 5.57.1(5.57.2는 출시 7일이라 2주 넘은 5.57.1). `npm run verify` 단위 40/40·통합 PASS·회귀 14 PASS. 진입 청크(gzip) home 1.50→1.50kB, word·hwp 0.15→0.15kB, routes 19.10→19.38kB, EditorShell 8.56→8.47kB | (이 커밋) |
 | 2a-1. 라이선스 수집기 정리 | 완료: 특성화 시험(파일 목록·바이트·순서) 추가 후 리팩터링, 실제 리포 `legal/` 전후 diff 0(`release.json`은 `generatedAt`만 다름), 변이(LICENSE.md 못 찾음) → 4건 실패 | (이 커밋) |
-| 2a-2. 런타임 전이 의존성 전체 | 대기 | |
+| 2a-2. 런타임 전이 의존성 전체 | 완료: 23개(lock 런타임 집합과 같음, svelte 5.57에서 1개 줄어 계획의 24가 아님). LICENSE 파일 없는 `is-reference@3.0.3`·`locate-character@3.0.0`은 정확한 버전 예외로 package.json 라이선스·저장소를 고지. verify 단위 44/44·통합 PASS·회귀 14 PASS, `dist/legal` 31개 | (이 커밋) |
 | 2b. 의존성 추가 | 대기 | |
 | 3. pdf.js 자산 | 대기 | |
 | 4a-1~4d. 독립 보기 | 대기 | |

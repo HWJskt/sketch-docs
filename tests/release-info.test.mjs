@@ -18,11 +18,16 @@ const lock = {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'release-info-test-'));
   const put = async (path, text = path) => { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), text); };
-  await put('package.json', JSON.stringify({ version: '0.2.0', repository: { type: 'git', url: 'https://github.com/owner/product.git' } }));
+  const npm = ['canvaskit-wasm', '@noble/hashes', 'fflate', 'svelte'];
+  await put('package.json', JSON.stringify({ version: '0.2.0', repository: { type: 'git', url: 'https://github.com/owner/product.git' }, dependencies: Object.fromEntries(npm.map(name => [name, '1.0.0'])), devDependencies: { vite: '1.0.0' } }));
   await put('LICENSE', 'AGPL text');
   for (const path of ['source/edentext', 'source/hop', 'source/hop/third_party/rhwp']) await put(`${path}/LICENSE`, path + ' license');
   await put('source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md', 'rhwp third party');
-  for (const name of ['canvaskit-wasm', '@noble/hashes', 'fflate', 'svelte']) await put(`node_modules/${name}/${name === 'svelte' ? 'LICENSE.md' : 'LICENSE'}`, name);
+  for (const name of npm) {
+    await put(`node_modules/${name}/package.json`, JSON.stringify({ name, version: '1.0.0' }));
+    await put(`node_modules/${name}/${name === 'svelte' ? 'LICENSE.md' : 'LICENSE'}`, name);
+  }
+  await put('node_modules/vite/package.json', JSON.stringify({ name: 'vite', version: '1.0.0' }));
   await put('public/engines/word/licenses.txt', 'Word third-party licenses');
   await put('public/legal/source-0123456789abcdef.tar.gz', 'old archive');
   await put('.gitignore', 'source/\nnode_modules/\npublic/\n');
@@ -75,7 +80,8 @@ test('legal notices: the exact file set, each copied byte for byte, and notices.
   try {
     await writeReleaseInfo({ root, lock });
     const legal = join(root, 'public/legal');
-    const npm = { 'canvaskit-wasm': 'LICENSE', '@noble/hashes': 'LICENSE', fflate: 'LICENSE', svelte: 'LICENSE.md' };
+    // Runtime packages in name order.
+    const npm = { '@noble/hashes': 'LICENSE', 'canvaskit-wasm': 'LICENSE', fflate: 'LICENSE', svelte: 'LICENSE.md' };
     const expected = [
       ['LICENSE', 'LICENSE'], ['LICENSE-edentext', 'source/edentext/LICENSE'], ['LICENSE-hop', 'source/hop/LICENSE'],
       ['LICENSE-rhwp', 'source/hop/third_party/rhwp/LICENSE'], ['THIRD_PARTY_LICENSES-rhwp.md', 'source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md'],
@@ -87,5 +93,52 @@ test('legal notices: the exact file set, each copied byte for byte, and notices.
     const notices = await readFile(join(legal, 'notices.txt'), 'utf8');
     const order = expected.map(([name]) => notices.indexOf(`===== ${name} =====`));
     assert.ok(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])), `section order ${order}`);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+const pkgJson = (name, version, dependencies = {}) => JSON.stringify({ name, version, dependencies });
+
+test('every runtime dependency, transitive ones included, gets its license; dev dependencies do not', async () => {
+  const { root, put } = await fixture();
+  try {
+    // svelte -> clsx 2 (hoisted); fflate -> clsx 1 (nested, a second version of the same name).
+    await put('node_modules/svelte/package.json', pkgJson('svelte', '1.0.0', { clsx: '^2' }));
+    await put('node_modules/clsx/package.json', pkgJson('clsx', '2.1.1'));
+    await put('node_modules/clsx/license', 'clsx 2 license');
+    await put('node_modules/fflate/package.json', pkgJson('fflate', '1.0.0', { clsx: '^1' }));
+    await put('node_modules/fflate/node_modules/clsx/package.json', pkgJson('clsx', '1.2.1'));
+    await put('node_modules/fflate/node_modules/clsx/LICENSE.txt', 'clsx 1 license');
+    await writeReleaseInfo({ root, lock });
+    const legal = await readdir(join(root, 'public/legal'));
+    assert.ok(legal.includes('LICENSE-clsx@1.2.1') && legal.includes('LICENSE-clsx@2.1.1'), legal.join(' '));
+    assert.equal(await readFile(join(root, 'public/legal/LICENSE-clsx@1.2.1'), 'utf8'), 'clsx 1 license');
+    assert.ok(!legal.some(name => name.includes('vite')), 'dev dependencies are not shipped');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a runtime dependency without a license file, or one that is not installed, fails the build', async () => {
+  const { root, put } = await fixture();
+  try {
+    await put('node_modules/svelte/package.json', pkgJson('svelte', '1.0.0', { esrap: '^2' }));
+    await put('node_modules/esrap/package.json', pkgJson('esrap', '2.4.0'));
+    await assert.rejects(writeReleaseInfo({ root, lock }), /esrap@2\.4\.0 has no license file/);
+    await put('node_modules/svelte/package.json', pkgJson('svelte', '1.0.0', { missing: '^1' }));
+    await assert.rejects(writeReleaseInfo({ root, lock }), /svelte depends on missing, which is not installed/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a listed exact version without a license file gets a notice from package.json; another version still fails', async () => {
+  const { root, put } = await fixture();
+  try {
+    await put('node_modules/svelte/package.json', pkgJson('svelte', '1.0.0', { 'is-reference': '^3' }));
+    await put('node_modules/is-reference/package.json', JSON.stringify({ name: 'is-reference', version: '3.0.3', license: 'MIT', repository: { url: 'git+https://github.com/Rich-Harris/is-reference.git' } }));
+    const exceptions = { 'is-reference@3.0.3': 'no license file' };
+    await writeReleaseInfo({ root, lock, exceptions });
+    const notice = await readFile(join(root, 'public/legal/LICENSE-is-reference'), 'utf8');
+    assert.match(notice, /License \(package\.json\): MIT/);
+    assert.match(notice, /github\.com\/Rich-Harris\/is-reference/);
+    assert.match(await readFile(join(root, 'public/legal/notices.txt'), 'utf8'), /===== LICENSE-is-reference =====/);
+    await put('node_modules/is-reference/package.json', JSON.stringify({ name: 'is-reference', version: '3.0.4', license: 'MIT' }));
+    await assert.rejects(writeReleaseInfo({ root, lock, exceptions }), /is-reference@3\.0\.4 has no license file/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

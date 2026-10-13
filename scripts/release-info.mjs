@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { sourceRevision } from './revision.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '..');
@@ -8,19 +8,69 @@ const treeUrl = (url, commit) => `${repositoryUrl(url)}/tree/${commit}`;
 const archiveUrl = (url, commit) => `${repositoryUrl(url)}/archive/${commit}.tar.gz`;
 export const upstreamNames = ['edentext', 'hop', 'rhwp'];
 export const upstreamTitles = { edentext: 'EdenText', hop: 'HOP', rhwp: 'rhwp' };
-export const npmPackages = ['canvaskit-wasm', '@noble/hashes', 'fflate', 'svelte'];
+
+/**
+ * Every package the product ships: the root `dependencies` (and installed `optionalDependencies`)
+ * and theirs, resolved the way Node does (nearest node_modules upward). Dev dependencies are build tools.
+ */
+export async function runtimePackages(root) {
+  const found = new Map();
+  const read = async dir => JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'));
+  const locate = async (name, from) => {
+    for (let dir = from; ; dir = dirname(dir)) {
+      const candidate = join(dir, 'node_modules', name);
+      if (await readFile(join(candidate, 'package.json')).then(() => true, () => false)) return candidate;
+      if (dir === root || dirname(dir) === dir) return null;
+    }
+  };
+  const visit = async (pkg, from) => {
+    const optional = new Set(Object.keys(pkg.optionalDependencies ?? {}));
+    for (const name of [...Object.keys(pkg.dependencies ?? {}), ...optional]) {
+      const dir = await locate(name, from);
+      if (!dir) { if (optional.has(name)) continue; throw new Error(`${pkg.name ?? 'package.json'} depends on ${name}, which is not installed`); }
+      if (found.has(dir)) continue;
+      const own = await read(dir);
+      found.set(dir, { name: own.name, version: own.version, dir });
+      await visit(own, dir);
+    }
+  };
+  await visit(await read(root), root);
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+}
 
 /** The license file a package ships (LICENSE, LICENSE.md, LICENCE, COPYING…), by file name rather than package.json. */
-export async function npmLicenseFile(root, name) {
-  const dir = join(root, 'node_modules', name);
+export async function npmLicenseFile(dir, name = dir) {
   const file = (await readdir(dir)).filter(entry => /^(?:licen[cs]e|copying)(?:[.-].*)?$/i.test(entry)).sort()[0];
   if (!file) throw new Error(`${name} has no license file in ${dir}`);
   return join(dir, file);
 }
 
+// Exact versions published without a license file (checked 2026-10-13). Their notice states the
+// package.json license and repository instead. A new version must be checked and listed again.
+export const licenseFileExceptions = {
+  'is-reference@3.0.3': 'Svelte compiler dependency; the npm package has no license file',
+  'locate-character@3.0.0': 'Svelte compiler dependency; the npm package has no license file',
+};
+
+// One notice per installed package; a second installed version of a name gets its version in the file name.
+// The source is a file path, or `{ text }` for a listed exception.
+async function npmNotices(root, exceptions) {
+  const packages = await runtimePackages(root);
+  const versions = name => packages.filter(item => item.name === name).length;
+  return Promise.all(packages.map(async ({ name, version, dir }) => {
+    const label = name.replaceAll('/', '-') + (versions(name) > 1 ? `@${version}` : '');
+    const id = `${name}@${version}`;
+    if (!exceptions[id]) return [`LICENSE-${label}`, await npmLicenseFile(dir, id)];
+    const pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'));
+    if (typeof pkg.license !== 'string') throw new Error(`${id} is listed without a license file but its package.json names no license`);
+    const repository = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url ?? '(none)';
+    return [`LICENSE-${label}`, { text: `${id}\nLicense (package.json): ${pkg.license}\nRepository: ${repository}\nThe published package contains no license file. (${exceptions[id]})\n` }];
+  }));
+}
+
 // The corresponding source is published on GitHub, not in the deployment:
 // our code at the built commit, and each upstream at its pinned commit (original and backup fork).
-export async function writeReleaseInfo({ root = projectRoot, output = join(root, 'public'), lock } = {}) {
+export async function writeReleaseInfo({ root = projectRoot, output = join(root, 'public'), lock, exceptions = licenseFileExceptions } = {}) {
   lock ??= JSON.parse(await readFile(join(root, 'upstreams.lock.json'), 'utf8'));
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   if (!pkg.repository?.url) throw new Error('package.json repository.url names the public product repository');
@@ -34,11 +84,11 @@ export async function writeReleaseInfo({ root = projectRoot, output = join(root,
     ['LICENSE-rhwp', join(root, 'source/hop/third_party/rhwp/LICENSE')],
     ['THIRD_PARTY_LICENSES-rhwp.md', join(root, 'source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md')],
     ['licenses-edentext.txt', join(output, 'engines/word/licenses.txt')],
-    ...await Promise.all(npmPackages.map(async name => [`LICENSE-${name.replaceAll('/', '-')}`, await npmLicenseFile(root, name)])),
+    ...await npmNotices(root, exceptions),
   ];
   const sections = ['Sketch Docs — 라이선스 및 타사 고지\n\n제품: AGPL-3.0-only. EdenText: AGPL-3.0-only. HOP/rhwp: MIT.\n대응 소스는 release.json의 GitHub 링크(우리 코드의 빌드 커밋과 각 원본의 고정 커밋)에서 받을 수 있습니다. 이 목록은 법률 검토 인증이 아닙니다.'];
   for (const [name, from] of notices) {
-    const bytes = await readFile(from);
+    const bytes = typeof from === 'string' ? await readFile(from) : Buffer.from(from.text);
     await writeFile(join(legal, name), bytes);
     sections.push(`\n\n===== ${name} =====\n\n${bytes.toString('utf8')}`);
   }
