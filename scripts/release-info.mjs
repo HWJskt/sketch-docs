@@ -8,6 +8,15 @@ const treeUrl = (url, commit) => `${repositoryUrl(url)}/tree/${commit}`;
 const archiveUrl = (url, commit) => `${repositoryUrl(url)}/archive/${commit}.tar.gz`;
 export const upstreamNames = ['edentext', 'hop', 'rhwp'];
 export const upstreamTitles = { edentext: 'EdenText', hop: 'HOP', rhwp: 'rhwp' };
+export const npmPackages = ['canvaskit-wasm', '@noble/hashes', 'fflate', 'svelte'];
+
+/** The license file a package ships (LICENSE, LICENSE.md, LICENCE, COPYING…), by file name rather than package.json. */
+export async function npmLicenseFile(root, name) {
+  const dir = join(root, 'node_modules', name);
+  const file = (await readdir(dir)).filter(entry => /^(?:licen[cs]e|copying)(?:[.-].*)?$/i.test(entry)).sort()[0];
+  if (!file) throw new Error(`${name} has no license file in ${dir}`);
+  return join(dir, file);
+}
 
 // The corresponding source is published on GitHub, not in the deployment:
 // our code at the built commit, and each upstream at its pinned commit (original and backup fork).
@@ -25,7 +34,7 @@ export async function writeReleaseInfo({ root = projectRoot, output = join(root,
     ['LICENSE-rhwp', join(root, 'source/hop/third_party/rhwp/LICENSE')],
     ['THIRD_PARTY_LICENSES-rhwp.md', join(root, 'source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md')],
     ['licenses-edentext.txt', join(output, 'engines/word/licenses.txt')],
-    ...['canvaskit-wasm', '@noble/hashes', 'fflate', 'svelte'].map(name => [`LICENSE-${name.replaceAll('/', '-')}`, join(root, 'node_modules', name, name === 'svelte' ? 'LICENSE.md' : 'LICENSE')]),
+    ...await Promise.all(npmPackages.map(async name => [`LICENSE-${name.replaceAll('/', '-')}`, await npmLicenseFile(root, name)])),
   ];
   const sections = ['Sketch Docs — 라이선스 및 타사 고지\n\n제품: AGPL-3.0-only. EdenText: AGPL-3.0-only. HOP/rhwp: MIT.\n대응 소스는 release.json의 GitHub 링크(우리 코드의 빌드 커밋과 각 원본의 고정 커밋)에서 받을 수 있습니다. 이 목록은 법률 검토 인증이 아닙니다.'];
   for (const [name, from] of notices) {

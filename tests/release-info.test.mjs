@@ -69,3 +69,23 @@ test('a lock entry without a backup fork or license is rejected', async () => {
     await assert.rejects(writeReleaseInfo({ root, lock: { ...lock, rhwp: { ...lock.rhwp, license: undefined } } }), /rhwp needs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('legal notices: the exact file set, each copied byte for byte, and notices.txt in order', async () => {
+  const { root } = await fixture();
+  try {
+    await writeReleaseInfo({ root, lock });
+    const legal = join(root, 'public/legal');
+    const npm = { 'canvaskit-wasm': 'LICENSE', '@noble/hashes': 'LICENSE', fflate: 'LICENSE', svelte: 'LICENSE.md' };
+    const expected = [
+      ['LICENSE', 'LICENSE'], ['LICENSE-edentext', 'source/edentext/LICENSE'], ['LICENSE-hop', 'source/hop/LICENSE'],
+      ['LICENSE-rhwp', 'source/hop/third_party/rhwp/LICENSE'], ['THIRD_PARTY_LICENSES-rhwp.md', 'source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md'],
+      ['licenses-edentext.txt', 'public/engines/word/licenses.txt'],
+      ...Object.entries(npm).map(([name, file]) => [`LICENSE-${name.replaceAll('/', '-')}`, `node_modules/${name}/${file}`]),
+    ];
+    assert.deepEqual((await readdir(legal)).sort(), [...expected.map(([name]) => name), 'notices.txt', 'release.json'].sort());
+    for (const [name, from] of expected) assert.equal(await readFile(join(legal, name), 'utf8'), await readFile(join(root, from), 'utf8'), name);
+    const notices = await readFile(join(legal, 'notices.txt'), 'utf8');
+    const order = expected.map(([name]) => notices.indexOf(`===== ${name} =====`));
+    assert.ok(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])), `section order ${order}`);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
