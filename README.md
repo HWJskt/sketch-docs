@@ -76,6 +76,7 @@ npm run verify   # 배포 전 필수 검사
    - 원본 Git 조작: ignored 파일 보존, 체크아웃 복원, fork 폴백
    - 서비스 워커: 캐시 쓰기 실패, 오프라인 대체, 리다이렉트 저장, 옛 캐시 정리
    - 엔진 파일 목록(`engines/manifest.json`): 진입 JS·CSS·WASM, 미리 받을 글꼴·이미지
+   - 엔진 미리 받기: 진행률, 중복 요청 공유, 형식 선택 시 다른 엔진 중단, 정체 알림, 실패 뒤 다시 받기
 5. Chrome 통합 시험 (`tests/integration.mjs`)을 돌린다.
    - Word: DOCX 저장 내용
    - 한글: HWP/HWPX 저장·재열기, 원본 보호, 사본 재저장, 인쇄

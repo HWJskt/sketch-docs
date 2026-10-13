@@ -59,7 +59,7 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   }
   execFileSync('npm', ['run', 'check'], { cwd: root, stdio: 'inherit' });
   execFileSync('npm', ['run', 'check'], { cwd: join(cache, 'word'), stdio: 'inherit' });
-  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/release-info.test.mjs'), join(root, 'tests/upstream-git.test.mjs'), join(root, 'tests/service-worker.test.mjs'), join(root, 'tests/engine-manifest.test.mjs')], { cwd: root, stdio: 'inherit' });
+  execFileSync(process.execPath, ['--test', join(root, 'tests/contracts.test.mjs'), join(root, 'tests/release-info.test.mjs'), join(root, 'tests/upstream-git.test.mjs'), join(root, 'tests/service-worker.test.mjs'), join(root, 'tests/engine-manifest.test.mjs'), join(root, 'tests/engine-preload.test.mjs')], { cwd: root, stdio: 'inherit' });
   await build({ root, publicDir, build: { outDir, emptyOutDir: true } });
   for (const test of ['tests/integration.mjs', 'tests/regressions.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
   const output = await outputHash(outDir);
