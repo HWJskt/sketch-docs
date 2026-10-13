@@ -7,6 +7,13 @@ import type { Annotation } from 'svelte-pdf-mini';
 import { fingerprint, writeIfUnchanged } from '../fileAccess';
 import type { ExportResult } from './exporter';
 
+export interface SaveTarget {
+    handle: FileSystemFileHandle;
+    /** Hash of what the target holds now (a file chosen with a save picker: its contents after choosing). */
+    hash: string;
+    /** The target is the opened file: keep the original for recovery before the first write. */
+    overwrite: boolean;
+}
 export interface SaveJob {
     epoch: number;
     revision: number;
@@ -14,15 +21,15 @@ export interface SaveJob {
     /** The file's bytes as opened or last saved: what the export starts from. */
     original: Uint8Array;
     annotations: Annotation[];
-    handle: FileSystemFileHandle;
-    /** Hash of what the target holds now (for a new target, its contents when it was chosen). */
-    hash: string;
-    /** Replacing the opened file (Ctrl+S) rather than writing a file chosen with Save As. */
-    overwrite: boolean;
+    /**
+     * Where to write, asked only after the export passed its checks: a save picker empties an existing file
+     * as soon as it is chosen, so nothing may be refused after that. Null means the user cancelled.
+     */
+    target: () => Promise<SaveTarget | null>;
 }
 export type SaveOutcome =
     | { ok: true; epoch: number; revision: number; bytes: Uint8Array; hash: string; handle: FileSystemFileHandle }
-    | { ok: false; epoch: number; revision: number; reason: string };
+    | { ok: false; epoch: number; revision: number; reason: string; cancelled?: true };
 export interface RecoveryStore { keep(name: string, bytes: Uint8Array, hash: string): Promise<void> }
 export type Lock = <T>(work: () => Promise<T>) => Promise<T>;
 
@@ -40,21 +47,30 @@ export function createSaver({ exporter, lock = webLock, recovery }: { exporter: 
 
     async function perform(job: SaveJob): Promise<SaveOutcome> {
         const refused = (reason: string): SaveOutcome => ({ ok: false, epoch: job.epoch, revision: job.revision, reason });
-        const result = await exporter.run(job.original, job.annotations);
+        let result: ExportResult;
+        try { result = await exporter.run(job.original, job.annotations); }
+        catch (error) { return refused(`PDF를 만들지 못했습니다. ${message(error)}`); }
         if (!result.ok) return refused(result.reason);
+        let target: SaveTarget | null;
+        try { target = await job.target(); }
+        catch (error) { return refused(message(error)); }
+        if (!target) return { ok: false, epoch: job.epoch, revision: job.revision, reason: '', cancelled: true };
+        const { handle, hash, overwrite } = target;
         try {
             await lock(async () => {
-                if (job.overwrite && !backedUp.has(job.handle)) {
-                    try { await recovery.keep(job.name, job.original, job.hash); }
+                // A file changed elsewhere is refused before the recovery store is touched.
+                if (await fingerprint(await handle.getFile()) !== hash) throw new Error('파일이 외부에서 변경되었습니다. 다른 이름으로 저장하세요.');
+                if (overwrite && !backedUp.has(handle)) {
+                    try { await recovery.keep(job.name, job.original, await fingerprint(new Blob([new Uint8Array(job.original)]))); }
                     catch (error) { throw new Error(`저장 전 원본을 보관하지 못해 저장하지 않았습니다. ${message(error)}`); }
-                    backedUp.add(job.handle);
+                    backedUp.add(handle);
                 }
-                await writeIfUnchanged(job.handle, new Uint8Array(result.bytes), job.hash);
+                await writeIfUnchanged(handle, new Uint8Array(result.bytes), hash);
             });
         } catch (error) {
             return refused(message(error));
         }
-        return { ok: true, epoch: job.epoch, revision: job.revision, bytes: result.bytes, hash: await fingerprint(new Blob([new Uint8Array(result.bytes)])), handle: job.handle };
+        return { ok: true, epoch: job.epoch, revision: job.revision, bytes: result.bytes, hash: await fingerprint(new Blob([new Uint8Array(result.bytes)])), handle };
     }
 
     return {

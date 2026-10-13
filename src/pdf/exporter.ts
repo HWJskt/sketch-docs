@@ -42,7 +42,9 @@ export function createExporter({ start = startWorker, limitMs = EXPORT_LIMIT_MS 
             return new Promise(resolve => {
                 const timer = setTimeout(() => replace(`PDF를 만드는 데 ${Math.round(limitMs / 1000)}초가 넘게 걸려 중단했습니다.`), limitMs);
                 waiting.set(id, { resolve, timer });
-                current().postMessage({ id, bytes: bytes.slice(), annotations: plain(annotations) });
+                // Starting the worker or sending to it can throw synchronously; that is a refusal like any other.
+                try { current().postMessage({ id, bytes: bytes.slice(), annotations: plain(annotations) }); }
+                catch (error) { replace(`PDF를 만드는 작업을 시작하지 못했습니다. ${error instanceof Error ? error.message : String(error)}`); }
             });
         },
         dispose() { replace('PDF 편집기를 닫았습니다.'); },

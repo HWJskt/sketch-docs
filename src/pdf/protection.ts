@@ -26,7 +26,8 @@ export async function saveBlockReason(bytes: Uint8Array): Promise<string | null>
         if (key) seen.add(key);
         const field = resolve(value);
         if (!(field instanceof PDFDict)) return false;
-        const type = field.get(name('FT')) ?? inheritedType;
+        // The type may be an indirect object (/FT 8 0 R).
+        const type = resolve(field.get(name('FT'))) ?? inheritedType;
         if (type === name('Sig') && field.get(name('V')) !== undefined) return true;
         const kids = resolve(field.get(name('Kids')));
         return kids instanceof PDFArray && kids.asArray().some(kid => signed(kid, type));

@@ -10,7 +10,7 @@
     import type { EditorStatus } from '../editorState';
     import { fingerprint, type PickerWindow } from '../fileAccess';
     import { createExporter } from './exporter';
-    import { createSaver, type SaveOutcome } from './save';
+    import { createSaver, webLock, type SaveOutcome } from './save';
     import { createRecoveryStore, type RecoveryCopy } from './recovery';
     setupPdf();
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
@@ -38,6 +38,9 @@
     let base = $state.raw<Base | null>(null);
     let epoch = $state(0), revision = 0;
     let saving = $state(false);
+    // Saving waits until the annotations already in the file were read: an export replaces the ones this
+    // editor wrote before, so saving earlier would drop them.
+    let imported = $state(false);
     let notice = $state('');
     const canSave = !!pickers.showSaveFilePicker;
     const recovery = createRecoveryStore();
@@ -59,7 +62,7 @@
             const hash = await fingerprint(new Blob([bytes]));
             if (mine !== request) return;
             error = ''; notice = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
-            annotations = []; tracker.reset([]); baseline++; epoch++; revision = 0;
+            annotations = []; tracker.reset([]); baseline++; epoch++; revision = 0; imported = false;
             base = { bytes, hash, handle, name: chosen.name };
             opened = { bytes, name: chosen.name, handle };
         } catch (reason) {
@@ -80,25 +83,64 @@
         await load(handle.getFile(), handle);
     }
     // A save applies only to the document it was started for; edits made meanwhile stay unsaved.
-    function finish(outcome: SaveOutcome, saved: Annotation[], name: string) {
+    function finish(outcome: SaveOutcome, saved: Annotation[]) {
         if (outcome.epoch !== epoch) return;
-        if (!outcome.ok) { error = outcome.reason; return; }
+        if (!outcome.ok) { if (!outcome.cancelled) error = outcome.reason; return; }
+        const name = outcome.handle.name;
         base = { bytes: outcome.bytes, hash: outcome.hash, handle: outcome.handle, name };
         tracker.reset(saved); baseline++;
         notice = `${name}에 저장했습니다.`;
     }
-    /** Ctrl+S: back into the opened file; a file opened without a handle needs a new target. */
-    async function save() {
-        if (!base || saving) return;
-        if (!base.handle || !canSave) return saveAs();
-        const handle = base.handle, name = base.name;
-        const snapshot = annotations, mine = { epoch, revision };
+
+    // A save picker needs a recent click. When the export took longer than that, one more click is asked for.
+    const pdfTypes = [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }];
+    let pickPrompt = $state.raw<{ go: () => void; cancel: () => void } | null>(null);
+    async function chooseSaveFile(suggestedName: string): Promise<FileSystemFileHandle | null> {
+        const open = () => pickers.showSaveFilePicker!({ suggestedName, types: pdfTypes });
+        try { return await open(); }
+        catch (reason) {
+            const kind = (reason as DOMException)?.name;
+            if (kind === 'AbortError') return null;
+            if (kind !== 'SecurityError' && kind !== 'NotAllowedError') throw reason;
+        }
+        return new Promise((resolve, reject) => {
+            pickPrompt = {
+                go: () => { pickPrompt = null; open().then(resolve, reason => (reason as DOMException)?.name === 'AbortError' ? resolve(null) : reject(reason)); },
+                cancel: () => { pickPrompt = null; resolve(null); },
+            };
+        });
+    }
+
+    /**
+     * One save: the annotations are those of the click; the bytes it starts from are read when its turn comes
+     * (a save queued behind another starts from what that one wrote). If another document was opened in the
+     * meantime, nothing is written.
+     */
+    async function run(pick: (start: Base) => Promise<{ handle: FileSystemFileHandle; overwrite: boolean; hash: string } | null>) {
+        const snapshot = annotations, mine = { epoch, revision }, start = base!;
         error = ''; notice = ''; saving = true;
         try {
-            // Read when this save's turn comes: a save queued behind another starts from what that one wrote.
-            const outcome = await saver.save(() => ({ ...mine, name, original: base!.bytes, annotations: snapshot, handle, hash: base!.hash, overwrite: true }));
-            finish(outcome, snapshot, name);
+            const current = () => (epoch === mine.epoch && base ? base : start);
+            const outcome = await saver.save(() => ({
+                ...mine, name: current().name, original: current().bytes, annotations: snapshot,
+                target: async () => {
+                    if (epoch !== mine.epoch) return null;
+                    return pick(current());
+                },
+            }));
+            finish(outcome, snapshot);
         } finally { saving = false; }
+    }
+    /** Ctrl+S: back into the opened file; a file opened without a handle needs a new target. */
+    async function save() {
+        if (!base || saving || !imported) return;
+        if (!base.handle || !canSave) return saveAs();
+        const handle = base.handle;
+        // Write permission is asked while the click still counts as a user action, before the long export.
+        const permitted = await (handle as FileSystemFileHandle & { requestPermission?: (options: { mode: string }) => Promise<string> }).requestPermission?.({ mode: 'readwrite' }).catch(() => 'denied');
+        if (permitted !== undefined && permitted !== 'granted') { error = '파일에 쓸 권한이 없어 저장하지 않았습니다. 다른 이름으로 저장하세요.'; return; }
+        // The file must still hold what this editor opened or last saved.
+        await run(async current => ({ handle, overwrite: true, hash: current.hash }));
     }
     function shortcut(event: KeyboardEvent) {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
@@ -107,24 +149,19 @@
         event.preventDefault();
         void save();
     }
+    /** The target is chosen only after the export passed its checks: the picker empties an existing file. */
     async function saveAs() {
-        if (!base || saving) return;
-        let handle: FileSystemFileHandle;
-        try {
-            handle = await pickers.showSaveFilePicker!({ suggestedName: base.name, types: [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }] });
-        } catch (reason) {
-            if ((reason as DOMException)?.name !== 'AbortError') error = failure('저장할 위치를 고르지 못했습니다.', reason);
-            return;
-        }
-        const target = handle, hash = await fingerprint(await target.getFile());
-        const snapshot = annotations, mine = { epoch, revision };
-        error = ''; notice = ''; saving = true;
-        try {
-            const outcome = await saver.save(() => ({ ...mine, name: target.name, original: base!.bytes, annotations: snapshot, handle: target, hash, overwrite: false }));
-            finish(outcome, snapshot, target.name);
-        } finally { saving = false; }
+        if (!base || saving || !imported) return;
+        await run(async current => {
+            const handle = await chooseSaveFile(current.name);
+            if (!handle) return null;
+            // Choosing the opened file itself is an overwrite: its original (no longer on disk, the picker
+            // emptied it) is kept for recovery. The hash is of what the chosen file holds now.
+            const same = !!current.handle && await current.handle.isSameEntry(handle);
+            return { handle: same ? current.handle! : handle, overwrite: same, hash: await fingerprint(await handle.getFile()) };
+        });
     }
-    // "저장 전 원본 복원": a recovery copy is written to a new file the user chooses; the opened file stays as it is.
+    // "저장 전 원본 복원": a recovery copy is written to a file the user chooses.
     let copies = $state.raw<RecoveryCopy[] | null>(null);
     async function showCopies() {
         if (copies) { copies = null; return; }
@@ -132,20 +169,25 @@
         catch (reason) { error = failure('보관한 원본을 읽지 못했습니다.', reason); }
     }
     async function restore(copy: RecoveryCopy) {
-        let handle: FileSystemFileHandle;
+        if (saving) return;
+        error = ''; notice = ''; saving = true;
         try {
-            handle = await pickers.showSaveFilePicker!({ suggestedName: copy.name.replace(/\.pdf$/i, '') + ' (저장 전 원본).pdf', types: [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }] });
-        } catch (reason) {
-            if ((reason as DOMException)?.name !== 'AbortError') error = failure('저장할 위치를 고르지 못했습니다.', reason);
-            return;
-        }
-        try {
+            // Read first: the picker empties the file it returns.
             const bytes = new Uint8Array(await (await recovery.read(copy.file)).arrayBuffer());
-            const stream = await handle.createWritable();
-            try { await stream.write(bytes); await stream.close(); }
-            catch (reason) { await stream.abort().catch(() => undefined); throw reason; }
-            copies = null; error = ''; notice = `${copy.name}의 저장 전 원본을 ${handle.name}(으)로 저장했습니다.`;
-        } catch (reason) { error = failure('원본을 복원하지 못했습니다.', reason); }
+            const handle = await chooseSaveFile(copy.name.replace(/\.pdf$/i, '') + ' (저장 전 원본).pdf');
+            if (!handle) return;
+            await webLock(async () => {
+                const stream = await handle.createWritable();
+                try { await stream.write(bytes); await stream.close(); }
+                catch (reason) { await stream.abort().catch(() => undefined); throw reason; }
+            });
+            copies = null;
+            notice = `${copy.name}의 저장 전 원본을 ${handle.name}(으)로 저장했습니다.`;
+            // Restored over the opened file: show what the file now holds.
+            if (base?.handle && await base.handle.isSameEntry(handle)) { saving = false; await load(handle.getFile(), handle); notice = `${handle.name}을(를) 저장 전 원본으로 되돌리고 다시 열었습니다.`; }
+        } catch (reason) {
+            error = failure('원본을 복원하지 못했습니다.', reason);
+        } finally { saving = false; }
     }
     const when = (time: number) => new Date(time).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     function picked(event: Event) {
@@ -162,9 +204,10 @@
 <section bind:this={section} class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current} data-opens={epoch}>
     <header class="toolbar">
         <button type="button" onclick={choose} disabled={saving}>PDF 열기</button>
-        <button type="button" onclick={save} disabled={!base || saving || !canSave} title={canSave ? 'Ctrl+S' : undefined}>저장</button>
-        <button type="button" onclick={saveAs} disabled={!base || saving || !canSave} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
-        <button type="button" onclick={showCopies} disabled={!canSave} aria-expanded={copies !== null}>저장 전 원본 복원</button>
+        <button type="button" onclick={save} disabled={!base || saving || !canSave || !imported} title={canSave ? 'Ctrl+S' : undefined}>저장</button>
+        <button type="button" onclick={saveAs} disabled={!base || saving || !canSave || !imported} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
+        <button type="button" onclick={showCopies} disabled={!canSave || saving} aria-expanded={copies !== null}>저장 전 원본 복원</button>
+        {#if pickPrompt}<span class="pick" role="status">파일을 만드는 데 시간이 걸렸습니다. <button type="button" onclick={pickPrompt.go}>저장할 위치 고르기</button> <button type="button" onclick={pickPrompt.cancel}>취소</button></span>{/if}
         {#if opened}<span class="name">{base?.name ?? opened.name}</span>{/if}
         {#if saving}<span class="saving" role="status">저장하는 중…</span>{:else if notice}<span class="saved" role="status">{notice}</span>{/if}
         <input bind:this={input} type="file" accept="application/pdf,.pdf" hidden onchange={picked} />
@@ -195,7 +238,7 @@
                 </Document.Password>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
-                    <Annotations.Root foreign="readonly" importFromPdf {tools} {palette} onImport={result => { tracker.reset(result.annotations); baseline++; annotations = result.annotations; }} onAnnotationsChange={list => { annotations = list; revision++; }}>
+                    <Annotations.Root foreign="readonly" importFromPdf {tools} {palette} onImport={result => { tracker.reset(result.annotations); baseline++; annotations = result.annotations; imported = true; }} onAnnotationsChange={list => { annotations = list; revision++; }}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
                         <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>

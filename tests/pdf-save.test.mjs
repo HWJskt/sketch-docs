@@ -40,7 +40,10 @@ function setup({ refuse, hold } = {}) {
     const recovery = { failing: false, async keep(name, data, hash) { events.push(`keep ${name}`); if (this.failing) throw new Error('quota'); kept.push({ name, data: text(data), hash }); } };
     return { events, kept, recovery, saver: createSaver({ exporter, lock, recovery }) };
 }
-const job = async (target, extra = {}) => ({ epoch: 1, revision: 3, name: 'a.pdf', original: bytes('orig'), annotations: [{ id: 'n1' }], handle: target, hash: await hashOf(bytes(target.contents())), overwrite: true, ...extra });
+const job = async (file, { overwrite = true, ...extra } = {}) => {
+    const hash = await hashOf(bytes(file.contents()));
+    return { epoch: 1, revision: 3, name: 'a.pdf', original: bytes('orig'), annotations: [{ id: 'n1' }], target: async () => ({ handle: file, hash, overwrite }), ...extra };
+};
 
 test('overwriting: the original is kept for recovery once, then the export is written inside the lock', async () => {
     const { saver, events, kept } = setup();
@@ -114,7 +117,7 @@ test('saves run one at a time; a queued save starts from what the previous one w
     const file = handle('orig');
     // The editor's state after each save: the base bytes and hash the next save starts from.
     let base = { original: bytes('orig'), hash: await hashOf(bytes('orig')) };
-    const request = (annotations, revision) => () => ({ epoch: 1, revision, name: 'a.pdf', annotations, handle: file, overwrite: true, ...base });
+    const request = (annotations, revision) => () => ({ epoch: 1, revision, name: 'a.pdf', annotations, original: base.original, target: async () => ({ handle: file, hash: base.hash, overwrite: true }) });
     const settle = outcome => { if (outcome.ok) base = { original: outcome.bytes, hash: outcome.hash }; return outcome; };
     const first = saver.save(request([{ id: 'n1' }], 3)).then(settle);
     const second = saver.save(request([{ id: 'n1' }, { id: 'n2' }], 5)).then(settle);
@@ -135,4 +138,47 @@ test('a save built before the previous one finished (stale base) is refused, not
     const outcome = await saver.save(stale);
     assert.equal(outcome.ok, false);
     assert.equal(file.contents(), 'orig+n1');
+});
+
+test('a target changed elsewhere is refused before the recovery store is touched', async () => {
+    const { saver, events, kept } = setup();
+    const file = handle('orig');
+    const request = await job(file);
+    file.set('saved by another tab');
+    assert.equal((await saver.save(request)).ok, false);
+    assert.deepEqual(kept, []);
+    assert.ok(!events.some(event => event.startsWith('keep')));
+});
+
+test('the target is asked for only after the export passed, and a cancelled choice writes nothing', async () => {
+    const order = [];
+    const exporter = { async run() { order.push('export'); return { id: 1, ok: true, bytes: bytes('out') }; } };
+    const saver = createSaver({ exporter, lock: work => work(), recovery: { async keep() { order.push('keep'); } } });
+    const outcome = await saver.save({ epoch: 1, revision: 1, name: 'a.pdf', original: bytes('orig'), annotations: [], target: async () => { order.push('target'); return null; } });
+    assert.deepEqual([outcome.ok, outcome.cancelled], [false, true]);
+    assert.deepEqual(order, ['export', 'target']);
+    const refused = { async run() { return { id: 1, ok: false, reason: 'refused' }; } };
+    let asked = false;
+    await createSaver({ exporter: refused, lock: work => work(), recovery: { async keep() {} } }).save({ epoch: 1, revision: 1, name: 'a.pdf', original: bytes('orig'), annotations: [], target: async () => { asked = true; return null; } });
+    assert.equal(asked, false, 'a refused export never opens the picker (it would empty an existing file)');
+});
+
+test('an exporter or a target that throws is a refusal, not an exception', async () => {
+    const recovery = { async keep() {} };
+    const broken = createSaver({ exporter: { run() { throw new Error('no worker'); } }, lock: work => work(), recovery });
+    const one = await broken.save({ epoch: 1, revision: 1, name: 'a.pdf', original: bytes('o'), annotations: [], target: async () => null });
+    assert.equal(one.ok, false); assert.match(one.reason, /no worker/);
+    const { saver } = setup();
+    const two = await saver.save({ ...(await job(handle('orig'))), target: async () => { throw new Error('picker failed'); } });
+    assert.equal(two.ok, false); assert.match(two.reason, /picker failed/);
+});
+
+test('choosing the opened file in Save As keeps the original in memory for recovery, though the picker emptied it', async () => {
+    const { saver, kept } = setup();
+    const file = handle('');
+    const outcome = await saver.save({ epoch: 1, revision: 1, name: 'a.pdf', original: bytes('orig'), annotations: [{ id: 'n1' }], target: async () => ({ handle: file, hash: await hashOf(bytes('')), overwrite: true }) });
+    assert.equal(outcome.ok, true);
+    assert.equal(file.contents(), 'orig+n1');
+    assert.deepEqual(kept.map(item => item.data), ['orig']);
+    assert.equal(kept[0].hash, await hashOf(bytes('orig')));
 });

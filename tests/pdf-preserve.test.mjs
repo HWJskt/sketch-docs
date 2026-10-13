@@ -91,3 +91,53 @@ test('the annotation snapshot must match exactly', async () => {
     assert.match(verdict.reason, /저장하려던 주석과 다릅니다/);
 });
 
+
+// A JPEG-like stream (pdf-lib cannot decode DCTDecode) and a Flate image with a predictor, added to fixture E.
+async function withEncodedImages() {
+    const doc = await PDFDocument.load(await fixture('e-image.pdf'));
+    const resources = doc.getPage(0).node.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('XObject'), PDFDict);
+    resources.set(PDFName.of('Jpeg'), doc.context.register(doc.context.stream(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]), { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode' })));
+    resources.set(PDFName.of('Predicted'), doc.context.register(doc.context.flateStream(new Uint8Array([2, 10, 20, 30, 2, 40, 50, 60]), { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 2, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, DecodeParms: { Predictor: 12, Colors: 3, Columns: 1 } })));
+    return doc.save({ useObjectStreams: false });
+}
+const image = (doc, page, key) => page.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('XObject'), PDFDict).lookup(PDFName.of(key));
+
+for (const mode of MODES) {
+    test(`images pdf-lib cannot decode pass when unchanged, and a changed predictor is refused (${mode})`, async () => {
+        const original = await withEncodedImages();
+        const output = await exportPdf(original.slice(), SNAPSHOT, { mode });
+        assert.deepEqual(await checkPreservation(original, output, SNAPSHOT), { ok: true });
+        const damagedOutput = await damaged(output, mode, (doc, page) => image(doc, page, 'Predicted').dict.set(PDFName.of('DecodeParms'), doc.context.obj({ Predictor: 1 })));
+        const verdict = await checkPreservation(original, damagedOutput, SNAPSHOT);
+        assert.equal(verdict.ok, false);
+        assert.match(verdict.reason, /DecodeParms|인코딩/);
+    });
+}
+
+const ours = (doc, page, id) => page.lookup(PDFName.of('Annots'), PDFArray).asArray().map(ref => doc.context.lookup(ref)).find(dict => { const nm = dict.get(PDFName.of('NM')); return (nm instanceof PDFString || nm instanceof PDFHexString) && nm.decodeText() === id; });
+const SAME_ID_DAMAGE = [
+    ['its rectangle moves', (doc, page) => ours(doc, page, 't-rect').set(PDFName.of('Rect'), doc.context.obj([0, 0, 10, 10])), /위치|좌표/],
+    ['its color changes', (doc, page) => ours(doc, page, 't-rect').set(PDFName.of('C'), doc.context.obj([0, 0, 0])), /색/],
+    ['the note text changes', (doc, page) => ours(doc, page, 't-note').set(PDFName.of('Contents'), PDFString.of('other')), /내용/],
+    ['its appearance is removed', (doc, page) => ours(doc, page, 't-ink').delete(PDFName.of('AP')), /모양/],
+];
+for (const [what, damage, reason] of SAME_ID_DAMAGE) {
+    for (const mode of MODES) {
+        test(`one of our annotations keeps its id but ${what}: refused (${mode})`, async () => {
+            const original = await fixture('a-basic.pdf');
+            const output = await damaged(await exportPdf(original.slice(), SNAPSHOT), mode, damage);
+            const verdict = await checkPreservation(original, output, SNAPSHOT);
+            assert.equal(verdict.ok, false, what);
+            assert.match(verdict.reason, reason);
+        });
+    }
+}
+
+test('a snapshot that differs only in a color or a note text is refused', async () => {
+    const original = await fixture('a-basic.pdf');
+    const output = await exportPdf(original.slice(), SNAPSHOT);
+    const recolored = SNAPSHOT.map(item => item.id === 't-rect' ? { ...item, color: [0, 0, 1] } : item);
+    assert.equal((await checkPreservation(original, output, recolored)).ok, false);
+    const retexted = SNAPSHOT.map(item => item.id === 't-note' ? { ...item, contents: '다른 메모' } : item);
+    assert.equal((await checkPreservation(original, output, retexted)).ok, false);
+});

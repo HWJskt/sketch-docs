@@ -10,7 +10,7 @@ import {
     PDFArray, PDFBool, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNull, PDFNumber, PDFRawStream, PDFRef, PDFStream, PDFString,
     decodePDFRawStream, type PDFObject,
 } from '@cantoo/pdf-lib';
-import { EMBEDDED_FILE_NAME, PRIVATE_KEY, importAnnotations } from 'svelte-pdf-mini/pdf-codec';
+import { EMBEDDED_FILE_NAME, PRIVATE_KEY, importAnnotations, writtenRect } from 'svelte-pdf-mini/pdf-codec';
 import type { Annotation } from 'svelte-pdf-mini';
 
 export type Verdict = { ok: true } | { ok: false; reason: string };
@@ -49,6 +49,29 @@ function streamBytes(stream: PDFStream): Uint8Array {
     return stream.getContents();
 }
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+const close = (a: number[], b: number[]) => a.length === b.length && a.every((value, i) => Number.isFinite(value) && Math.abs(value - b[i]) <= 0.01);
+// The annotation subtypes svelte-pdf-mini writes for the kinds this editor offers.
+const SUBTYPES: Record<string, string> = { highlight: 'Highlight', underline: 'Underline', strikeout: 'StrikeOut', note: 'Text', ink: 'Ink', rect: 'Square' };
+
+/** Differences between the saved snapshot and the annotations read back (kind, page and geometry within 0.01). */
+function modelDifferences(want: readonly Annotation[], got: readonly Annotation[]): string[] {
+    const problems: string[] = [];
+    if (got.length !== want.length) problems.push(`주석 ${got.length}개, 기대 ${want.length}개`);
+    for (const item of want) {
+        const read = got.find(other => other.id === item.id) as (Annotation & Record<string, unknown>) | undefined;
+        const expected = item as Annotation & Record<string, unknown>;
+        if (!read) { problems.push(`${item.id}: 없음`); continue; }
+        if (read.kind !== item.kind || read.page !== item.page) problems.push(`${item.id}: 종류·쪽`);
+        if (!close(read.rect, item.rect) || !close(read.color, item.color)) problems.push(`${item.id}: 좌표·색`);
+        if ((read.contents ?? '') !== (item.contents ?? '')) problems.push(`${item.id}: 내용`);
+        const quads = (value: unknown) => (value as number[][] | undefined)?.flat() ?? [];
+        if (expected.quads && !close(quads(read.quads), quads(expected.quads))) problems.push(`${item.id}: 글자 영역`);
+        const points = (value: unknown) => ((value as { points: number[][] }[] | undefined) ?? []).flatMap(path => path.points.flat());
+        if (expected.paths && !close(points(read.paths), points(expected.paths))) problems.push(`${item.id}: 펜 경로`);
+        if (expected.width !== undefined && !close([Number(read.width)], [Number(expected.width)])) problems.push(`${item.id}: 두께`);
+    }
+    return problems;
+}
 
 export async function checkPreservation(original: Uint8Array, output: Uint8Array, snapshot: readonly Annotation[]): Promise<Verdict> {
     try {
@@ -87,8 +110,7 @@ export async function checkPreservation(original: Uint8Array, output: Uint8Array
             if (a instanceof PDFStream || b instanceof PDFStream) {
                 if (!(a instanceof PDFStream) || !(b instanceof PDFStream)) throw new Refusal(`${path}: 형식이 바뀌었습니다.`);
                 compareDicts(a.dict, b.dict, path, STREAM_ENCODING);
-                if (!sameBytes(streamBytes(a), streamBytes(b))) throw new Refusal(`${path}: 스트림 내용이 바뀌었습니다.`);
-                return;
+                return compareStreamData(a, b, path);
             }
             if (a instanceof PDFDict && b instanceof PDFDict) return compareDicts(a, b, path);
             if (a instanceof PDFArray && b instanceof PDFArray) {
@@ -109,6 +131,18 @@ export async function checkPreservation(original: Uint8Array, output: Uint8Array
                 return;
             }
             throw new Refusal(`${path}: 비교할 수 없는 객체입니다(${a.constructor.name}, ${b.constructor.name}).`);
+        }
+
+        // Same filters and parameters: the encoded bytes must be identical (this also covers filters pdf-lib
+        // cannot decode, such as JPEG). Re-encoded: decoded bytes are compared, but only without decode
+        // parameters, because pdf-lib's decoder ignores predictors and would call different images equal.
+        function compareStreamData(a: PDFStream, b: PDFStream, path: string) {
+            const encoding = (stream: PDFStream, doc: PDFDocument) => ['Filter', 'DecodeParms'].map(key => resolve(doc, stream.dict.get(name(key)))?.toString() ?? '').join(' | ');
+            if (encoding(a, before) === encoding(b, after)) {
+                if (sameBytes(a.getContents(), b.getContents())) return;
+            }
+            if (a.dict.get(name('DecodeParms')) !== undefined || b.dict.get(name('DecodeParms')) !== undefined) throw new Refusal(`${path}: 스트림 인코딩이 바뀌어 비교할 수 없습니다.`);
+            if (!sameBytes(streamBytes(a), streamBytes(b))) throw new Refusal(`${path}: 스트림 내용이 바뀌었습니다.`);
         }
 
         function compareDicts(a: PDFDict, b: PDFDict, path: string, skip = new Set<string>()): void {
@@ -225,11 +259,37 @@ export async function checkPreservation(original: Uint8Array, output: Uint8Array
         compare(trailer(before).Root, trailer(after).Root, 'Root');
         if (trailer(before).Info !== undefined || trailer(after).Info !== undefined) compare(trailer(before).Info, trailer(after).Info, 'Info');
 
-        // The annotations we wrote are exactly the snapshot.
-        const read = await importAnnotations(output.slice(), { foreign: false });
+        // The annotations we wrote are exactly the snapshot: in the model read back, and as the standard PDF
+        // annotations other viewers draw (subtype, page, rectangle, color, text and an appearance stream).
         const want = snapshot.filter(item => item.origin !== 'foreign');
-        const ids = (list: readonly Annotation[]) => list.map(item => item.id).sort().join(' ');
-        if (ids(read.annotations) !== ids(want)) throw new Refusal(`저장한 주석이 저장하려던 주석과 다릅니다(${read.annotations.length}개, 기대 ${want.length}개).`);
+        const read = await importAnnotations(output.slice(), { foreign: false });
+        const differences = modelDifferences(want, read.annotations);
+        if (differences.length) throw new Refusal(`저장한 주석이 저장하려던 주석과 다릅니다: ${differences.slice(0, 3).join(', ')}`);
+        let written = 0;
+        after.getPages().forEach((page, index) => {
+            const list = resolve(after, page.node.get(name('Annots')));
+            if (!(list instanceof PDFArray)) return;
+            for (const entry of list.asArray()) {
+                const dict = resolve(after, entry);
+                if (!(dict instanceof PDFDict) || !isOurs(after, oursAfter, entry) || dict.get(name('Subtype')) === name('Popup')) continue;
+                written++;
+                const nm = dict.get(name('NM'));
+                const item = (nm instanceof PDFString || nm instanceof PDFHexString) ? want.find(other => other.id === nm.decodeText()) : undefined;
+                if (!item) throw new Refusal(`${index + 1}쪽: 저장하려던 주석에 없는 주석이 있습니다.`);
+                if (item.page !== index + 1 || dict.get(name('Subtype')) !== name(SUBTYPES[item.kind] ?? '?')) throw new Refusal(`${item.id}: PDF 주석의 종류나 쪽이 다릅니다.`);
+                const numbers = (key: string) => { const value = resolve(after, dict.get(name(key))); return value instanceof PDFArray ? value.asArray().map(v => (resolve(after, v) as PDFNumber)?.asNumber?.() ?? NaN) : []; };
+                if (!close(numbers('Rect'), writtenRect(item))) throw new Refusal(`${item.id}: PDF 주석의 위치가 다릅니다.`);
+                if (!close(numbers('C'), item.color)) throw new Refusal(`${item.id}: PDF 주석의 색이 다릅니다.`);
+                if (item.contents) {
+                    const text = resolve(after, dict.get(name('Contents')));
+                    if (!(text instanceof PDFString || text instanceof PDFHexString) || text.decodeText() !== item.contents) throw new Refusal(`${item.id}: PDF 주석의 내용이 다릅니다.`);
+                }
+                const appearance = resolve(after, dict.get(name('AP')));
+                const normal = appearance instanceof PDFDict ? resolve(after, appearance.get(name('N'))) : undefined;
+                if (!(normal instanceof PDFStream) || normal.getContents().length === 0) throw new Refusal(`${item.id}: PDF 주석의 모양(appearance)이 없습니다.`);
+            }
+        });
+        if (written !== want.length) throw new Refusal(`PDF 주석 ${written}개, 기대 ${want.length}개.`);
         return { ok: true };
     } catch (error) {
         if (error instanceof Refusal) return { ok: false, reason: error.message };

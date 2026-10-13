@@ -72,3 +72,10 @@ test('the bytes sent are a copy, so the caller keeps the original', { timeout: 5
     assert.deepEqual(started[0].messages[0].bytes, bytes);
     exporter.dispose();
 });
+
+test('a worker that cannot be started or sent to is a refusal, and nothing is left waiting', { timeout: 5000 }, async () => {
+    const exporter = createExporter({ start: () => { throw new Error('blocked by policy'); }, limitMs: 60_000 });
+    const result = await exporter.run(bytes, []);
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /시작하지 못했습니다\. blocked by policy/);
+});

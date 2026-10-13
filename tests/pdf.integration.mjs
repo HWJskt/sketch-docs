@@ -26,23 +26,29 @@ async function openPdf(page, name, { loaded = true } = {}) {
     if (loaded) await page.waitForFunction(name => document.querySelector('.pdf-editor .name')?.textContent === name && Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0, name);
 }
 /**
- * Makes "다른 이름으로 저장" pick an origin-private file `name`. Its writable streams are counted, and with
- * `hold` the first write waits until window.__releaseWrite() is called.
+ * Makes the save picker return an origin-private file `name` (or the opened file with `opened`), emptying it
+ * as Chrome does when an existing file is chosen. Picker calls and writable streams are counted; with `hold`
+ * the first write waits until window.__releaseWrite(); with `expired` the first picker call fails as it does
+ * when the click no longer counts as a user action.
  */
-async function saveTarget(page, name, { hold = false } = {}) {
-    await page.evaluate(async ({ name, hold }) => {
+async function saveTarget(page, name, { hold = false, expired = false, opened = null } = {}) {
+    await page.evaluate(async ({ name, hold, expired, opened }) => {
         const directory = await navigator.storage.getDirectory();
-        const handle = await directory.getFileHandle(name, { create: true });
-        const stream = await handle.createWritable(); await stream.close();
-        window.__writables = 0;
+        const handle = await directory.getFileHandle(opened ?? name, { create: true });
+        window.__writables = 0; window.__pickerCalls = 0;
         let release;
         window.__held = hold ? new Promise(resolve => { release = resolve; }) : null;
         window.__releaseWrite = () => release?.();
         const createWritable = handle.createWritable.bind(handle);
         handle.createWritable = async (...args) => { window.__writables++; if (window.__held) await window.__held; return createWritable(...args); };
         window.__saveTarget = handle;
-        window.showSaveFilePicker = async () => handle;
-    }, { name, hold });
+        window.showSaveFilePicker = async () => {
+            window.__pickerCalls++;
+            if (expired && window.__pickerCalls === 1) throw new DOMException('Must be handling a user gesture to show a file picker.', 'SecurityError');
+            const stream = await createWritable(); await stream.close();
+            return handle;
+        };
+    }, { name, hold, expired, opened });
 }
 const savedBytes = page => page.evaluate(async () => Array.from(new Uint8Array(await (await window.__saveTarget.getFile()).arrayBuffer())));
 /** Opens a file previously written to the origin-private folder. */
@@ -500,6 +506,7 @@ const scenarios = [
         await saveTarget(page, 'signed-copy.pdf');
         await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
         await page.getByRole('alert').filter({ hasText: '서명된 PDF는 저장하지 않습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.evaluate(() => window.__pickerCalls), 0, 'refused before the picker (which would empty the chosen file)');
         assert.equal(await page.evaluate(() => window.__writables), 0);
         assert.equal((await savedBytes(page)).length, 0);
         assert.equal(await page.locator('.product-document-dirty').count(), 1, 'still unsaved');
@@ -512,6 +519,7 @@ const scenarios = [
         await saveTarget(page, 'encrypted-copy.pdf');
         await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
         await page.getByRole('alert').filter({ hasText: '암호로 보호된 PDF는 저장하지 않습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.evaluate(() => window.__pickerCalls), 0);
         assert.equal(await page.evaluate(() => window.__writables), 0);
         assert.deepEqual(errors, []);
         await page.close();
@@ -675,6 +683,63 @@ const scenarios = [
         assert.equal(await page.locator('.product-document-dirty').count(), 0);
         assert.deepEqual(errors, []);
         page.removeAllListeners('dialog');
+        await page.close();
+    }],
+    ['Save As onto the opened file itself is an overwrite: it is written and the original is kept for recovery', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf');
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 140, { steps: 8 }); await page.mouse.up();
+        await saveTarget(page, null, { opened: 'e-image.pdf' });
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.getByRole('status').filter({ hasText: 'e-image.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(Buffer.from(await savedBytes(page)).subarray(0, 5).toString(), '%PDF-');
+        const kept = await page.evaluate(async () => {
+            const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle('sketch-docs-recovery', { create: true });
+            const found = [];
+            for await (const [, entry] of folder) found.push(Array.from(new Uint8Array(await (await entry.getFile()).arrayBuffer())));
+            return found;
+        });
+        assert.deepEqual(kept, [[...await fixture('e-image.pdf')]], 'the emptied original is in the recovery store');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['when the export outlasts the click, a second click picks where to save', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf');
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 140, { steps: 8 }); await page.mouse.up();
+        await saveTarget(page, 'second-click.pdf', { expired: true });
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.getByRole('button', { name: '저장할 위치 고르기' }).click();
+        await page.getByRole('status').filter({ hasText: 'second-click.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.evaluate(() => window.__pickerCalls), 2);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['restoring onto the opened file writes the original back and reopens it', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf');
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 140, { steps: 8 }); await page.mouse.up();
+        await page.keyboard.press('ControlOrMeta+S');
+        await page.getByRole('status').filter({ hasText: 'e-image.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        const opens = Number(await page.locator('.pdf-editor').getAttribute('data-opens'));
+        await page.getByRole('button', { name: '저장 전 원본 복원' }).click();
+        await saveTarget(page, null, { opened: 'e-image.pdf' });
+        await page.getByRole('region', { name: '보관한 원본' }).getByRole('button', { name: /^e-image\.pdf · / }).click();
+        await page.getByRole('status').filter({ hasText: '저장 전 원본으로 되돌리고 다시 열었습니다' }).waitFor({ timeout: 30000 });
+        await page.waitForFunction(opens => Number(document.querySelector('.pdf-editor').dataset.opens) > opens && document.querySelector('.pdf-editor').dataset.pages === '1', opens);
+        assert.deepEqual(await savedBytes(page), [...await fixture('e-image.pdf')]);
+        assert.equal(await page.locator('.pdf-editor [data-pdf-annotation][data-kind=rect]').count(), 0, 'the reopened original has no rectangle');
+        assert.equal(await page.locator('.product-document-dirty').count(), 0);
+        assert.deepEqual(errors, []);
         await page.close();
     }],
 ];

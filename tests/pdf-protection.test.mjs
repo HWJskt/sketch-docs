@@ -34,3 +34,13 @@ test('a signature value on a child field (type inherited from the parent) blocks
     form.set(PDFName.of('Fields'), doc.context.obj([parent]));
     assert.equal(await saveBlockReason(await doc.save()), SIGNED);
 });
+
+test('a signature field whose type is an indirect object still blocks saving', async () => {
+    const doc = await PDFDocument.load(await fixture('c2-empty-signature.pdf'));
+    const form = doc.catalog.lookup(PDFName.of('AcroForm'));
+    const type = doc.context.register(PDFName.of('Sig'));
+    const field = doc.context.register(doc.context.obj({ T: 'Indirect', V: doc.context.obj({ Type: 'Sig' }) }));
+    doc.context.lookup(field).set(PDFName.of('FT'), type);
+    form.set(PDFName.of('Fields'), doc.context.obj([field]));
+    assert.equal(await saveBlockReason(await doc.save()), SIGNED);
+});
