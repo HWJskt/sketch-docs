@@ -66,12 +66,20 @@
         return true;
     }
     function popstate() {
-        // Back from an editor opened on the start page: load the start page (leaving asks first if a document is unsaved).
-        if (isHomePath(location.pathname)) { location.reload(); return; }
+        // Back from an editor opened on the start page. The address has already changed, so ask here and
+        // step forward again on cancel; then reload the start page without the browser asking a second time.
+        if (isHomePath(location.pathname)) {
+            if (states().some(state => state.dirty || state.busy) && !confirm('저장하지 않은 문서가 있습니다. 첫 화면으로 돌아갈까요?')) { history.forward(); return; }
+            leaveConfirmed = true;
+            location.reload();
+            return;
+        }
         const mode = modeFromPath(location.pathname);
         if (!switchMode(mode, false)) history.replaceState({mode: active}, '', new URL(active === 'word' ? './word.html' : './hwp.html', location.href));
     }
+    let leaveConfirmed = false;
     function leaving(event: BeforeUnloadEvent) {
+        if (leaveConfirmed) return;
         if (states().some(state => state.dirty || state.busy)) { event.preventDefault(); event.returnValue = ''; }
     }
     onMount(() => {

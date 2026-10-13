@@ -61,6 +61,7 @@ async function wasmNetworkBytes(context, page) {
 const wasmBytes = async page => (await (await page.request.get(origin + '/engines/manifest.json')).json()).engines.hwp.required.find(file => file.path.endsWith('.wasm')).bytes;
 
 let browser;
+let dialogAnswer = 'accept';
 // `persistent` gives the scenario a disk cache like a normal profile; the default context keeps
 // its HTTP cache in memory, which does not hold an 11.8MB WASM for reuse.
 const scenario = async (name, run, { needsServer = false, contextOptions = {}, persistent = false } = {}) => {
@@ -73,7 +74,7 @@ const scenario = async (name, run, { needsServer = false, contextOptions = {}, p
     const page = await context.newPage();
     page.setDefaultTimeout(30000);
     page.on('pageerror', error => errors.push(String(error)));
-    page.on('dialog', dialog => dialog.accept());
+    page.on('dialog', dialog => dialogAnswer === 'dismiss' ? dialog.dismiss() : dialog.accept());
     await run(page, context);
     assert.deepEqual(errors, [], name + ': page errors');
     console.log('PASS', name);
@@ -253,6 +254,47 @@ try {
     await page.goBack();
     await page.getByRole('heading', { name: '어떤 문서를 작성할까요?' }).waitFor();
   }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
+
+  await scenario('start page: clicks and Back while the editor code loads, then Forward after returning', async page => {
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    await page.route(/\/assets\/EditorShell-[^/]+\.js$/, async route => { await held; await route.continue(); });
+    await page.goto(origin + '/');
+    await page.evaluate(() => { window.startPageMarker = true; });
+    const card = page.getByRole('link', { name: /한글 문서/ });
+    await card.click();
+    await card.click();
+    assert.equal(await page.evaluate(() => window.startPageMarker), true, 'a second click while loading must not load a new page');
+    await page.goBack();
+    await page.waitForURL(url => new URL(url).pathname === '/');
+    release();
+    await page.waitForTimeout(1500);
+    assert.equal(await page.locator('iframe, .engine-progress').count(), 0, 'a choice cancelled with Back must not open the editor');
+    await page.getByRole('heading', { name: '어떤 문서를 작성할까요?' }).waitFor();
+    await page.unroute(/\/assets\/EditorShell-[^/]+\.js$/);
+    await card.click();
+    await hangulReady(page);
+    await page.goBack();
+    await page.getByRole('heading', { name: '어떤 문서를 작성할까요?' }).waitFor();
+    await page.goForward();
+    await hangulReady(page);
+  }, { contextOptions: { serviceWorkers: 'block' } }); // page.route cannot hold requests a service worker answers
+
+  await scenario('start page: Back from an unsaved document asks first and keeps the editor when cancelled', async page => {
+    await page.goto(origin + '/');
+    await page.getByRole('link', { name: /Word 문서/ }).click();
+    await wordFrame(page).locator('.tiptap').first().click();
+    await page.keyboard.type('저장 안 한 글');
+    await page.waitForFunction(() => window.sketchShell && document.querySelector('iframe')?.contentWindow?.sketchWord?.state().dirty);
+    dialogAnswer = 'dismiss';
+    try {
+      await page.goBack();
+      await page.waitForURL(url => /^\/word(?:\.html)?$/.test(new URL(url).pathname));
+      await wordFrame(page).getByText('저장 안 한 글').waitFor();
+    } finally { dialogAnswer = 'accept'; }
+    await page.goBack();
+    await page.getByRole('heading', { name: '어떤 문서를 작성할까요?' }).waitFor();
+  });
 
   await scenario('the start page does not preload on a Save-Data connection', async page => {
     await page.addInitScript(() => Object.defineProperty(navigator, 'connection', { value: { saveData: true, effectiveType: '4g' } }));
