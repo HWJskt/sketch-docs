@@ -348,7 +348,7 @@
 | 1. Svelte 업그레이드 | 완료: 5.55.9 → 5.57.1(5.57.2는 출시 7일이라 2주 넘은 5.57.1). `npm run verify` 단위 40/40·통합 PASS·회귀 14 PASS. 진입 청크(gzip) home 1.50→1.50kB, word·hwp 0.15→0.15kB, routes 19.10→19.38kB, EditorShell 8.56→8.47kB | (이 커밋) |
 | 2a-1. 라이선스 수집기 정리 | 완료: 특성화 시험(파일 목록·바이트·순서) 추가 후 리팩터링, 실제 리포 `legal/` 전후 diff 0(`release.json`은 `generatedAt`만 다름), 변이(LICENSE.md 못 찾음) → 4건 실패 | (이 커밋) |
 | 2a-2. 런타임 전이 의존성 전체 | 완료: 23개(lock 런타임 집합과 같음, svelte 5.57에서 1개 줄어 계획의 24가 아님). LICENSE 파일 없는 `is-reference@3.0.3`·`locate-character@3.0.0`은 정확한 버전 예외로 package.json 라이선스·저장소를 고지. verify 단위 44/44·통합 PASS·회귀 14 PASS, `dist/legal` 31개 | (이 커밋) |
-| 2b. 의존성 추가 | 대기 | |
+| 2b. 의존성 추가 | 완료: `svelte-pdf-mini` 0.9.1(10/8 출시, 사용자 고정판)·`@cantoo/pdf-lib` 2.11.1(9/15). 런타임 패키지 42개(선택 의존성 제외, lock 집합과 같음). `dompurify` 3.4.17·`marked` 18.1.1은 출시 1일이지만 보안 관련 수정이라 그대로 둠. verify 단위 45/45·통합 PASS·회귀 14 PASS, `dist/legal` 50개 | (이 커밋) |
 | 3. pdf.js 자산 | 대기 | |
 | 4a-1~4d. 독립 보기 | 대기 | |
 | 5a~5d. 엔진 타입·경로·셸·첫 화면 | 대기 | |
