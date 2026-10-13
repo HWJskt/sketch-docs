@@ -293,14 +293,14 @@ try {
     cdp.on('Network.requestWillBeSent', event => {
       const path = new URL(event.request.url).pathname;
       if (pdfFiles.has(path) || /^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path);
-      if (path.endsWith('/pdf.worker.min.mjs')) worker.add(event.requestId);
+      if (/\/pdf\.worker\.min-[\w-]+\.mjs$/.test(path)) worker.add(event.requestId);
     });
     cdp.on('Network.requestServedFromCache', event => cached.add(event.requestId));
     cdp.on('Network.responseReceived', event => { if (event.response.fromDiskCache || event.response.fromMemoryCache) cached.add(event.requestId); });
     cdp.on('Network.dataReceived', event => { if (worker.has(event.requestId) && !cached.has(event.requestId)) workerBytes += event.dataLength; });
     await page.addInitScript(() => localStorage.setItem('sketch-docs-last-engine', 'pdf'));
     await page.goto(origin + '/');
-    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/pdf.worker.min.mjs') && entry.responseEnd > 0), null, { timeout: 60000 });
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => /\/pdf\.worker\.min-[\w-]+\.mjs$/.test(entry.name) && entry.responseEnd > 0), null, { timeout: 60000 });
     assert.ok(pdfFiles.has(order[0]), `the last used editor downloads first (order: ${order.slice(0, 3)})`);
     await page.getByRole('link', { name: /PDF 문서/ }).click();
     await page.getByRole('button', { name: 'PDF 열기' }).waitFor();
@@ -312,7 +312,7 @@ try {
     }, bytes);
     await page.getByRole('button', { name: 'PDF 열기' }).click();
     await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
-    const size = engines.pdf.required.find(file => file.path.endsWith('/pdf.worker.min.mjs')).bytes;
+    const size = engines.pdf.required.find(file => /pdf\.worker\.min-[\w-]+\.mjs$/.test(file.path)).bytes;
     assert.ok(workerBytes <= size * 1.05, `the worker crossed the network once (${workerBytes} bytes received, file ${size})`);
   }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
 

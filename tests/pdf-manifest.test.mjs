@@ -7,20 +7,20 @@ const manifest = {
     '_shared-b.js': { file: 'assets/shared-b.js', imports: ['_runtime-d.js'] },
     '_runtime-d.js': { file: 'assets/runtime-d.js' },
     'node_modules/pdfjs-dist/build/pdf.mjs': { file: 'assets/pdf-e.js', imports: ['_shared-b.js'] },
-    'node_modules/pdfjs-dist/build/pdf.worker.min.mjs?url': { file: 'assets/pdf.worker.min-f.js' },
+    'node_modules/pdfjs-dist/build/pdf.worker.min.mjs?url': { file: 'assets/pdf.worker.min-f.js', assets: ['assets/pdf.worker.min-w.mjs'] },
     'node_modules/@cantoo/pdf-lib/es/index.js': { file: 'assets/pdf-lib-g.js' },
     'index.html': { file: 'assets/home-h.js', isEntry: true, imports: ['_runtime-d.js'] },
 };
 
-test('the PDF engine is the editor chunk, pdf.js and pdf-lib with their static imports and CSS, plus our worker copy', () => {
-    assert.deepEqual(pdfEngineFiles(manifest, '6.4.299'), [
-        'assets/PdfEditor-a.js', 'assets/PdfEditor-c.css', 'assets/pdf-e.js', 'assets/pdf-lib-g.js', 'assets/runtime-d.js', 'assets/shared-b.js', 'pdfjs/6.4.299/pdf.worker.min.mjs',
+test('the PDF engine is the editor chunk, pdf.js, its worker and pdf-lib with their static imports, CSS and assets', () => {
+    assert.deepEqual(pdfEngineFiles(manifest), [
+        'assets/PdfEditor-a.js', 'assets/PdfEditor-c.css', 'assets/pdf-e.js', 'assets/pdf-lib-g.js', 'assets/pdf.worker.min-f.js', 'assets/pdf.worker.min-w.mjs', 'assets/runtime-d.js', 'assets/shared-b.js',
     ]);
 });
 
 test('a missing editor chunk or a pdf.js import that disappeared fails instead of listing too little', () => {
     const { 'src/pdf/PdfEditor.svelte': _, ...withoutEditor } = manifest;
-    assert.throws(() => pdfEngineFiles(withoutEditor, '6.4.299'), /PdfEditor\.svelte is not in the Vite build manifest/);
+    assert.throws(() => pdfEngineFiles(withoutEditor), /PdfEditor\.svelte is not in the Vite build manifest/);
     const moved = { ...manifest, 'src/pdf/PdfEditor.svelte': { ...manifest['src/pdf/PdfEditor.svelte'], dynamicImports: [] } };
-    assert.throws(() => pdfEngineFiles(moved, '6.4.299'), /no longer imports node_modules\/pdfjs-dist\/build\/pdf\.mjs/);
+    assert.throws(() => pdfEngineFiles(moved), /no longer imports node_modules\/pdfjs-dist\/build\/pdf\.mjs/);
 });

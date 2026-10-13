@@ -34,7 +34,8 @@
 
 ## 알려진 남은 일
 
-- 산출물에 쓰지 않는 파일: 라이브러리가 Vite `?url`로 묶는 pdf.js worker 사본 2개(각 1.26MB, 우리는 `pdfjs/`의 것을 씀)와 KaTeX 글꼴 59개(1.1MB). 기능에는 영향이 없고 Pages 제한 안이다.
+- (정리함, 2026-10-14) pdf.js worker가 두 벌(라이브러리의 Vite `?url` 사본과 우리 `pdfjs/` 사본, 각 1.26MB) 있었다. 라이브러리 사본은 라이브러리를 고치지 않고는 뺄 수 없어 우리 사본을 뺐다(`configurePdf`의 `workerSrc` 제거). 배포 파일 527 → 526개. 앞의 "`.js`도 1.26MB"는 잘못 쟀다 — 90바이트짜리 주소 모듈이다.
+- KaTeX 글꼴 59개(1.1MB)는 쓰지 않는 파일이 아니었다: 메모에 `$…$` 수식을 쓰면 라이브러리가 KaTeX와 글꼴을 불러온다(`svelte-pdf-mini/dist/internal/markdown.js`). 그대로 둔다.
 - 주간 upstream-watch에 `svelte-pdf-mini` 최신판 검사를 넣을지는 아직 정하지 않았다.
 - (해결) wrangler 4.142의 npm audit 권고: 배포 전에 4.149.0으로 올렸다(`npm audit` 0건).
 

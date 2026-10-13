@@ -16,12 +16,12 @@ async function fixture(version) {
   return { root, put };
 }
 
-test('pdf.js assets are copied under their version, without the legacy build or source maps', async () => {
+test('pdf.js assets are copied under their version, without the worker (Vite emits it), the legacy build or source maps', async () => {
   const { root } = await fixture('6.4.299');
   try {
     const target = await copyPdfAssets({ root, output: join(root, 'public') });
     assert.equal(target, join(root, 'public/pdfjs/6.4.299'));
-    assert.deepEqual((await readdir(target)).sort(), ['LICENSE', 'cmaps', 'iccs', 'pdf.worker.min.mjs', 'standard_fonts', 'wasm']);
+    assert.deepEqual((await readdir(target)).sort(), ['LICENSE', 'cmaps', 'iccs', 'standard_fonts', 'wasm']);
     assert.equal(await readFile(join(target, 'cmaps/UniKS-UCS2-H.bcmap'), 'utf8'), 'node_modules/pdfjs-dist/cmaps/UniKS-UCS2-H.bcmap');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

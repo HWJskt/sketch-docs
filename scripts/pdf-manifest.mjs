@@ -1,17 +1,17 @@
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { MANIFEST } from './engine-manifest.mjs';
-import { pdfjsVersion } from './pdf-assets.mjs';
 
 // The PDF editor is a chunk the shell imports when PDF is chosen, so its files are only known after the
 // shell build. This adds them to engines/manifest.json in the build output (plan step 6a), from Vite's
-// build manifest: the PdfEditor chunk, pdf.js and pdf-lib (which it imports on the first document), each with
-// their static imports and CSS, plus the pdf.js worker from pdfjs/<version>/ (scripts/pdf-assets.mjs).
+// build manifest: the PdfEditor chunk, pdf.js, its worker (the library's `?url` import, whose asset is the
+// worker file) and pdf-lib (which it imports on the first document), each with their static imports, CSS and
+// assets.
 export const PDF_ENTRY = 'src/pdf/PdfEditor.svelte';
 // pdf.js draws the document; pdf-lib reads the annotations already in it when it opens.
-export const PDF_REQUIRED_DYNAMIC = ['node_modules/pdfjs-dist/build/pdf.mjs', 'node_modules/@cantoo/pdf-lib/es/index.js'];
+export const PDF_REQUIRED_DYNAMIC = ['node_modules/pdfjs-dist/build/pdf.mjs', 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs?url', 'node_modules/@cantoo/pdf-lib/es/index.js'];
 
-export function pdfEngineFiles(viteManifest, version) {
+export function pdfEngineFiles(viteManifest) {
     const files = new Set();
     const visit = key => {
         const chunk = viteManifest[key];
@@ -19,6 +19,7 @@ export function pdfEngineFiles(viteManifest, version) {
         if (files.has(chunk.file)) return;
         files.add(chunk.file);
         for (const css of chunk.css ?? []) files.add(css);
+        for (const asset of chunk.assets ?? []) files.add(asset);
         for (const imported of chunk.imports ?? []) visit(imported);
     };
     visit(PDF_ENTRY);
@@ -27,13 +28,12 @@ export function pdfEngineFiles(viteManifest, version) {
         if (!dynamic.includes(key)) throw new Error(`PDF engine: ${PDF_ENTRY} no longer imports ${key}`);
         visit(key);
     }
-    files.add(`pdfjs/${version}/pdf.worker.min.mjs`);
     return [...files].sort();
 }
 
-export async function addPdfEngine(outDir, root = resolve(import.meta.dirname, '..')) {
+export async function addPdfEngine(outDir) {
     const viteManifest = JSON.parse(await readFile(join(outDir, '.vite/manifest.json'), 'utf8'));
-    const required = await Promise.all(pdfEngineFiles(viteManifest, await pdfjsVersion(root)).map(async path => {
+    const required = await Promise.all(pdfEngineFiles(viteManifest).map(async path => {
         const { size } = await stat(join(outDir, path)).catch(() => { throw new Error(`PDF engine: ${path} is listed but missing from ${outDir}`); });
         return { path, bytes: size };
     }));
