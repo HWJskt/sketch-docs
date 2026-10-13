@@ -44,3 +44,6 @@
 - `a345d0c`를 `npm run verify`(단위 137, 브라우저 50) → push → `npm run mirrors:check` → `npm run deploy`(wrangler 4.149.0, 526개 중 350개 업로드)로 배포했다.
 - `npm run test:live`(https://docs.sketchps.app): 15개 통과, 2개는 서버 제어가 필요해 건너뜀(서비스 워커 설치 실패·응답 지연).
 - 실제 Pages에서 미리 받기 회귀가 통과했다: 첫 화면에서 미리 받은 한글 WASM과 PDF worker가 편집기를 열 때 네트워크로 다시 오지 않았다(엔진 미리 받기 계획의 "배포 뒤 확인" 항목).
+- `fd30829`(pdf.js worker 한 벌, 주간 npm 확인)을 같은 절차로 배포했다(525개 중 14개 업로드). `npm run test:live`: 15개 통과, 2개 건너뜀.
+- 배포 뒤 GitHub Actions가 `fa504a9`부터 실패하던 것을 찾았다. 엔진 목록 회귀 시험이 영어 Chrome에서 Word의 영어 맞춤법 사전과 Hunspell 청크(1.3MB)를 만나 깨졌다(한국어 기기에서는 받지 않아 통과). 시나리오 로캘을 ko-KR로 고정했다(`4aec08c`). 그 뒤 CI verify와 upstream-watch(최신 원본·npm 확인) 모두 통과했고, 이 때문에 열린 이슈 #1은 닫았다.
+- 옛 `pdfjs/6.4.299/pdf.worker.min.mjs`는 새 배포에 없지만 `docs.sketchps.app`의 Cloudflare 캐시에 `immutable`로 남아 있다. 새 코드는 이 주소를 쓰지 않는다.
