@@ -193,7 +193,9 @@ try {
 
   // An upstream update that makes an editor download a new large file must fail here, so the
   // shell's download progress and preloading stay true. Service workers are blocked so every
-  // request reaches the network log.
+  // request reaches the network log. The locale is fixed: Word fetches the Hunspell checker and
+  // the dictionary for navigator.language after startup (en: 1.3MB on an English Chrome, nothing
+  // for Korean), and those per-language files are not preloaded.
   await scenario('engine manifest lists what each editor downloads at startup', async (page, context) => {
     const { engines } = await (await page.request.get(origin + '/engines/manifest.json')).json();
     const ready = {
@@ -235,7 +237,7 @@ try {
       const missing = engines[name].required.map(file => file.path).filter(path => !byEditor.has(path));
       assert.deepEqual(missing, [], `${name}: manifest requires files the editor never downloads`);
     }
-  }, { contextOptions: { serviceWorkers: 'block' } });
+  }, { contextOptions: { serviceWorkers: 'block', locale: 'ko-KR' } });
 
   const hangulReady = page => page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor();
   await scenario('a slow network shows engine download progress, then the editor opens from the downloaded files', async (page, context) => {
