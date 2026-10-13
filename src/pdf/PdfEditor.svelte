@@ -11,7 +11,7 @@
     import { fingerprint, type PickerWindow } from '../fileAccess';
     import { createExporter } from './exporter';
     import { createSaver, type SaveOutcome } from './save';
-    import { createRecoveryStore } from './recovery';
+    import { createRecoveryStore, type RecoveryCopy } from './recovery';
     setupPdf();
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
 
@@ -123,6 +123,30 @@
             finish(outcome, snapshot, target.name);
         } finally { saving = false; }
     }
+    // "저장 전 원본 복원": a recovery copy is written to a new file the user chooses; the opened file stays as it is.
+    let copies = $state.raw<RecoveryCopy[] | null>(null);
+    async function showCopies() {
+        if (copies) { copies = null; return; }
+        try { copies = await recovery.list(); }
+        catch (reason) { error = failure('보관한 원본을 읽지 못했습니다.', reason); }
+    }
+    async function restore(copy: RecoveryCopy) {
+        let handle: FileSystemFileHandle;
+        try {
+            handle = await pickers.showSaveFilePicker!({ suggestedName: copy.name.replace(/\.pdf$/i, '') + ' (저장 전 원본).pdf', types: [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }] });
+        } catch (reason) {
+            if ((reason as DOMException)?.name !== 'AbortError') error = failure('저장할 위치를 고르지 못했습니다.', reason);
+            return;
+        }
+        try {
+            const bytes = new Uint8Array(await (await recovery.read(copy.file)).arrayBuffer());
+            const stream = await handle.createWritable();
+            try { await stream.write(bytes); await stream.close(); }
+            catch (reason) { await stream.abort().catch(() => undefined); throw reason; }
+            copies = null; error = ''; notice = `${copy.name}의 저장 전 원본을 ${handle.name}(으)로 저장했습니다.`;
+        } catch (reason) { error = failure('원본을 복원하지 못했습니다.', reason); }
+    }
+    const when = (time: number) => new Date(time).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     function picked(event: Event) {
         const field = event.currentTarget as HTMLInputElement;
         const file = field.files?.[0];
@@ -139,10 +163,21 @@
         <button type="button" onclick={choose} disabled={saving}>PDF 열기</button>
         <button type="button" onclick={save} disabled={!base || saving || !canSave} title={canSave ? 'Ctrl+S' : undefined}>저장</button>
         <button type="button" onclick={saveAs} disabled={!base || saving || !canSave} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
+        <button type="button" onclick={showCopies} disabled={!canSave} aria-expanded={copies !== null}>저장 전 원본 복원</button>
         {#if opened}<span class="name">{base?.name ?? opened.name}</span>{/if}
         {#if saving}<span class="saving" role="status">저장하는 중…</span>{:else if notice}<span class="saved" role="status">{notice}</span>{/if}
         <input bind:this={input} type="file" accept="application/pdf,.pdf" hidden onchange={picked} />
     </header>
+    {#if copies}
+        <div class="copies" role="region" aria-label="보관한 원본">
+            {#if copies.length}
+                <p>이 브라우저가 덮어쓰기 전에 보관한 원본입니다. 고르면 새 파일로 저장합니다.</p>
+                <ul>{#each copies as copy (copy.file)}<li><button type="button" onclick={() => restore(copy)}>{copy.name} · {when(copy.savedAt)}</button></li>{/each}</ul>
+            {:else}
+                <p>보관한 원본이 없습니다. 열린 파일에 처음 저장할 때 원본을 보관합니다.</p>
+            {/if}
+        </div>
+    {/if}
     {#if error}<p class="problem" role="alert">{error}</p>{/if}
     {#if src}
         {#key src}
@@ -227,6 +262,10 @@
     .toolbar button {font:inherit;font-size:13px;padding:5px 12px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     .name {font-size:13px;color:#5b6980}
     .saving, .saved {font-size:12px;color:#5b6980}
+    .copies {margin:0;padding:8px 12px;border-bottom:1px solid #dce1e8;background:#fffdf5;font-size:13px}
+    .copies p {margin:0 0 6px}
+    .copies ul {margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+    .copies button {font:inherit;padding:3px 10px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;cursor:pointer}
     .problem {margin:8px 12px;color:#9a4b00;font-size:13px}
     .empty {margin:auto;font-size:14px}
     .pdf-editor :global(.viewer) {flex:1;min-height:0;display:flex;flex-direction:column}

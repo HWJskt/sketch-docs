@@ -611,6 +611,26 @@ const scenarios = [
             assert.deepEqual([loser.refused, loser.dirty], [1, 1]);
         } finally { await context.close(); }
     }],
+    ['the original kept before the first overwrite can be restored to a new file', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '저장 전 원본 복원' }).click();
+        await page.getByRole('region', { name: '보관한 원본' }).getByText('보관한 원본이 없습니다').waitFor();
+        await page.getByRole('button', { name: '저장 전 원본 복원' }).click();
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 400); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 440, { steps: 8 }); await page.mouse.up();
+        await page.keyboard.press('ControlOrMeta+S');
+        await page.getByRole('status').filter({ hasText: 'a-basic.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        await page.getByRole('button', { name: '저장 전 원본 복원' }).click();
+        await saveTarget(page, 'restored.pdf');
+        await page.getByRole('region', { name: '보관한 원본' }).getByRole('button', { name: /^a-basic\.pdf · / }).click();
+        await page.getByRole('status').filter({ hasText: 'restored.pdf(으)로 저장했습니다' }).waitFor();
+        assert.deepEqual(await savedBytes(page), [...await fixture('a-basic.pdf')], 'the restored file is the original');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;
