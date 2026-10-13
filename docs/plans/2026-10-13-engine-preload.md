@@ -94,8 +94,17 @@ PDF 뷰어 계획(`2026-10-13-pdf-viewer.md`)보다 먼저 한다. PDF 엔진은
 | 단계 | 상태 | 커밋 |
 |---|---|---|
 | 계획 | 작성 | |
-| 1. manifest·검사 | 대기 | |
+| 1. manifest·검사 | 완료 | (이 커밋) |
 | 2. preload 모듈 | 대기 | |
 | 3. 셸 진행 화면 | 대기 | |
 | 4. 첫 화면 | 대기 | |
 | 5. 실측·판정·리뷰 | 대기 | |
+
+## 기록
+
+- 1단계(2026-10-13): `scripts/engine-manifest.mjs`가 빌드 끝에 `engines/manifest.json`을 쓴다.
+  - Word 필수: 진입 JS·CSS(압축 전 2.5MB). 미리 받기: Liberation Sans·Serif 8개. 실제로 처음 여는 데 쓰는 것은 그중 5개다.
+  - 한글 필수: 진입 JS·CSS·rhwp WASM·초기 스크립트 2개(압축 전 14.0MB). 미리 받기: 아이콘 SVG 2개.
+  - 크기는 압축 전 바이트다. `fetch` 본문을 읽으면 압축 해제된 바이트가 나오므로, 진행률 분모로 그대로 쓴다.
+  - Chrome 회귀 시나리오 변이 2건: 목록에서 WASM을 빼면 "large startup downloads missing", 쓰지 않는 harper WASM을 넣으면 "never downloads"로 실패했다.
+  - `npm run verify`: 단위 29개 실패 0, 회귀 7개 PASS.

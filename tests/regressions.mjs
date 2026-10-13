@@ -38,9 +38,9 @@ const server = createServer(async (request, response) => {
 });
 
 let browser;
-const scenario = async (name, run, { needsServer = false } = {}) => {
+const scenario = async (name, run, { needsServer = false, contextOptions = {} } = {}) => {
   if (live && needsServer) { console.log('SKIP (live)', name); return; }
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...contextOptions });
   const errors = [];
   try {
     const page = await context.newPage();
@@ -125,6 +125,36 @@ try {
     assert.match(items, /\(\.odt\)/);
     assert.doesNotMatch(items, /\.hwpx?\)/, 'no Hangul Save As in the modern toolbar');
   });
+
+  // An upstream update that makes an editor download a new large file must fail here, so the
+  // shell's download progress and preloading stay true. Service workers are blocked so every
+  // request reaches the network log.
+  await scenario('engine manifest lists what each editor downloads at startup', async (page, context) => {
+    const { engines } = await (await page.request.get(origin + '/engines/manifest.json')).json();
+    const ready = {
+      word: () => wordFrame(page).locator('.tiptap').first().waitFor(),
+      hwp: () => page.getByRole('status').filter({ hasText: '새 문서입니다' }).waitFor(),
+    };
+    for (const [name, open] of Object.entries(ready)) {
+      const listed = new Set([...engines[name].required, ...engines[name].warm].map(file => file.path));
+      const seen = new Map();
+      const record = async response => {
+        const url = new URL(response.url());
+        if (url.origin !== origin || response.status() !== 200) return;
+        const bytes = (await response.body().catch(() => Buffer.alloc(0))).length;
+        seen.set(url.pathname.slice(1), bytes);
+      };
+      context.on('response', record);
+      await page.goto(origin + '/' + name);
+      await open();
+      await page.waitForLoadState('networkidle');
+      context.off('response', record);
+      const unlisted = [...seen].filter(([path, bytes]) => bytes > 100_000 && !listed.has(path));
+      assert.deepEqual(unlisted, [], `${name}: large startup downloads missing from the engine manifest`);
+      const missing = engines[name].required.map(file => file.path).filter(path => !seen.has(path));
+      assert.deepEqual(missing, [], `${name}: manifest requires files the editor never downloads`);
+    }
+  }, { contextOptions: { serviceWorkers: 'block' } });
 
   await scenario('direct Word engine URL opens the product shell', async page => {
     await page.goto(origin + '/engines/word/index.html');
