@@ -1,3 +1,5 @@
+import { writeIfUnchanged } from './fileAccess';
+
 export type HangulFormat = 'hwp' | 'hwpx';
 export interface DocumentVersion { epoch: number; revision: number; dirty: boolean }
 export interface HangulArtifact {
@@ -25,24 +27,9 @@ export function bridgeFrom(frame: HTMLIFrameElement): HangulBridge {
     return bridge;
 }
 
-export async function fingerprint(file: File): Promise<string> {
-    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-}
-
 export async function writeArtifact(handle: FileSystemFileHandle, artifact: HangulArtifact, expectedHash: string) {
     if (artifact.contentLoss.schemaVersion !== 1 || artifact.contentLoss.count !== 0 || artifact.contentLoss.losses.length) {
         throw new Error('내용 손실이 보고되어 저장을 중단했습니다. 원본과 편집 내용은 유지됩니다.');
     }
-    if (await fingerprint(await handle.getFile()) !== expectedHash) {
-        throw new Error('파일이 외부에서 변경되었습니다. 다른 이름으로 저장하세요.');
-    }
-    const writable = await handle.createWritable();
-    try {
-        await writable.write(new Uint8Array(artifact.bytes));
-        await writable.close();
-    } catch (error) {
-        await writable.abort().catch(() => undefined);
-        throw error;
-    }
+    await writeIfUnchanged(handle, new Uint8Array(artifact.bytes), expectedHash);
 }

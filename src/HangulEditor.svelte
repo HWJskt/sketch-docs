@@ -2,8 +2,8 @@
     import { mount, unmount, onDestroy } from 'svelte';
     import type { EditorStatus, HangulInput } from './editorState';
     import HangulFileMenu from './HangulFileMenu.svelte';
-    import { bridgeFrom, fingerprint, writeArtifact, type HangulBridge, type HangulFormat } from './hangulFiles';
-    import type { PickerWindow } from './fileAccess';
+    import { bridgeFrom, writeArtifact, type HangulBridge, type HangulFormat } from './hangulFiles';
+    import { fingerprint, type PickerWindow } from './fileAccess';
     let { initialFile, onExit, startNew = true, engineUrl = './rhwp/index.html?chrome=embed', homeUrl = './', embedded = false, onState }: {
         initialFile?: { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null };
         onExit?: () => void;

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fingerprint, writeArtifact } from '../src/hangulFiles.ts';
+import { writeArtifact } from '../src/hangulFiles.ts';
+import { fingerprint } from '../src/fileAccess.ts';
 
 const artifact = (text = 'saved') => ({
   bytes: new TextEncoder().encode(text),

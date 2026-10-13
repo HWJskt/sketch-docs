@@ -368,7 +368,7 @@
 | 6b. 미리 받기 순서 | 완료: 순서에 `pdf`. 회귀(마지막에 PDF → PDF 파일이 첫 요청, PDF 연 뒤 worker 네트워크 전송 1회 이하). 첫 화면 미리 받기 필수 합계 18.46MB 중 PDF 1.91MB(엔진 미리 받기 문서에 표). verify 단위 51/51·브라우저 29. 변이는 안 돌림(`engineOrder`가 목록에 없는 마지막 엔진을 무시하는 경로라 단언이 바로 실패함) | (이 커밋) |
 | 6c. 번들 경계 시험 | 완료: 빌드 플러그인이 `.vite/chunk-modules.json`(청크별 모듈 ID) 기록, `tests/bundle-boundary.mjs <outDir>`가 첫 화면·Word·한글·PDF 진입에서 `PdfEditor`를 넘지 않고 닿는 청크 6개에 PDF 패키지 모듈 0건 확인. verify가 PDF 목록 추가 뒤·`.vite/` 삭제 전에 실행. 변이 3개(셸이 `configurePdf`·pdfjs `version`·`PDFDocument.create`를 씀) → 각각 새어 들어온 모듈 이름으로 실패. verify 단위 51/51·브라우저 30, `dist/` 없이 `upstream:check -- --current` 통과 | (이 커밋) |
 | 7a. 선택기 타입 공용화 | 완료: `PickerWindow`를 `src/fileAccess.ts`로, Word 엔진 복사 목록에 추가. Word 엔진 타입 검사 713파일 0 오류, verify 단위 51/51·통합(원본 보호·사본 저장·외부 변경) PASS·브라우저 30 | (이 커밋) |
-| 7b. 해시·쓰기 공용화 | 대기 | |
+| 7b. 해시·쓰기 공용화 | 완료: `fingerprint`·`writeIfUnchanged`(외부 변경 확인 → writable 쓰기, 실패 시 abort)를 `fileAccess.ts`로, `writeArtifact`는 내용 손실 확인 뒤 이것을 부름. Word 엔진 tsconfig가 `.ts` 확장자 import를 허용하지 않아 소스는 확장자 없이 두고, Node 단위 시험에 `tests/ts-resolve.mjs` resolve 훅(`--import`). 기존 저장 계약 시험은 import 줄만 바뀌고 그대로 통과, 새 `tests/file-access.test.mjs` 3개. verify 단위 54/54·통합 PASS·브라우저 30 | (이 커밋) |
 | 8a~8c. 주석·편집 상태 보존 | 대기 | |
 | 9a~9c. 보존 검사·판별·worker | 대기 | |
 | 10a~10e. 저장·복원·이탈 확인 | 대기 | |
