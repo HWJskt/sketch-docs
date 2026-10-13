@@ -87,6 +87,39 @@ const scenarios = [
         assert.equal(await ink(broken.page), 0, 'no glyphs without the character map');
         await broken.page.close();
     }],
+    ['zoom in and out, and fit the page width or the whole page', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        const editor = page.locator('.pdf-editor');
+        const state = async () => ({ zoom: Number(await editor.getAttribute('data-zoom')), mode: await editor.getAttribute('data-zoom-mode') });
+        // Width and height of page 1 and of the scrolling area, in CSS pixels.
+        const sizes = () => page.evaluate(() => {
+            const canvas = document.querySelector('.pdf-editor canvas').getBoundingClientRect();
+            const viewport = document.querySelector('.pdf-editor .viewport');
+            return { page: [canvas.width, canvas.height], view: [viewport.clientWidth, viewport.clientHeight] };
+        });
+        const settle = async () => { await page.waitForTimeout(600); return sizes(); };
+        const start = await state();
+        assert.equal(start.mode, 'page-width');
+        const width = await settle();
+        assert.ok(width.page[0] > width.view[0] * 0.85 && width.page[0] <= width.view[0], `page width fills the view: ${JSON.stringify(width)}`);
+        await page.getByRole('button', { name: '확대' }).click();
+        await page.waitForFunction(before => Number(document.querySelector('.pdf-editor').dataset.zoom) > before, start.zoom);
+        assert.equal((await state()).mode, 'manual');
+        await page.getByRole('button', { name: '축소' }).click();
+        await page.getByRole('button', { name: '축소' }).click();
+        await page.waitForFunction(before => Number(document.querySelector('.pdf-editor').dataset.zoom) < before, start.zoom);
+        await page.getByRole('button', { name: '쪽 전체' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.zoomMode === 'page-fit');
+        const fit = await settle();
+        assert.ok(fit.page[1] <= fit.view[1] && fit.page[1] > fit.view[1] * 0.85, `the whole page fits the height: ${JSON.stringify(fit)}`);
+        assert.ok(fit.page[0] < width.page[0], 'a portrait page is narrower when the whole page fits');
+        await page.getByRole('button', { name: '쪽 너비' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.zoomMode === 'page-width');
+        assert.ok(Math.abs((await settle()).page[0] - width.page[0]) < 2, 'page width again');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;

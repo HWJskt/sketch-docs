@@ -1,13 +1,17 @@
 <script lang="ts">
-    import { Document, Viewer } from 'svelte-pdf-mini';
+    import { Document, Viewer, Zoom } from 'svelte-pdf-mini';
+    import type { ZoomMode } from 'svelte-pdf-mini';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
+    import { messages } from './messages';
     setupPdf();
 
     interface Opened { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null }
     const pickers = window as Window & { showOpenFilePicker?: (options: unknown) => Promise<FileSystemFileHandle[]> };
     let opened = $state.raw<Opened | null>(null);
     let pages = $state(0);
+    let zoom = $state(1);
+    let zoomMode = $state<ZoomMode>('page-width');
     let error = $state('');
     let input = $state<HTMLInputElement>();
     // pdf.js takes ownership of the buffer it is given; the original bytes stay ours for saving.
@@ -33,7 +37,7 @@
     }
 </script>
 
-<section class="pdf-editor" aria-label="PDF 편집기" data-pages={pages}>
+<section class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode}>
     <header class="toolbar">
         <button type="button" onclick={choose}>PDF 열기</button>
         {#if opened}<span class="name">{opened.name}</span>{/if}
@@ -43,7 +47,14 @@
     {#if src}
         {#key src}
             <Document.Root {src} onLoad={doc => { pages = doc.numPages; }} onError={reason => { error = `PDF를 열지 못했습니다. ${reason.message}`; }}>
-                <Viewer.Root class="viewer">
+                <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }}>
+                    <div class="view-tools" role="toolbar" aria-label="보기">
+                        <Zoom.Out>−</Zoom.Out>
+                        <span class="zoom">{Math.round(zoom * 100)}%</span>
+                        <Zoom.In>+</Zoom.In>
+                        <Zoom.Mode mode="page-width">쪽 너비</Zoom.Mode>
+                        <Zoom.Mode mode="page-fit">쪽 전체</Zoom.Mode>
+                    </div>
                     <Viewer.Viewport class="viewport">
                         <Viewer.Pages>
                             {#snippet children({ pageNumber })}
@@ -66,6 +77,10 @@
     .name {font-size:13px;color:#5b6980}
     .problem {margin:8px 12px;color:#9a4b00;font-size:13px}
     .empty {margin:auto;font-size:14px}
-    .pdf-editor :global(.viewer) {flex:1;min-height:0}
-    .pdf-editor :global(.viewport) {height:100%}
+    .pdf-editor :global(.viewer) {flex:1;min-height:0;display:flex;flex-direction:column}
+    .pdf-editor :global(.viewport) {flex:1;min-height:0}
+    .view-tools {display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid #dce1e8;background:#f8f9fb;font-size:13px}
+    .view-tools :global(button) {font:inherit;padding:3px 10px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;color:#243047;cursor:pointer}
+    .view-tools :global(button[data-active]) {border-color:#2563eb;color:#1d4ed8}
+    .zoom {min-width:44px;text-align:center;color:#5b6980}
 </style>

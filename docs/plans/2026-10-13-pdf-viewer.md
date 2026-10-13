@@ -355,7 +355,8 @@
 | 3. pdf.js 자산 | 완료: `pdfjs/6.4.299/` 202개 파일, 가장 큰 파일 `pdf.worker.min.mjs` 1,264,342바이트, 배포 파일 총 454개. `/pdfjs/*` immutable. verify 단위 47/47·통합 PASS·회귀 14 PASS, `upstream:check -- --current` 통과 | (이 커밋) |
 | 4a-1. 독립 진입·자산 설정 | 완료: `pdf.html`·`src/pdf/setup.ts`·`PdfEditor`(빈 화면), `test:pdf`, verify 브라우저 목록 등록(일반·후보 로그 모두 `PASS pdf`), 러너 변이 → exit 1. SW는 `pdfjs/`를 저장하지 않음(시험·변이). verify 단위 48/48 | (이 커밋) |
 | 4a-2. 열기·그리기 | 완료: `PDF 열기`(File System Access 핸들, 없으면 파일 입력), A 3쪽·1쪽 칠해짐, B cMap `200 /pdfjs/<ver>/cmaps/UniKS-UCS2-H.bcmap`·글자 칠해짐, cMap 404 변이 → 픽셀 0. `test:pdf` 3개 PASS | (이 커밋) |
-| 4a-3~4d. 보기 기능 | 대기 | |
+| 4a-3. 확대·맞춤 | 완료: 확대/축소(배율 변화, `manual`), 쪽 너비(쪽 폭이 보기 폭의 85~100%), 쪽 전체(쪽 높이 ≤ 보기 높이·쪽 너비보다 좁음). 라이브러리가 aria-label을 자체 영어 메시지로 덮어써서 `src/pdf/messages.ts`(한국어)를 `Viewer.Root messages`로 넘김. 변이(쪽 전체 → page-height) → 실패. `test:pdf` 4개 PASS | (이 커밋) |
+| 4a-4~4d. 보기 기능 | 대기 | |
 | 5a~5d. 엔진 타입·경로·셸·첫 화면 | 대기 | |
 | 6a. 엔진 목록 | 대기 | |
 | 6b. 미리 받기 순서 | 대기 | |
