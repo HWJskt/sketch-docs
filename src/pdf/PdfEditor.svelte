@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Document, Viewer, Zoom } from 'svelte-pdf-mini';
+    import { Document, PageNav, Viewer, Zoom } from 'svelte-pdf-mini';
     import type { ZoomMode } from 'svelte-pdf-mini';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
@@ -11,6 +11,7 @@
     let opened = $state.raw<Opened | null>(null);
     let pages = $state(0);
     let zoom = $state(1);
+    let current = $state(1);
     let zoomMode = $state<ZoomMode>('page-width');
     let error = $state('');
     let input = $state<HTMLInputElement>();
@@ -37,7 +38,7 @@
     }
 </script>
 
-<section class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode}>
+<section class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current}>
     <header class="toolbar">
         <button type="button" onclick={choose}>PDF 열기</button>
         {#if opened}<span class="name">{opened.name}</span>{/if}
@@ -47,13 +48,18 @@
     {#if src}
         {#key src}
             <Document.Root {src} onLoad={doc => { pages = doc.numPages; }} onError={reason => { error = `PDF를 열지 못했습니다. ${reason.message}`; }}>
-                <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }}>
+                <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <Zoom.Out>−</Zoom.Out>
                         <span class="zoom">{Math.round(zoom * 100)}%</span>
                         <Zoom.In>+</Zoom.In>
                         <Zoom.Mode mode="page-width">쪽 너비</Zoom.Mode>
                         <Zoom.Mode mode="page-fit">쪽 전체</Zoom.Mode>
+                        <span class="gap"></span>
+                        <PageNav.Prev>‹</PageNav.Prev>
+                        <PageNav.Input class="page-input" />
+                        <span class="count">/ {pages}</span>
+                        <PageNav.Next>›</PageNav.Next>
                     </div>
                     <Viewer.Viewport class="viewport">
                         <Viewer.Pages>
@@ -83,4 +89,7 @@
     .view-tools :global(button) {font:inherit;padding:3px 10px;border:1px solid #c8d1dd;border-radius:5px;background:#fff;color:#243047;cursor:pointer}
     .view-tools :global(button[data-active]) {border-color:#2563eb;color:#1d4ed8}
     .zoom {min-width:44px;text-align:center;color:#5b6980}
+    .gap {flex:1}
+    .view-tools :global(.page-input) {width:3em;text-align:center;font:inherit;padding:2px 4px;border:1px solid #c8d1dd;border-radius:5px}
+    .count {color:#5b6980}
 </style>

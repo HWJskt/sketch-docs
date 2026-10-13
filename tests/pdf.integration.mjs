@@ -120,6 +120,21 @@ const scenarios = [
         assert.deepEqual(errors, []);
         await page.close();
     }],
+    ['move between pages with the previous/next buttons and the page number box', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        const at = n => page.waitForFunction(n => document.querySelector('.pdf-editor').dataset.page === String(n), n);
+        await at(1);
+        await page.getByRole('button', { name: '다음 쪽' }).click(); await at(2);
+        await page.getByRole('button', { name: '다음 쪽' }).click(); await at(3);
+        assert.ok(await page.getByRole('button', { name: '다음 쪽' }).isDisabled(), 'no page after the last');
+        await page.getByRole('button', { name: '이전 쪽' }).click(); await at(2);
+        const box = page.getByRole('textbox', { name: '쪽 (1–3)' });
+        await box.fill('1'); await box.press('Enter'); await at(1);
+        assert.equal(await box.inputValue(), '1');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
 ];
 
 let server, browser;
