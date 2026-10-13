@@ -1,5 +1,7 @@
 # PDF 뷰어·주석 추가 (2026-10-13)
 
+선행: `2026-10-13-engine-preload.md`(첫 화면 형식 선택·엔진 미리 받기·진행 화면)를 먼저 끝낸다.
+
 ## 사용자 결정 (2026-10-13)
 
 - 범위: 보기 + 주석 + PDF로 저장. 주석은 표준 PDF 주석으로 저장해서 Acrobat·미리보기·Chrome에서도 보이게 한다.
@@ -70,6 +72,7 @@
 - `EditorMode`에 `'pdf'`를 더한다. `modeFromPath` 시험에 `/pdf`, `/pdf.html`, `/x/pdf`를 추가한다.
 - `pdf.html` 진입점을 만들고 vite 입력에 넣는다. 첫 화면에 PDF 카드, `EditorControls`에 PDF 버튼을 둔다.
 - `EditorShell`이 PDF 편집기를 `pdfLoaded`일 때만 동적 `import()`로 마운트한다. 이렇게 해서 DoD 8을 지킨다.
+- 엔진 미리 받기(`2026-10-13-engine-preload.md`)에 PDF를 붙인다: `engines.json`에 PDF 진입 청크·pdf.js worker를 넣는다. 첫 화면에 PDF 카드를 넣고, 같은 진행 화면을 쓴다. cMap·글꼴은 문서가 요구할 때만 받으므로 목록에 넣지 않는다.
 - 시험(회귀): `/pdf` 확장자 없는 URL, 뒤로 가기, W→PDF→한 전환 뒤 각 상태 유지.
 
 ### 3. PDF 편집기 (보기)
