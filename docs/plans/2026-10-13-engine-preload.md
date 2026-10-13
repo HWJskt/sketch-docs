@@ -171,3 +171,16 @@ PDF 뷰어 계획(`2026-10-13-pdf-viewer.md`)보다 먼저 한다. PDF 엔진은
   - 시험 함정: 서비스 워커가 응답하는 요청은 Playwright `page.route`로 붙잡을 수 없다. 셸 로딩을 붙잡는 시나리오는 서비스 워커를 막는다.
   - `npm run verify`: 단위 40개 실패 0, 회귀 14개 PASS.
 
+
+## PDF 엔진 추가 (2026-10-13, PDF 계획 6b)
+
+첫 화면의 미리 받기 순서가 마지막에 쓴 편집기 → Word → 한글 → PDF가 됐다. `dist/engines/manifest.json` 기준(바이트, 압축 해제 크기):
+
+| 엔진 | 필수 | 예열(warm) |
+|---|---|---|
+| Word | 2,507,705 | 3,166,056 |
+| 한글 | 14,038,089 | 921,393 |
+| PDF | 1,909,881 | 0 |
+| 합계 | 18,455,675 | 4,087,449 |
+
+PDF가 더한 양은 필수 합계의 약 10%다. 회귀 "a start page used last for PDF preloads the PDF engine first…"가 순서와 worker 한 번 전송을 확인한다.

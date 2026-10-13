@@ -283,6 +283,39 @@ try {
     assert.ok(traffic.bytes() <= size * 1.05, `the WASM crossed the network once (${traffic.bytes()} bytes received, file ${size})`);
   }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
 
+  await scenario('a start page used last for PDF preloads the PDF engine first, and the worker crosses the network once', async (page, context) => {
+    const { engines } = await (await page.request.get(origin + '/engines/manifest.json')).json();
+    const pdfFiles = new Set(engines.pdf.required.map(file => '/' + file.path));
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Network.enable');
+    const order = [], worker = new Set(), cached = new Set();
+    let workerBytes = 0;
+    cdp.on('Network.requestWillBeSent', event => {
+      const path = new URL(event.request.url).pathname;
+      if (pdfFiles.has(path) || /^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path);
+      if (path.endsWith('/pdf.worker.min.mjs')) worker.add(event.requestId);
+    });
+    cdp.on('Network.requestServedFromCache', event => cached.add(event.requestId));
+    cdp.on('Network.responseReceived', event => { if (event.response.fromDiskCache || event.response.fromMemoryCache) cached.add(event.requestId); });
+    cdp.on('Network.dataReceived', event => { if (worker.has(event.requestId) && !cached.has(event.requestId)) workerBytes += event.dataLength; });
+    await page.addInitScript(() => localStorage.setItem('sketch-docs-last-engine', 'pdf'));
+    await page.goto(origin + '/');
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/pdf.worker.min.mjs') && entry.responseEnd > 0), null, { timeout: 60000 });
+    assert.ok(pdfFiles.has(order[0]), `the last used editor downloads first (order: ${order.slice(0, 3)})`);
+    await page.getByRole('link', { name: /PDF 문서/ }).click();
+    await page.getByRole('button', { name: 'PDF 열기' }).waitFor();
+    const bytes = [...await readFile(join(root, 'tests/fixtures/pdf/a-basic.pdf'))];
+    await page.evaluate(async bytes => {
+      const handle = await (await navigator.storage.getDirectory()).getFileHandle('preload.pdf', { create: true });
+      const stream = await handle.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close();
+      window.showOpenFilePicker = async () => [handle];
+    }, bytes);
+    await page.getByRole('button', { name: 'PDF 열기' }).click();
+    await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
+    const size = engines.pdf.required.find(file => file.path.endsWith('/pdf.worker.min.mjs')).bytes;
+    assert.ok(workerBytes <= size * 1.05, `the worker crossed the network once (${workerBytes} bytes received, file ${size})`);
+  }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
+
   // Choosing a card opens the editor in the same document, so a half-finished preload continues.
   await scenario('choosing a format during a slow preload continues the download, and Back returns to the start page', async (page, context) => {
     const traffic = await wasmNetworkBytes(context, page);

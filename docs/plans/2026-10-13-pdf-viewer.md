@@ -365,7 +365,7 @@
 | 5b·5c. 경로·셸 마운트·헤더 | 완료: `EditorMode`에 `pdf`만 더하면 헤더 컴포넌트 타입 오류라 5b를 5c와 한 커밋으로 묶음. `/pdf`·`/pdf.html` → 셸 PDF 편집기(동적 청크 `PdfEditor-*.js` 126kB, 셸·첫 화면 청크 PDF 코드 0). 헤더 W·한·PDF(폭 116→150px). Word modern 툴바는 셸 헤더가 오른쪽 끝을 덮어 **기존에도** 인쇄·테마·언어 버튼이 가려졌음 → 툴바 오른쪽 150px 비움, 회귀에 겹침 단언 추가. 통합 시험의 "세 번째 버튼 = 정보" 가정을 "마지막 버튼"으로. verify 단위 49/49·통합 PASS·회귀 15·PDF 12 PASS. DoD 11: Vite 개발 서버 `/pdf`에서 B 열기 — worker·cMap 200, 칠해진 픽셀 9,084, 오류 0 | (이 커밋) |
 | 5d. 첫 화면 카드 | 완료: PDF 카드(3열, 601~960px 2열, 600px 이하 1열), 같은 화면에서 열림·뒤로 가기 회귀. 1280·800·375px 가로 넘침 없음. 카드 문구의 "PDF로 저장"은 10단계 전까지 아직 없는 기능. verify 단위 49/49·통합 PASS·브라우저 28 PASS | (이 커밋) |
 | 6a. 엔진 목록 | 완료: `scripts/pdf-manifest.mjs`가 Vite manifest에서 `PdfEditor` 청크 + 동적 import `pdfjs-dist/build/pdf.mjs`(문서를 열 때 필요) + 정적 import·CSS + `pdfjs/<ver>/pdf.worker.min.mjs`를 `pdf`로 추가: 6개, 1,909,875바이트. `.vite/`는 목록을 만든 뒤 지움(배포 제외). 회귀 "엔진 목록"에 PDF(같은 프레임이라 fetch 아닌 요청으로 판정). 변이(pdf.mjs 제외) → "pdf: large startup downloads missing". verify·`upstream:check -- --current` 단위 51/51·브라우저 28, 두 산출물 목록 6개 | (이 커밋) |
-| 6b. 미리 받기 순서 | 대기 | |
+| 6b. 미리 받기 순서 | 완료: 순서에 `pdf`. 회귀(마지막에 PDF → PDF 파일이 첫 요청, PDF 연 뒤 worker 네트워크 전송 1회 이하). 첫 화면 미리 받기 필수 합계 18.46MB 중 PDF 1.91MB(엔진 미리 받기 문서에 표). verify 단위 51/51·브라우저 29. 변이는 안 돌림(`engineOrder`가 목록에 없는 마지막 엔진을 무시하는 경로라 단언이 바로 실패함) | (이 커밋) |
 | 6c. 번들 경계 시험 | 대기 | |
 | 7a·7b. 공용화 리팩터링 | 대기 | |
 | 8a~8c. 주석·편집 상태 보존 | 대기 | |

@@ -3,7 +3,7 @@ import { createPreloader, type Engine } from './enginePreload';
 export const preloader = createPreloader({ base: new URL('./', document.baseURI).href });
 
 const LAST = 'sketch-docs-last-engine';
-const ENGINES: Engine[] = ['word', 'hwp'];
+const ENGINES: Engine[] = ['word', 'hwp', 'pdf'];
 export function rememberEngine(engine: Engine) {
     try { localStorage.setItem(LAST, engine); } catch { /* storage is a convenience */ }
 }
