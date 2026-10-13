@@ -8,7 +8,9 @@
     // The six annotation kinds of the plan, plus selecting existing ones.
     const tools = ['select', 'highlight', 'underline', 'strikeout', 'note', 'ink', 'rect'] as const;
     import type { EditorStatus } from '../editorState';
-    import type { PickerWindow } from '../fileAccess';
+    import { fingerprint, type PickerWindow } from '../fileAccess';
+    import { createExporter } from './exporter';
+    import { createSaver, type SaveOutcome } from './save';
     setupPdf();
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
 
@@ -24,13 +26,22 @@
     let input = $state<HTMLInputElement>();
     // pdf.js takes ownership of the buffer it is given; the original bytes stay ours for saving.
     const src = $derived(opened ? opened.bytes.slice() : null);
-    // The annotations shown; the tracker knows which of them the opened file already has.
+    // The annotations shown; the tracker knows which of them the file on disk already has.
     let annotations = $state.raw<Annotation[]>([]);
     const tracker = createDirtyTracker();
-    const dirty = $derived.by(() => { void opened; return tracker.isDirty(annotations); });
-    // Saving comes later (plan step 10); until then a PDF is never busy.
-    export function getState(): EditorStatus { return { ready: true, busy: false, dirty, name: opened?.name ?? '' }; }
-    $effect(() => { void opened; void dirty; onState(getState()); });
+    let baseline = $state(0);
+    const dirty = $derived.by(() => { void baseline; return tracker.isDirty(annotations); });
+    // What the next save starts from and writes to: the file as opened or as last saved. Separate from
+    // `opened`, which feeds the viewer, so saving does not reload the document.
+    interface Base { bytes: Uint8Array; hash: string; handle: FileSystemFileHandle | null; name: string }
+    let base = $state.raw<Base | null>(null);
+    let epoch = 0, revision = 0;
+    let saving = $state(false);
+    let notice = $state('');
+    const canSave = !!pickers.showSaveFilePicker;
+    const saver = createSaver({ exporter: createExporter(), recovery: { keep: async () => {} } });
+    export function getState(): EditorStatus { return { ready: true, busy: saving, dirty, name: base?.name ?? '' }; }
+    $effect(() => { void base; void dirty; void saving; onState(getState()); });
 
     const failure = (what: string, reason: unknown) => `${what} ${reason instanceof Error ? reason.message : String(reason)}`;
     let request = 0;
@@ -42,8 +53,11 @@
             const chosen = await file;
             const bytes = new Uint8Array(await chosen.arrayBuffer());
             if (mine !== request) return;
-            error = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
-            annotations = []; tracker.reset([]);
+            const hash = await fingerprint(new Blob([bytes]));
+            if (mine !== request) return;
+            error = ''; notice = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
+            annotations = []; tracker.reset([]); baseline++; epoch++; revision = 0;
+            base = { bytes, hash, handle, name: chosen.name };
             opened = { bytes, name: chosen.name, handle };
         } catch (reason) {
             if (mine === request) error = failure('PDF를 열지 못했습니다.', reason);
@@ -61,6 +75,31 @@
         }
         await load(handle.getFile(), handle);
     }
+    // A save applies only to the document it was started for; edits made meanwhile stay unsaved.
+    function finish(outcome: SaveOutcome, saved: Annotation[], name: string) {
+        if (outcome.epoch !== epoch) return;
+        if (!outcome.ok) { error = outcome.reason; return; }
+        base = { bytes: outcome.bytes, hash: outcome.hash, handle: outcome.handle, name };
+        tracker.reset(saved); baseline++;
+        notice = `${name}에 저장했습니다.`;
+    }
+    async function saveAs() {
+        if (!base || saving) return;
+        let handle: FileSystemFileHandle;
+        try {
+            handle = await pickers.showSaveFilePicker!({ suggestedName: base.name, types: [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }] });
+        } catch (reason) {
+            if ((reason as DOMException)?.name !== 'AbortError') error = failure('저장할 위치를 고르지 못했습니다.', reason);
+            return;
+        }
+        const target = handle, hash = await fingerprint(await target.getFile());
+        const snapshot = annotations, mine = { epoch, revision };
+        error = ''; notice = ''; saving = true;
+        try {
+            const outcome = await saver.save(() => ({ ...mine, name: target.name, original: base!.bytes, annotations: snapshot, handle: target, hash, overwrite: false }));
+            finish(outcome, snapshot, target.name);
+        } finally { saving = false; }
+    }
     function picked(event: Event) {
         const field = event.currentTarget as HTMLInputElement;
         const file = field.files?.[0];
@@ -72,8 +111,10 @@
 
 <section class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current}>
     <header class="toolbar">
-        <button type="button" onclick={choose}>PDF 열기</button>
-        {#if opened}<span class="name">{opened.name}</span>{/if}
+        <button type="button" onclick={choose} disabled={saving}>PDF 열기</button>
+        <button type="button" onclick={saveAs} disabled={!base || saving || !canSave} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
+        {#if opened}<span class="name">{base?.name ?? opened.name}</span>{/if}
+        {#if saving}<span class="saving" role="status">저장하는 중…</span>{:else if notice}<span class="saved" role="status">{notice}</span>{/if}
         <input bind:this={input} type="file" accept="application/pdf,.pdf" hidden onchange={picked} />
     </header>
     {#if error}<p class="problem" role="alert">{error}</p>{/if}
@@ -92,7 +133,7 @@
                 </Document.Password>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
-                    <Annotations.Root foreign="readonly" importFromPdf {tools} {palette} onImport={result => { tracker.reset(result.annotations); annotations = result.annotations; }} onAnnotationsChange={list => { annotations = list; }}>
+                    <Annotations.Root foreign="readonly" importFromPdf {tools} {palette} onImport={result => { tracker.reset(result.annotations); baseline++; annotations = result.annotations; }} onAnnotationsChange={list => { annotations = list; revision++; }}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
                         <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>
@@ -159,6 +200,7 @@
     .toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid #dce1e8;background:#fff}
     .toolbar button {font:inherit;font-size:13px;padding:5px 12px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     .name {font-size:13px;color:#5b6980}
+    .saving, .saved {font-size:12px;color:#5b6980}
     .problem {margin:8px 12px;color:#9a4b00;font-size:13px}
     .empty {margin:auto;font-size:14px}
     .pdf-editor :global(.viewer) {flex:1;min-height:0;display:flex;flex-direction:column}

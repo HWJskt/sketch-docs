@@ -25,6 +25,33 @@ async function openPdf(page, name, { loaded = true } = {}) {
     // The name changes only when this file replaced the previous one; the page count is then the new one.
     if (loaded) await page.waitForFunction(name => document.querySelector('.pdf-editor .name')?.textContent === name && Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0, name);
 }
+/**
+ * Makes "다른 이름으로 저장" pick an origin-private file `name`. Its writable streams are counted, and with
+ * `hold` the first write waits until window.__releaseWrite() is called.
+ */
+async function saveTarget(page, name, { hold = false } = {}) {
+    await page.evaluate(async ({ name, hold }) => {
+        const directory = await navigator.storage.getDirectory();
+        const handle = await directory.getFileHandle(name, { create: true });
+        const stream = await handle.createWritable(); await stream.close();
+        window.__writables = 0;
+        let release;
+        window.__held = hold ? new Promise(resolve => { release = resolve; }) : null;
+        window.__releaseWrite = () => release?.();
+        const createWritable = handle.createWritable.bind(handle);
+        handle.createWritable = async (...args) => { window.__writables++; if (window.__held) await window.__held; return createWritable(...args); };
+        window.__saveTarget = handle;
+        window.showSaveFilePicker = async () => handle;
+    }, { name, hold });
+}
+const savedBytes = page => page.evaluate(async () => Array.from(new Uint8Array(await (await window.__saveTarget.getFile()).arrayBuffer())));
+/** Opens a file previously written to the origin-private folder. */
+async function reopen(page, name) {
+    await page.evaluate(async name => { const handle = await (await navigator.storage.getDirectory()).getFileHandle(name); window.showOpenFilePicker = async () => [handle]; }, name);
+    await page.getByRole('button', { name: 'PDF 열기' }).click();
+    await page.waitForFunction(name => document.querySelector('.pdf-editor .name')?.textContent === name && Number(document.querySelector('.pdf-editor')?.dataset.pages) > 0, name);
+}
+
 /** Draws one annotation of each of the six kinds on page 1 of fixture A, the rectangle in blue. */
 async function drawAll(page) {
     const line = async text => page.locator('.pdf-editor span', { hasText: text }).first().boundingBox();
@@ -429,6 +456,77 @@ const scenarios = [
         assert.deepEqual(await kinds(page), before, 'history continues after switching back');
         await page.getByRole('button', { name: 'Word', exact: true }).click();
         assert.match(await word.locator('.tiptap').first().textContent(), /워드 전환 시험/, 'the Word document kept its text');
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['Save As writes the six annotations into a new PDF that opens with them, and the document is saved', async browser => {
+        const { page, errors, external } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        await drawAll(page);
+        const six = await kinds(page);
+        await saveTarget(page, 'saved-as.pdf');
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.getByRole('status').filter({ hasText: 'saved-as.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.locator('.product-document-dirty').count(), 0, 'saved');
+        assert.equal(await page.getByLabel('현재 파일 이름').textContent(), 'saved-as.pdf');
+        assert.equal(Buffer.from(await savedBytes(page)).subarray(0, 5).toString(), '%PDF-');
+        await reopen(page, 'saved-as.pdf');
+        await page.locator('.pdf-editor [data-pdf-annotation="fixture-existing-note"]').waitFor({ state: 'attached' });
+        await page.waitForFunction(count => document.querySelectorAll('.pdf-editor [data-pdf-annotation]:not([data-foreign])').length === count, six.length);
+        assert.deepEqual(await kinds(page), six);
+        assert.equal(await page.locator('.pdf-editor [data-pdf-annotation][data-kind=rect]').getAttribute('data-color'), 'blue');
+        assert.equal(await page.locator('.product-document-dirty').count(), 0, 'reopened: nothing unsaved');
+        assert.deepEqual(errors, []);
+        assert.deepEqual(external, []);
+        await page.close();
+    }],
+    ['signed and encrypted PDFs are not saved: the reason is shown and the target is never opened for writing', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        const rectangle = async () => {
+            const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+            await page.getByRole('button', { name: '사각형', exact: true }).click();
+            await page.mouse.move(box.x + 100, box.y + 300); await page.mouse.down();
+            await page.mouse.move(box.x + 180, box.y + 360, { steps: 8 }); await page.mouse.up();
+        };
+        await openPdf(page, 'c1-signed.pdf');
+        await rectangle();
+        await saveTarget(page, 'signed-copy.pdf');
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.getByRole('alert').filter({ hasText: '서명된 PDF는 저장하지 않습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.evaluate(() => window.__writables), 0);
+        assert.equal((await savedBytes(page)).length, 0);
+        assert.equal(await page.locator('.product-document-dirty').count(), 1, 'still unsaved');
+        await openPdf(page, 'd-encrypted.pdf', { loaded: false });
+        await page.getByLabel('암호로 보호된 PDF입니다. 암호를 입력하세요.').fill('test');
+        await page.getByRole('button', { name: '열기', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor .name').textContent === 'd-encrypted.pdf' && document.querySelector('.pdf-editor').dataset.pages === '1');
+        await page.waitForTimeout(500);
+        await rectangle();
+        await saveTarget(page, 'encrypted-copy.pdf');
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.getByRole('alert').filter({ hasText: '암호로 보호된 PDF는 저장하지 않습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.evaluate(() => window.__writables), 0);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
+    ['an annotation added while saving stays unsaved afterwards', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf');
+        const box = await page.locator('.pdf-editor canvas').first().boundingBox();
+        const rectangle = async (x, y) => {
+            await page.getByRole('button', { name: '사각형', exact: true }).click();
+            await page.mouse.move(box.x + x, box.y + y); await page.mouse.down();
+            await page.mouse.move(box.x + x + 60, box.y + y + 40, { steps: 8 }); await page.mouse.up();
+        };
+        await rectangle(100, 100);
+        await saveTarget(page, 'while-saving.pdf', { hold: true });
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.waitForFunction(() => window.__writables === 1);
+        await rectangle(300, 300);
+        await page.evaluate(() => window.__releaseWrite());
+        await page.getByRole('status').filter({ hasText: 'while-saving.pdf에 저장했습니다' }).waitFor({ timeout: 60000 });
+        assert.equal(await page.locator('.product-document-dirty').count(), 1, 'the second rectangle is not in the file');
         assert.deepEqual(errors, []);
         await page.close();
     }],
