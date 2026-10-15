@@ -8,7 +8,7 @@
 | 항목 | 값 |
 |---|---|
 | 배포판 | `d9f41e7`(보기 전용 Excel). 이후 커밋은 **push·배포하지 않았다**(사용자 지시 때만) |
-| 로컬 `main` | 리뷰 반영 `255407c` 다음의 판정표·인계 커밋(이 문서). 깨끗한 트리. **push·배포 안 함** |
+| 로컬 `main` | 리뷰 반영 `255407c` 뒤로 문서 커밋만(판정표·변이 결과·인계). 깨끗한 트리. **push·배포 안 함** |
 | 마지막 `npm run verify` | 통과 — `255407c`(단위 192, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`). 그 뒤 커밋은 문서뿐이지만 보고의 커밋이 HEAD와 다르다 → 배포 전 다시 돌린다 |
 | Excel 엔진 WASM | 24,277,249 B(23.15 MiB). 24 MiB 경고선까지 약 0.85 MiB |
 | 엔진 overlay | `overlays/gridcraft/sketch-bridge.patch`(옛 `view-only.patch`). 고칠 때는 패치를 적용한 사본에서 고쳐 `git diff`로 다시 만든다 — 아래 "작업 방법" |
@@ -34,7 +34,7 @@
 
 ## 지금 바로 할 일 — push·배포 (사용자 지시 "리뷰 후 바로 배포", 2026-10-16)
 
-리뷰와 고침은 끝났다(계획 §9). 새 세션은 조율자 확인 뒤 CLAUDE.md "배포" 절차대로 한다:
+리뷰와 고침은 끝났다(계획 §9, High 1·2·3 고침마다 브라우저 변이가 잡힘). 새 세션은 조율자 확인 뒤 CLAUDE.md "배포" 절차대로 한다:
 1. `npm run verify` — HEAD에서 다시(보고가 `255407c`라 HEAD와 다르다). 통과해야 다음으로.
 2. `git push origin main` — pre-push 게이트가 끝 커밋의 verify 보고를 확인하거나 임시 worktree에서 다시 검사한다(`npm run hooks:install` 상태, `--no-verify` 금지). 저장소는 공개(`HWJskt/sketch-docs`): 원본 코드·`backups/`·비밀값·실제 사용자 파일이 없는지 — 리뷰가 실제 파일 이름 0건을 확인했다.
 3. `gh run list --limit 3` — CI verify 확인.
