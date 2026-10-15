@@ -39,3 +39,17 @@
 3. `dependency-watch`를 손으로 한 번 돌린다: `gh workflow run dependency-watch` → `cargo-audit` job에서 Cargo.lock 받기·sha256 확인·`cargo audit` 2회가 성공하는지, `npm` job이 그대로인지, 이슈가 잘못 열리지 않는지.
 4. 옛 `upstream-watch` 워크플로가 Actions 목록에서 사라지고 예약 실행이 더는 생기지 않는지.
 5. 보존 fork(`HWJskt/gridcraft`·`craft-libs`)는 아직 없다 — `cargo-audit`의 mirror 대체 경로는 원본이 사라졌을 때만 쓰인다. 배포 직전 결정 A대로 만든다.
+
+### 리뷰 판정 (2026-10-15, 별도 컨텍스트 Claude 리뷰어, 범위 `0f1bc28..d4c69e3`)
+
+| # | 발견 | 판정 | 처리 |
+|---|---|---|---|
+| M1 | 게이트는 각 ref의 끝 커밋만 검사 — 중간 커밋은 검증 없이 push(리뷰어가 임시 리포에서 재현) | 받음(문서) | 중간 커밋마다 전체 verify는 비용이 커서 동작 유지. 배포는 끝 커밋으로 만든다. README·주석을 "각 ref의 끝 커밋"으로 — `90c27ab` |
+| M2 | 일반 절차(verify 뒤 push)에서는 en-US 회차가 돌지 않음 | 받음(문서) | 사용자 지시 문구("맞으면 바로 통과, 아니면 … + en-US")대로 동작. 거짓이던 `verify.yml` 주석과 문서를 고침 — `90c27ab`. 검사 범위 축소는 남은 결정으로 보고 |
+| M3 | 느린 경로가 주 클론 `.cache/build`를 공유 → 경합 시 다른 내용을 검증할 수 있음 | 받음 | worktree가 자기 build 작업 폴더를 쓰고 Cargo 출력만 공유 — `ab9648d`, 시험이 `.cache`가 링크가 아님을 확인 |
+| L1 | Ctrl-C 중단 시 worktree가 남음(재현) | 받음 | 비동기 실행 + SIGINT/SIGTERM/SIGHUP 정리, 시작 시 옛 게이트 worktree 정리 — `ab9648d`. 실제 SIGINT 시험 추가, 변이(신호 처리 제거)로 그 시험이 실패함을 확인 |
+| L2 | 주석 태그는 항상 느린 경로 | 받음 | 커밋으로 풀어(peel) 판정 — `ab9648d`, 시험 추가 |
+| L3 | craft-libs 자체 lock의 비컴파일 crate 28개가 오탐을 낼 수 있음, 경고 등급은 이슈 없음 | 부분 | 대상은 사용자 결정대로 두 lock 유지, 문서·워크플로 주석에 적음 — `90c27ab` |
+| L4 | xlsx 러너는 en-US로 돌지 않음 | 받음 | `TEST_LOCALE` 사용·단언 — `ab9648d` |
+| L5 | 상대 `core.hooksPath` — 048a813 이전 커밋을 체크아웃하면 훅 없음 | 받음(문서) | README에 적음 — `90c27ab` |
+| L6 | productHash가 루트 `LICENSE`를 덮지 않음 | 반박(범위 밖) | 이번 diff 이전부터 있던 것, 게이트 우회 아님(빠른 경로는 커밋 sha 일치와 깨끗한 트리 요구). 기록만 |
