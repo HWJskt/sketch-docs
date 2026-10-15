@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer, preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { assertTestLocale, launchArgs } from './browser-locale.mjs';
+import { assertTestLocale, contextLocale, launchArgs } from './browser-locale.mjs';
 import { unzipSync, strFromU8 } from 'fflate';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -18,7 +18,7 @@ try {
     await server.listen();
   } else server = await preview({ root, build: { outDir: resolve(root, process.env.TEST_DIST || 'dist') }, preview: address });
   browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ ...contextLocale, viewport: { width: 1440, height: 1000 } });
   await assertTestLocale(page);
   page.setDefaultTimeout(60000);
   const errors = [], dialogs = [], external = new Set();
@@ -224,7 +224,7 @@ try {
   await status('인쇄 창을 닫았습니다').waitFor();
   const printed = await frame.evaluate(() => window.__printed);
   assert(printed.html.includes('<svg') && /<(path|text)\b/.test(printed.html), 'print uses document SVG including glyphs');
-  const printPreview = await browser.newPage({viewport:{width:900,height:1200}});
+  const printPreview = await browser.newPage({...contextLocale, viewport:{width:900,height:1200}});
   try {
     await printPreview.setContent(printed.html);
     assert.equal(await printPreview.locator('svg').count(), 1);
@@ -422,7 +422,7 @@ try {
   console.log('Both engines retained, JS heap bytes (excludes WASM/GPU):', metrics.metrics.find(m => m.name === 'JSHeapUsedSize')?.value);
   await cdp.detach();
   await page.screenshot({path:'/tmp/sketch-docs-hangul.png'});
-  const isolated = await browser.newContext();
+  const isolated = await browser.newContext(contextLocale);
   try {
     const failurePage = await isolated.newPage();
     failurePage.setDefaultTimeout(30000);

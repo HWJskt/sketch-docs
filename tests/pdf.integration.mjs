@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { launchArgs } from './browser-locale.mjs';
+import { assertTestLocale, contextLocale, launchArgs } from './browser-locale.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const outDir = resolve(root, process.env.TEST_DIST || 'dist');
@@ -106,7 +106,8 @@ async function ink(page) {
 
 /** A page that records page errors and requests to other origins; confirm dialogs are accepted unless a test answers them. */
 async function open(browser, path, { answerDialogs = true } = {}) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const page = await browser.newPage({ ...contextLocale, viewport: { width: 1280, height: 900 } });
+    await assertTestLocale(page);
     page.setDefaultTimeout(30000);
     const errors = [], external = [];
     page.on('pageerror', error => errors.push(String(error)));
@@ -599,7 +600,7 @@ const scenarios = [
         await page.close();
     }],
     ['two tabs saving the same file at once: one is written, the other is refused and stays unsaved', async browser => {
-        const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        const context = await browser.newContext({ ...contextLocale, viewport: { width: 1280, height: 900 } });
         try {
             const bytes = [...await fixture('e-image.pdf')];
             const tabs = [];

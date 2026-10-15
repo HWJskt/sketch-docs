@@ -3,8 +3,10 @@
 import assert from 'node:assert/strict';
 
 export const testLocale = process.env.TEST_LOCALE || '';
-/** Options for chromium.launch / launchPersistentContext. */
+/** Options for chromium.launch / launchPersistentContext (the UI language; headless Chrome on macOS ignores it). */
 export const launchArgs = testLocale ? { args: [`--lang=${testLocale}`] } : {};
+/** Options for every new context or page that does not choose its own locale: this is what sets navigator.language. */
+export const contextLocale = testLocale ? { locale: testLocale } : {};
 /** Fails unless a page without its own locale really reports TEST_LOCALE, so the run is not silently Korean. */
 export async function assertTestLocale(page) {
   if (!testLocale) return;
