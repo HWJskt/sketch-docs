@@ -94,6 +94,54 @@ egui는 TTF/OTF만 읽으므로 제품의 woff2 글꼴은 그대로 쓸 수 없�
 남은 것: 메뉴 등 UI 언어는 영어다(`i18n`에 한국어가 없다). 굵은 글씨용 한국어 글꼴은 넣지 않았다(굵은 셀의 한국어는 보통 굵기로 보일 것으로 추정, 미확인).
 제품에 넣을 때는 이 패치를 `overlays/gridcraft/`로 옮기고 글꼴 파일·해시를 lock에 고정한다(계획 §4.2).
 
+## deckcraft 시작 실패 원인과 수정 실증 (2026-10-15)
+
+원인: `crates/engine/src/recovery.rs`의 `instance_id()`가 `std::process::id()`를 그냥 부른다. wasm32-unknown-unknown의 std는 이 호출에서 panic한다("no pids on this platform").
+바로 아래 시각 값은 이미 `#[cfg(not(target_arch = "wasm32"))]`로 막혀 있어서, 프로세스 ID만 빠뜨린 upstream 결함으로 본다.
+같은 방식으로 막고, 한국어 글꼴은 deckcraft에 이미 있는 `CRAFT_FONTS_DIR` 방식으로 넣었다.
+글꼴 폴더의 `fonts/manifest.txt`에 `Pretendard | Regular | fonts/Pretendard-Regular.ttf | Hang` 한 줄을 적고, wasm 허용 목록에 Pretendard Regular를 더했다.
+
+```diff
+--- crates/engine/src/recovery.rs	2026-10-15 10:48:57
++++ crates/engine/src/recovery.rs	2026-10-15 10:48:57
+@@ -44,6 +44,8 @@
+     *ID.get_or_init(|| {
+         use std::hash::{BuildHasher, Hasher};
+         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
++        // Sketch Docs: std::process::id panics on wasm32-unknown-unknown ("no pids on this platform").
++        #[cfg(not(target_arch = "wasm32"))]
+         h.write_u32(std::process::id());
+         #[cfg(not(target_arch = "wasm32"))]
+         if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+--- crates/fonts/build.rs	2026-10-15 10:48:57
++++ crates/fonts/build.rs	2026-10-15 10:48:57
+@@ -57,7 +57,8 @@
+         if EXCLUDED_FAMILIES.contains(family) {
+             continue;
+         }
+-        if wasm && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable")) {
++        // Sketch Docs: also embed one Korean face on the web.
++        if wasm && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable") | ("Pretendard", "Regular")) {
+             continue;
+         }
+         let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;
+```
+
+| 항목 | 수정 전 | 수정 + Pretendard |
+|---|---|---|
+| 시작 | panic, 로딩 화면에서 멈춤 | 시작함. 페이지 오류 0 |
+| `ko.pptx` 열기 | — | 슬라이드 2장, 한국어 제목·본문 표시, 2번 슬라이드 표 미리보기 표시 |
+| WASM 원본 | 29.20MB | **31.78MB (Pages 한도 26.2MB 초과)** |
+| gzip / brotli | 10.52MB / 6.73MB | 11.64MB / 7.71MB |
+| 외부 요청 | 0 | 0 |
+
+알게 된 것:
+
+- 화면 아래에 "Arial and Calibri aren't installed on this computer" 안내가 뜬다. 문서가 요구한 글꼴이 없어 비슷한 글꼴로 그렸다는 뜻이다.
+- wasm에서는 `RandomState`에 난수원이 없어 `instance_id`가 탭마다 같은 값이 될 수 있다(추정, 미확인). 보기 전용에서는 영향이 없다. 편집 복구를 열 때 다시 본다.
+- UI 메뉴는 영어다.
+- **크기 한도는 여전히 막는 문제다.** 분할, 기능 줄이기, 다른 호스팅 중 하나가 필요하다.
+
 ## 구현 계획
 
 Codex(codex-cli 0.162.1, `codex exec -s read-only`)가 위 세 커밋의 로컬 클론과 이 리포를 읽고 쓴 초안이다. 빌드·실행 검증은 하지 않았다.
