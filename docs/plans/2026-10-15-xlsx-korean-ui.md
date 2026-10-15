@@ -31,6 +31,7 @@
 - 용어 쟁점 6개는 사용자 결정 B로 한국어 Excel 관례 유지(병합·글꼴 색·기울임꼴·텍스트 상자·페이지·맞춤).
 - 굵은 글씨: 굵은 셀의 한국어는 빈 네모 없이 표시되지만 보통 굵기로 그려진다(굵은 한국어 글꼴이 없다). Pretendard Bold를 넣으면 WASM이 약 2.66MB 늘어 약 24.2MB(한도 25MiB = 26.2MB 안, 여유 약 2MB).
 - 거절 경고 창 문구: "보기 전용으로 연 통합 문서라 바꾸거나 저장할 수 없습니다."
-- `npm run build` 뒤 `tests/xlsx.integration.mjs` 통과.
+- `npm run build` 뒤 `tests/xlsx.integration.mjs` 통과. `npm run verify` 통과(단위 156, 브라우저 PASS 52·FAIL 0, `XLSX VIEW CHECKS PASSED`).
+- Pretendard Bold 추가 여부는 사용자 결정 대기(넣지 않음).
 
 측정하지 못한 것: 마우스를 올려야 나오는 도구 설명(정적 감싸기로 직접 문자열은 덮었지만 화면 확인은 안 함), 보기 전용에서 거절되는 명령이 여는 대화상자, 차트·피벗 창.
