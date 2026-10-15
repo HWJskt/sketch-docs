@@ -233,3 +233,16 @@ test('a Cargo.lock must pin the git dependency at exactly one commit', () => {
   assert.throws(() => cargoGitPin([line('https://github.com/o/craft-libs', a), line('https://github.com/o/craft-libs', b)].join('\n'), 'https://github.com/o/craft-libs'), /several commits/);
   assert.throws(() => cargoGitPin(line('https://github.com/o/other', a), 'https://github.com/o/craft-libs'), /nowhere/);
 });
+
+test('a dependent folder that is not a clone is refused instead of reading or moving the product repository', async () => {
+  const { base, paths } = await fixture();
+  try {
+    // The product root is itself a git repository, as in real use.
+    const root = join(paths.edentext, '../..');
+    git(root, 'init', '-q');
+    await rm(paths['craft-libs'], { recursive: true, force: true });
+    await mkdir(paths['craft-libs']);
+    assert.throws(() => upstreamHeads(paths), /craft-libs.*not a git clone/);
+    assert.throws(() => restoreUpstreams(paths, Object.fromEntries(UPSTREAMS.map(name => [name, 'HEAD']))), /craft-libs.*not a git clone/);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});

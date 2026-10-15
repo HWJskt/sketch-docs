@@ -17,7 +17,7 @@ async function fixture() {
   const packages = [
     await pkg('app', {}, { source: null }),
     await pkg('lib', { 'LICENSE-MIT': 'MIT text', 'LICENSE-APACHE': 'Apache text' }),
-    await pkg('shared', { 'LICENSE': 'MIT text', 'fonts/OFL.txt': 'font licence' }),
+    await pkg('shared', { 'LICENSE': 'MIT text', 'COPYRIGHT': 'copyright lines', 'fonts/OFL.txt': 'font licence' }),
     await pkg('derive', {}, { targets: [{ kind: ['proc-macro'] }] }),
     await pkg('helper', {}),
   ];
@@ -44,7 +44,7 @@ test('notices carry each license file once, extra files by exact version, and wo
     assert.match(text, /===== app@1\.0\.0 =====[\s\S]*Covered by the Upstream license files/);
     assert.equal(text.split('MIT text').length - 1, 1, 'identical texts are written once');
     assert.match(text, /--- LICENSE: same text as lib@1\.0\.0 LICENSE-MIT/);
-    assert.ok(text.includes('Apache text') && text.includes('font licence'));
+    assert.ok(text.includes('Apache text') && text.includes('font licence') && text.includes('copyright lines'));
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 

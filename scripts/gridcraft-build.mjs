@@ -61,6 +61,7 @@ export async function buildGridcraft({ root, lock, cache, output, snapshot }) {
     patches: Object.fromEntries(await Promise.all(patches.map(async name => [name, sha256(await readFile(join(overlay, name)))]))),
     fonts: Object.fromEntries(fonts.map(font => [font.file, font.sha256])),
     script: sha256(await readFile(import.meta.filename)),
+    notices: sha256(await readFile(join(import.meta.dirname, 'cargo-licenses.mjs'))),
   };
   const inputHash = sha256(JSON.stringify(inputs));
   const built = join(cache, 'gridcraft-dist');
@@ -79,6 +80,10 @@ export async function buildGridcraft({ root, lock, cache, output, snapshot }) {
     // older than the cached build in CARGO_TARGET_DIR, and Cargo would keep the patched object.
     execFileSync('find', [work, '-type', 'f', '-exec', 'touch', '{}', '+']);
     await rm(built, { recursive: true, force: true });
+    // Cargo.lock's crates must be in Cargo's cache before the offline build: use the cache when it has them,
+    // otherwise download exactly the locked versions (a new machine, or a candidate with a new Cargo.lock).
+    try { execFileSync('cargo', ['fetch', '--locked', '--offline'], { cwd: work, env, stdio: 'ignore' }); }
+    catch { execFileSync('cargo', ['fetch', '--locked'], { cwd: work, env, stdio: 'inherit' }); }
     execFileSync('trunk', ['build', '--release', '--offline', '--locked', '--dist', built], { cwd: join(work, 'apps/gridcraft-web'), env, stdio: 'inherit' });
     const names = (await readdir(built)).filter(name => name !== 'index.html');
     const html = relocateAssets(await readFile(join(built, 'index.html'), 'utf8'), names);

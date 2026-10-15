@@ -19,8 +19,13 @@ export function assertClean(dir, label, { ignoreSubmodules = false } = {}) {
   const status = gitOut(dir, 'status', '--porcelain', ...(ignoreSubmodules ? ['--ignore-submodules=all'] : []));
   if (status) throw new Error(`${label} has local changes; nothing was changed:\n${status}`);
 }
+// git -C on a folder that is not a clone acts on the enclosing repository (the product); refuse instead.
+function assertClone(dir) {
+  if (!initialized(dir)) throw new Error(`${dir} is not a git clone; nothing was changed`);
+}
 // A pinned commit missing from origin (rewritten or deleted upstream) is fetched from our backup fork.
 export function checkout(dir, revision, mirror) {
+  assertClone(dir);
   if (!hasCommit(dir, revision)) {
     try { gitRun(dir, 'fetch', 'origin', revision); }
     catch (error) { if (!mirror) throw error; gitRun(dir, 'fetch', mirror, revision); }
@@ -68,7 +73,7 @@ export function assertUpstreamsClean(paths) {
   if (initialized(paths['craft-libs'])) assertClean(paths['craft-libs'], 'craft-libs');
 }
 export function upstreamHeads(paths) {
-  return Object.fromEntries(UPSTREAMS.map(name => [name, gitOut(paths[name], 'rev-parse', 'HEAD')]));
+  return Object.fromEntries(UPSTREAMS.map(name => { assertClone(paths[name]); return [name, gitOut(paths[name], 'rev-parse', 'HEAD')]; }));
 }
 // craft-libs is not a submodule: it is cloned beside GridCraft, so the source behind the Cargo.lock pin
 // stays in our hands (and in its backup fork) rather than only in Cargo's download cache.

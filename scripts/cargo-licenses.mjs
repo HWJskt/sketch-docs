@@ -25,7 +25,8 @@ export const cargoExtraLicenseFiles = {
   // The bundled UI fonts: Hack, Noto Emoji and Ubuntu Light (OFL / UFL) and the emoji icon font (MIT).
   'epaint_default_fonts@0.36.2': ['fonts/OFL.txt', 'fonts/UFL.txt', 'fonts/Hack-Regular.txt', 'fonts/emoji-icon-font-mit-license.txt'],
 };
-const licenseName = /^(?:licen[cs]e|copying|notice)(?:[.-].*)?$/i;
+// COPYRIGHT files carry the notices some crates keep apart from their license texts (euclid, unicode-width…).
+const licenseName = /^(?:licen[cs]e|copying|notice|copyright)(?:[.-].*)?$/i;
 
 export function shippedPackages(metadata, rootName) {
   const packages = new Map(metadata.packages.map(pkg => [pkg.id, pkg]));
