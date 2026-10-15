@@ -5,7 +5,7 @@ import { preview } from 'vite';
 import { chromium } from 'playwright-core';
 import { assertTestLocale, launchArgs, testLocale } from './browser-locale.mjs';
 import { resolve } from 'node:path';
-import { brokenWorkbook, koreanWorkbook, otherWorkbook } from './xlsx-fixtures.mjs';
+import { brokenWorkbook, fontWorkbook, koreanWorkbook, otherWorkbook } from './xlsx-fixtures.mjs';
 import { saveFailureEvidence } from './failure-evidence.mjs';
 import { strFromU8, unzipSync } from 'fflate';
 import { readFile } from 'node:fs/promises';
@@ -176,6 +176,18 @@ try {
   assert.deepEqual(second.sheets, ['두번째']);
   await engine.click({ position: { x: 600, y: 500 } });
   assert.equal(await cell('A2'), '42');
+
+  // B2: Pretendard (the bundled face) is a named font, so Latin text in it draws differently from a name
+  // the web build lacks (Arial draws in the substitute faces). Same text, same row height: only the font differs.
+  const fonts = await open(5, 5, '글꼴.xlsx', fontWorkbook());
+  assert.equal(fonts.ok, true);
+  await select('E9');
+  await page.waitForTimeout(500);
+  const row = async n => page.screenshot({ clip: { x: 30, y: 216 + 16.3 * (n - 1), width: 240, height: 14 } });
+  const [pretendard, arial, empty] = [await row(1), await row(2), await row(5)];
+  assert.notDeepEqual(arial, empty, 'the Arial row has text drawn');
+  assert.notDeepEqual(pretendard, arial, 'a cell in Pretendard draws in Pretendard, not in the substitute faces');
+  await page.screenshot({ path: resolve(root, 'artifacts/xlsx-fonts.png') });
 
   assert.deepEqual([...external], [], 'no request leaves this origin');
   assert.deepEqual(errors, [], 'page errors');

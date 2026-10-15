@@ -828,8 +828,43 @@ index 242ce19..41f11bd 100644
      let Some(calc) = app.session.active().map(|d| d.wb.calc.clone()) else { return };
      ui.add_space(18.0);
      section(ui, lang, "Formulas");
+diff --git a/crates/ui-egui/src/fonts.rs b/crates/ui-egui/src/fonts.rs
+index d5a8ea1..4a5db32 100644
+--- a/crates/ui-egui/src/fonts.rs
++++ b/crates/ui-egui/src/fonts.rs
+@@ -214,11 +214,28 @@ pub fn installed_among(names: &[String]) -> Vec<String> {
+     out
+ }
+ 
++/// Sketch Docs: the bundled Korean face, bound by this name too (`theme::bind_sketch_font`), so a cell
++/// set in it draws in it.
++pub const SKETCH_FONT: &str = "Pretendard";
++/// Sketch Docs: font names Korean workbooks mostly use. Not in the web build: cells in them draw in the
++/// substitute faces, and the name is kept in the file for desktop Excel.
++pub const KOREAN_NAMES: &[&str] = &["맑은 고딕", "굴림", "돋움", "바탕"];
++
++/// Sketch Docs: the ribbon's font list (decisions F1–F4, 2026-10-15): the bundled face, then the Korean
++/// names, then the standard ones. The value is the name a cell gets; the label says how it draws here.
++pub fn sketch_font_items() -> Vec<(&'static str, String)> {
++    let mut out = vec![(SKETCH_FONT, format!("{SKETCH_FONT} · {}", crate::i18n::t("web font, may be missing on other PCs")))];
++    let missing = crate::i18n::t("not in this browser, drawn in a substitute font");
++    out.extend(KOREAN_NAMES.iter().chain(crate::ribbon::FONTS).map(|name| (*name, format!("{name} · {missing}"))));
++    out
++}
++
+ /// The font list a combo box shows: the standard [`crate::ribbon::FONTS`] names first (what Excel
+ /// offers, and what we substitute), then every other installed family A–Z. Never blocks: until the
+-/// background scan finishes it returns just the standard names.
++/// background scan finishes it returns just the standard names. Sketch Docs: the bundled face and the
++/// Korean names come first.
+ pub fn families() -> Vec<String> {
+-    let mut out: Vec<String> = crate::ribbon::FONTS.iter().map(|s| s.to_string()).collect();
++    let mut out: Vec<String> = std::iter::once(&SKETCH_FONT).chain(KOREAN_NAMES).chain(crate::ribbon::FONTS).map(|s| s.to_string()).collect();
+     let Some(cat) = catalog_now() else { return out };
+     let mut seen: HashSet<String> = out.iter().map(|s| s.to_lowercase()).collect();
+     let mut installed: Vec<String> = cat.iter().map(|f| f.family.clone()).collect();
 diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
-index a8e8cb5..de66f8a 100644
+index a8e8cb5..2d281de 100644
 --- a/crates/ui-egui/src/ribbon.rs
 +++ b/crates/ui-egui/src/ribbon.rs
 @@ -51,18 +51,8 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
@@ -853,7 +888,17 @@ index a8e8cb5..de66f8a 100644
              let __k = icon_button(ui, Icon::Home, t.text_dim, "Home", vec2(26.0, ch));
              control_keytip(app, ui, &__k, "start");
              if __k.clicked() {
-@@ -1889,7 +1879,9 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
+@@ -1066,7 +1056,8 @@ fn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {
+     let resp = ui.add_sized([150.0, 24.0], egui::Button::new(egui::RichText::new(&name).font(theme::ui_font(12.5))));
+     control_keytip(app, ui, &resp, "home.fontName");
+     let forced = invoke(app, "home.fontName");
+-    let items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();
++    // Sketch Docs: the bundled face first, then the Korean and standard names, each saying how it draws here.
++    let items = crate::fonts::sketch_font_items();
+     if let ComboResult::Picked(value) = editable_combo(ui, &resp, "font", &name, &items, forced) {
+         act(app, "home.fontName", json!({"name": value}));
+     }
+@@ -1889,7 +1880,9 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
      let gd = big_button(ui, Icon::Folder, "Get Data\n(Text/CSV)", "Import a text or CSV file", false);
      control_keytip(app, ui, &gd, "data.getData");
      if gd.clicked() {
@@ -864,3 +909,89 @@ index a8e8cb5..de66f8a 100644
      }
      sep(ui);
      ui.vertical(|ui| {
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index 3a2ab44..a1236d9 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -422,6 +422,7 @@ pub fn font_definitions_with(language: crate::i18n::Language, used: &[String]) -
+     for family in crate::fonts::installed_among(used) {
+         bound.extend(crate::fonts::bind_family(&mut fonts, &family));
+     }
++    bound.extend(bind_sketch_font(&mut fonts, &base_prop));
+     // Interface text (formula bar, name box, dialogs) falls back to the cell font before the
+     // script faces: whatever a cell can draw, the formula bar can draw too, even where no script
+     // fallback face was found (#349: macOS UI font without Hebrew, cells in Arial with it).
+@@ -490,6 +491,25 @@ fn load_fallback(fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
+ const WEB_KO: &str = "web-ko";
+ const WEB_KO_BOLD: &str = "web-ko-bold";
+ 
++/// Sketch Docs: binds the bundled Korean face as the named font [`crate::fonts::SKETCH_FONT`] in every
++/// cell role (bold roles in its bold face), so Latin text in a cell set in it draws in it too, not only
++/// Hangul. Without the bundled face (the desktop build) nothing is bound. Returns the bound role keys.
++fn bind_sketch_font(fonts: &mut FontDefinitions, base_prop: &[String]) -> Vec<String> {
++    if !fonts.font_data.contains_key(WEB_KO) {
++        return Vec::new();
++    }
++    let mut bound = Vec::new();
++    for (bold, italic) in [(false, false), (true, false), (false, true), (true, true)] {
++        let face = if bold && fonts.font_data.contains_key(WEB_KO_BOLD) { WEB_KO_BOLD } else { WEB_KO };
++        let mut chain = vec![face.to_string()];
++        chain.extend(base_prop.iter().cloned());
++        let role = crate::fonts::role_key(crate::fonts::SKETCH_FONT, bold, italic);
++        fonts.families.insert(FontFamily::Name(role.clone().into()), chain);
++        bound.push(role);
++    }
++    bound
++}
++
+ /// Every fallback face we look for, in chain order: `(key, candidate files)`. One file per script
+ /// family is enough — epaint picks the first face with the glyph, and a script's glyphs live in one
+ /// file. Order only matters between faces that both cover a glyph (Japanese vs Chinese kanji), so
+@@ -737,6 +757,47 @@ pub fn color32(rgb: [u8; 3]) -> Color32 {
+ mod font_binding_tests {
+     use super::*;
+ 
++    /// Sketch Docs: with the bundled Korean face loaded (as the web build does), "Pretendard" is a named
++    /// font in every cell role, led by that face (bold roles by its bold face), ahead of the defaults.
++    #[test]
++    fn sketch_bundled_face_is_the_named_font() {
++        let mut fonts = FontDefinitions::default();
++        let base: Vec<String> = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
++        let any = fonts.font_data.values().next().cloned().expect("egui ships a font");
++        fonts.font_data.insert(WEB_KO.to_string(), any.clone());
++        fonts.font_data.insert(WEB_KO_BOLD.to_string(), any);
++        let bound = bind_sketch_font(&mut fonts, &base);
++        assert_eq!(bound.len(), 4);
++        for (bold, italic) in [(false, false), (true, false), (false, true), (true, true)] {
++            let role = crate::fonts::role_key(crate::fonts::SKETCH_FONT, bold, italic);
++            let chain = fonts.families.get(&FontFamily::Name(role.clone().into())).expect("bound");
++            assert_eq!(chain[0], if bold { WEB_KO_BOLD } else { WEB_KO }, "{role}");
++            assert_eq!(&chain[1..], &base[..], "{role}: then egui's defaults");
++        }
++    }
++
++    /// Sketch Docs: without the bundled face (desktop) the name is not bound and falls back to a role.
++    #[test]
++    fn sketch_without_the_bundled_face_nothing_is_bound() {
++        let mut fonts = FontDefinitions::default();
++        assert!(bind_sketch_font(&mut fonts, &[]).is_empty());
++    }
++
++    /// Sketch Docs (decisions F1–F4): the bundled face first, then Korean names, then the standard ones;
++    /// every label names its font and says how it draws here.
++    #[test]
++    fn sketch_font_list_order_and_labels() {
++        let items = crate::fonts::sketch_font_items();
++        let names: Vec<&str> = items.iter().map(|(n, _)| *n).collect();
++        assert_eq!(&names[..5], &["Pretendard", "맑은 고딕", "굴림", "돋움", "바탕"]);
++        assert_eq!(&names[5..], crate::ribbon::FONTS);
++        assert!(items[0].1.starts_with("Pretendard · ") && items[0].1.contains(&crate::i18n::t("web font, may be missing on other PCs")));
++        for (name, label) in &items[1..] {
++            assert_eq!(label, &format!("{name} · {}", crate::i18n::t("not in this browser, drawn in a substitute font")));
++        }
++        assert_eq!(&crate::fonts::families()[..5], &["Pretendard", "맑은 고딕", "굴림", "돋움", "바탕"]);
++    }
++
+     /// The families [`font_definitions`] always binds, whatever is installed.
+     fn always_bound() -> Vec<String> {
+         [UI, UI_BOLD, CELL, CELL_BOLD, CELL_ITALIC, CELL_BOLD_ITALIC, SERIF, MONO].iter().map(|s| s.to_string()).collect()

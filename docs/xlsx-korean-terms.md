@@ -288,3 +288,10 @@
 | Category: | 범주: | Excel |
 | Sample | 보기 | Excel |
 | Type (custom format code): | 형식(사용자 지정 서식 코드): | Excel |
+
+## 글꼴 목록 표시 (2026-10-15, B2 — 결정 F1·F4)
+
+| 영어 | 한국어 | 근거 |
+|---|---|---|
+| web font, may be missing on other PCs | 웹 글꼴 · 다른 PC에 없을 수 있음 | 결정 F1·F4 문구 |
+| not in this browser, drawn in a substitute font | 이 브라우저에 없음 — 대체 글꼴로 표시 | 결정 F1·F4 문구 |
