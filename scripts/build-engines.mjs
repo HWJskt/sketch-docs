@@ -8,6 +8,7 @@ import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { craftLibsPin, upstreamPaths } from './upstream-git.mjs';
+import { buildGridcraft } from './gridcraft-build.mjs';
 
 export const root = resolve(import.meta.dirname, '..');
 export const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 300 * 1024 * 1024 }).trim();
@@ -40,7 +41,7 @@ async function freshWorkspace(dir) {
   for (const name of entries) if (!['node_modules', '.product-build', '.dependency-lock'].includes(name)) await rm(join(dir, name), { recursive: true, force: true });
   await writeFile(marker, 'Generated build workspace; never edit here.\n');
 }
-async function snapshot(source, revision, dir) {
+export async function snapshot(source, revision, dir) {
   await freshWorkspace(dir);
   const archive = execFileSync('git', ['-C', source, 'archive', revision], { maxBuffer: 300 * 1024 * 1024 });
   execFileSync('tar', ['-xf', '-', '-C', dir], { input: archive });
@@ -132,6 +133,7 @@ else { startTabPresence(); void pruneOldDocuments(); }`);
   await build({ configFile: false, root: studio, base: './', define: { __APP_VERSION__: JSON.stringify(lock.rhwp.version), __RHWP_DISABLE_EXTERNAL_WEBFONTS__: 'true', __RHWP_HWPCTRL__: 'false' }, resolve: { alias: { '@': join(studio, 'src'), '@wasm/rhwp.js': join(vendor, 'rhwp.js'), 'canvaskit-wasm': join(root, 'node_modules/canvaskit-wasm'), '@noble/hashes': join(root, 'node_modules/@noble/hashes') } }, build: { outDir: join(output, 'rhwp'), emptyOutDir: true, target: 'baseline-widely-available' } });
   await cp(join(rhwp, 'LICENSE'), join(output, 'rhwp/LICENSE-rhwp'));
   await cp(join(hop, 'LICENSE'), join(output, 'rhwp/LICENSE-hop'));
+  await buildGridcraft({ root, lock, cache, output, snapshot });
   await writeFile(join(output, 'provenance.json'), JSON.stringify({ ...lock, wasmSha256: createHash('sha256').update(await readFile(join(vendor, 'rhwp_bg.wasm'))).digest('hex') }, null, 2));
   await copyPdfAssets({ root, output });
   await writeEngineManifest(output);

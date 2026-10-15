@@ -1,0 +1,19 @@
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index 485b9a2..13341c2 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -470,8 +470,12 @@ fn load_fallback(fonts: &mut FontDefinitions, han: HanOrder) -> Vec<String> {
+ }
+ 
+ #[cfg(target_arch = "wasm32")]
+-fn load_fallback(_fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
+-    Vec::new()
++fn load_fallback(fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
++    // Sketch Docs: the web build has no system fonts, so bundle one Korean face as the fallback.
++    let key = "web-ko".to_string();
++    let bytes: &'static [u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ko-fallback.ttf"));
++    fonts.font_data.insert(key.clone(), Arc::new(FontData::from_static(bytes)));
++    vec![key]
+ }
+ 
+ /// Every fallback face we look for, in chain order: `(key, candidate files)`. One file per script

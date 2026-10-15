@@ -23,7 +23,21 @@
     "url": "https://github.com/storytold/gridcraft.git",
     "mirror": "https://github.com/HWJskt/gridcraft.git",
     "license": "MIT OR Apache-2.0",
-    "commit": "d9d09f0baa912e88c5111107903fc8c640214b57"
+    "commit": "d9d09f0baa912e88c5111107903fc8c640214b57",
+    "tools": {
+      "rust": "1.99.0",
+      "trunk": "0.21.14",
+      "wasm-bindgen": "0.2.129",
+      "wasm-opt": "133"
+    },
+    "fonts": [
+      {
+        "file": "overlays/gridcraft/fonts/Pretendard-Regular.ttf",
+        "sha256": "6d0af5258997aec7354a6e340fc2325ba321c410ca48b3af858c8c3d6e92a324",
+        "license": "OFL-1.1",
+        "licenseFile": "overlays/gridcraft/fonts/OFL-Pretendard.txt"
+      }
+    ]
   },
   "craft-libs": {
     "url": "https://github.com/storytold/craft-libs.git",
