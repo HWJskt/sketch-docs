@@ -16,6 +16,18 @@
 | gridcraft | `d9d09f0` | Apache-2.0 / MIT | 순수 Rust. `apps/gridcraft-web` 있음 |
 | wordcraft | `a8c1c22` | Apache-2.0 / MIT | 순수 Rust. `apps/wordcraft-web` 있음 |
 
+## 사용자 결정 (2026-10-15)
+
+아래 §11 질문 5개 모두 추천안으로 정했다.
+
+| 질문 | 결정 |
+|---|---|
+| PowerPoint·Excel 첫 배포 범위 | 열기·보기만. 편집·저장은 저장 계약(§5.2)을 갖춘 뒤 따로 연다 |
+| 지원 형식 | `.pptx`·`.xlsx`만 먼저. 다른 형식은 형식별 지원표를 만든 뒤 추가 |
+| WordCraft 노출 | 별도 검증만. 기본 Word는 edentext 유지, 사용자에게 실험판을 내놓지 않는다 |
+| 새 엔진 미리 받기 | 고를 때 받기. 실측 뒤 "마지막 사용 엔진만" 검토 |
+| AGPL 해소 뒤 우리 코드 라이선스 | MIT. 단 저작권·파생 코드 확인(§7.2) 뒤에만 바꾼다 |
+
 ## 구현 계획
 
 Codex(codex-cli 0.162.1, `codex exec -s read-only`)가 위 세 커밋의 로컬 클론과 이 리포를 읽고 쓴 초안이다. 빌드·실행 검증은 하지 않았다.
