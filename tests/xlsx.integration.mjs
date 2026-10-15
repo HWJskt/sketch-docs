@@ -6,6 +6,7 @@ import { chromium } from 'playwright-core';
 import { assertTestLocale, launchArgs, testLocale } from './browser-locale.mjs';
 import { resolve } from 'node:path';
 import { brokenWorkbook, koreanWorkbook, otherWorkbook } from './xlsx-fixtures.mjs';
+import { saveFailureEvidence } from './failure-evidence.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const origin = 'http://localhost:4179';
@@ -31,12 +32,26 @@ const harness = `<!doctype html><meta charset="utf-8"><style>body{margin:0}ifram
   };
 </script>`;
 
-let server, browser;
+let server, browser, context;
+// On a failure, every open page is kept: its screen, what has focus in it and in each of its frames, and the
+// last messages the harness heard from the engine (verify's en-US round once timed out at "the refusals are
+// reported" and two reruns passed; tests/failure-evidence.mjs).
+async function keepEvidence(error) {
+  for (const [i, open] of (context?.pages() ?? []).entries()) {
+    await saveFailureEvidence({ name: `xlsx page ${i} ${new URL(open.url()).pathname}`, page: open, origin, error, extra: async () => ({
+      focus: await Promise.all(open.frames().map(async frame => ({ frame: frame.url(), active: await frame.evaluate(() => {
+        const e = document.activeElement;
+        return e ? { tag: e.tagName, id: e.id || undefined, title: e.getAttribute('title') || undefined, hasFocus: document.hasFocus() } : null;
+      }).catch(reason => String(reason)) }))),
+      messages: await open.evaluate(() => (window.messages ?? []).slice(-15).map(m => ({ ...m, bytes: m.bytes ? `(${m.bytes.byteLength} bytes)` : undefined }))).catch(reason => String(reason)),
+    }) });
+  }
+}
 try {
   server = await preview({ root, build: { outDir: resolve(root, process.env.TEST_DIST || 'dist') }, preview: { host: 'localhost', port: 4179, strictPort: true } });
   browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
   // Service workers are blocked: once the shell registers one, its fetches bypass page.route (tests/regressions.mjs covers it).
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: testLocale || 'ko-KR', acceptDownloads: true, serviceWorkers: 'block' });
+  context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: testLocale || 'ko-KR', acceptDownloads: true, serviceWorkers: 'block' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
   const page = await context.newPage();
   await assertTestLocale(page);
@@ -226,6 +241,9 @@ try {
   await alone.goto(origin + '/framed-without-host.html');
   await alone.frameLocator('iframe').getByText('This page opens inside Sketch Docs.').waitFor();
   console.log('XLSX VIEW CHECKS PASSED');
+} catch (error) {
+  await keepEvidence(error);
+  throw error;
 } finally {
   await browser?.close();
   await server?.close();

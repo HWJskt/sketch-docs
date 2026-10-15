@@ -22,9 +22,10 @@ test('a failure keeps the page, a screenshot, and a fresh index request with onl
   const { server, origin } = await site();
   try {
     const page = { url: () => origin + '/xlsx', content: async () => '<p>what the browser had</p>', screenshot: async ({ path }) => { await (await import('node:fs/promises')).writeFile(path, 'png'); } };
-    const dir = await saveFailureEvidence({ name: 'clean URLs: the Excel view', page, origin, error: new Error('link not found'), root });
+    const dir = await saveFailureEvidence({ name: 'clean URLs: the Excel view', page, origin, error: new Error('link not found'), root, extra: async () => ({ focus: 'CANVAS' }) });
     assert.match(dir, /artifacts\/live-failure\/[^/]+\/clean-urls-the-excel-view$/);
-    assert.deepEqual(await files(dir), ['error.txt', 'notes.txt', 'origin-index.html', 'origin-response.json', 'page.html', 'screenshot.png']);
+    assert.deepEqual(await files(dir), ['error.txt', 'extra.json', 'notes.txt', 'origin-index.html', 'origin-response.json', 'page.html', 'screenshot.png']);
+    assert.deepEqual(JSON.parse(await readFile(join(dir, 'extra.json'), 'utf8')), { focus: 'CANVAS' });
     assert.equal(await readFile(join(dir, 'page.html'), 'utf8'), '<p>what the browser had</p>');
     assert.equal(await readFile(join(dir, 'origin-index.html'), 'utf8'), '<p>served index</p>');
     const response = JSON.parse(await readFile(join(dir, 'origin-response.json'), 'utf8'));
@@ -43,11 +44,12 @@ test('a step that cannot run is noted and the rest is still saved', async () => 
   const { server, origin } = await site();
   try {
     const page = { url: () => 'about:blank', content: async () => { throw new Error('Target page has been closed'); }, screenshot: async () => { throw new Error('no screenshot'); } };
-    const dir = await saveFailureEvidence({ name: 'x', page, origin, error: new Error('boom'), root });
+    const dir = await saveFailureEvidence({ name: 'x', page, origin, error: new Error('boom'), root, extra: async () => { throw new Error('no frame'); } });
     assert.deepEqual(await files(dir), ['error.txt', 'notes.txt', 'origin-index.html', 'origin-response.json']);
     const notes = await readFile(join(dir, 'notes.txt'), 'utf8');
     assert.match(notes, /page.content\(\): Target page has been closed/);
     assert.match(notes, /screenshot: no screenshot/);
+    assert.match(notes, /extra: no frame/);
     // An origin that does not answer is noted too.
     const dir2 = await saveFailureEvidence({ name: 'y', page, origin: 'http://localhost:9', error: new Error('boom'), root });
     assert.match(await readFile(join(dir2, 'notes.txt'), 'utf8'), /fetch http:\/\/localhost:9\/: /);

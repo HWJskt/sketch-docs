@@ -12,7 +12,7 @@ const runTime = new Date().toISOString().replace(/[:.]/g, '-');
 const slug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'scenario';
 
 /** Saves what it can and returns the folder; a step that fails is noted in notes.txt instead of hiding the test's own error. */
-export async function saveFailureEvidence({ name, page, origin, error, root = resolve(import.meta.dirname, '..') }) {
+export async function saveFailureEvidence({ name, page, origin, error, extra, root = resolve(import.meta.dirname, '..') }) {
   const dir = join(root, 'artifacts/live-failure', runTime, slug(name));
   await mkdir(dir, { recursive: true });
   const notes = [];
@@ -27,6 +27,8 @@ export async function saveFailureEvidence({ name, page, origin, error, root = re
     await writeFile(join(dir, 'origin-response.json'), JSON.stringify({ url: origin + '/', status: response.status, fetchedAt: new Date().toISOString(), headers }, null, 2) + '\n');
     await writeFile(join(dir, 'origin-index.html'), await response.text());
   });
+  // What the runner adds (focus, its last messages…): a function, run here so its own failure is noted too.
+  if (extra) await step('extra', async () => writeFile(join(dir, 'extra.json'), JSON.stringify(await extra(), null, 2) + '\n'));
   await writeFile(join(dir, 'notes.txt'), notes.join('\n') + '\n');
   console.error(`Failure evidence for "${name}": ${dir}`);
   return dir;
