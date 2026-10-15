@@ -125,6 +125,40 @@ try {
     await context.setOffline(false);
   });
 
+  // An English Word fetches the en Hunspell dictionary (1.3MB) after startup; it is not preloaded. What
+  // is promised: a dictionary fetched once online is used offline too (the service worker stores it).
+  // Starting offline there is no spell check, and there is no Korean dictionary at all.
+  await scenario('a spell-check dictionary fetched once online still checks spelling offline', async (page, context) => {
+    const misspelled = async () => {
+      const editor = wordFrame(page).locator('.tiptap').first();
+      await editor.waitFor();
+      await editor.click();
+      await page.keyboard.type('Thiss sentense is mispeled. ');
+      // Squiggles are a CSS custom highlight of StaticRanges (spellCheck.ts), not elements: read their text.
+      const frame = await (await page.locator('iframe[title="Word 문서 편집기"]').elementHandle()).contentFrame();
+      await frame.waitForFunction(() => {
+        const words = [...(CSS.highlights.get('spell-error') ?? [])].map(({ startContainer, startOffset, endContainer, endOffset }) => {
+          const range = document.createRange();
+          range.setStart(startContainer, startOffset);
+          range.setEnd(endContainer, endOffset);
+          return range.toString();
+        });
+        return ['Thiss', 'sentense', 'mispeled'].every(word => words.includes(word)) && !words.includes('is');
+      }, null, { timeout: 30000 });
+    };
+    const dictionary = () => page.waitForResponse(response => /\/dictionaries\/en\/en\.dic\.txt$/.test(new URL(response.url()).pathname) && response.ok());
+    const online = dictionary();
+    await page.goto(origin + '/word');
+    await online;
+    await misspelled();
+    await context.setOffline(true);
+    const offline = dictionary();
+    await page.reload();
+    assert.ok((await offline).fromServiceWorker(), 'the dictionary came from the service worker cache');
+    await misspelled();
+    await context.setOffline(false);
+  }, { contextOptions: { locale: 'en-US' } });
+
   await scenario('clean URLs: the PDF editor through the header, direct URLs, reload and history', async page => {
     const pdfShown = () => page.waitForFunction(() => !document.querySelector('.engine:has(.pdf-editor)')?.hidden && document.querySelector('.pdf-editor'));
     const wordShown = () => page.waitForFunction(() => document.querySelector('.engine:not([hidden]) iframe')?.title === 'Word 문서 편집기');
