@@ -28,6 +28,33 @@
 | 새 엔진 미리 받기 | 고를 때 받기. 실측 뒤 "마지막 사용 엔진만" 검토 |
 | AGPL 해소 뒤 우리 코드 라이선스 | MIT. 단 저작권·파생 코드 확인(§7.2) 뒤에만 바꾼다 |
 
+## 단계 0a·0b 실측 (2026-10-15)
+
+세 웹 앱을 이 리포 밖 임시 사본에서 따로 빌드하고, 우리 정적 서버(127.0.0.1)와 설치된 Chrome(헤드리스, ko-KR)으로 열어 본 결과다. 제품 코드는 바꾸지 않았다.
+
+**도구.** wasm32 대상, `wasm-bindgen-cli` 0.2.129(세 리포 `Cargo.lock`과 같은 판), `trunk` 0.21.14, `wasm-opt` 133(binaryen).
+빌드는 `trunk build --release --offline --locked`로 했다. 도구를 자동으로 내려받지 않는다.
+**Rust 1.95 이상이 필요하다.** 세 리포는 `rust-version = "1.90"`이라고 적었지만, egui·eframe 0.36.2와 craft-ui가 1.95를 요구해 1.92로는 빌드가 실패했다.
+그래서 upstream CI처럼 1.99.0을 기존 툴체인과 따로 설치해 `RUSTUP_TOOLCHAIN=1.99.0`으로만 썼다(기본 `stable`은 1.92 그대로).
+빌드 시간은 gridcraft 134초, deckcraft 276초, wordcraft 248초였다(`CARGO_BUILD_JOBS=5`).
+
+| 항목 | deckcraft `8d3e4a6` | gridcraft `d9d09f0` | wordcraft `a8c1c22` |
+|---|---|---|---|
+| WASM 원본 크기 | 29.20MB | 17.99MB | 39.38MB |
+| gzip -9 / brotli 11 | 10.52MB / 6.73MB | 6.76MB / 4.58MB | 14.95MB / 9.56MB |
+| Pages 파일당 25MiB(26.2MB) 한도 | **넘음** | 안 넘음 | **넘음** |
+| 외부 출처 요청 | 0 | 0 | 0 |
+| 그래픽 백엔드 | WebGPU·`?webgl` 둘 다 시작 | 둘 다 시작 | 둘 다 시작(로그 `BrowserWebGpu`·`Gl`) |
+| 시험 문서 열기(끌어놓기) | **실패.** 시작하자마자 panic `no pids on this platform`(std 프로세스 ID를 WASM에서 호출). "Loading DeckCraft..." 화면에서 멈춤 | 열림. 수식 재계산값 맞음(3600·10000·13600, 합계 8) | 열림. 제목·본문·표 구조 표시 |
+| 한국어 표시 | 확인 못 함(앱이 안 뜸) | **전부 빈 네모(□)** | **전부 빈 네모(□)** |
+
+이로써 정해진 것:
+
+- **한국어 글꼴은 필수 선행 작업이다.** 웹판은 OS 글꼴을 쓰지 않는다. 빌드에 한국어 글꼴(`CRAFT_FONTS_DIR` 또는 overlay)을 넣지 않으면 한국어 문서를 보여 줄 수 없다.
+- **deckcraft는 지금 커밋 그대로는 웹에서 뜨지 않는다.** panic이 나는 곳은 앱의 비시험 코드에서 찾지 못했다(의존성으로 추정, 미확정). upstream 수정을 기다리거나 overlay로 고쳐야 한다.
+- **deckcraft·wordcraft는 WASM 한 파일이 Pages 한도를 넘는다.** 분할, 크기 줄이기, 다른 호스팅 중 하나가 필요하다. gridcraft는 한도 안이다.
+- 측정하지 않은 것: 실제 시작 시간(4초 고정 대기로만 봤다), 메모리, Safari·Firefox, 큰 문서, PPTX 표시.
+
 ## 구현 계획
 
 Codex(codex-cli 0.162.1, `codex exec -s read-only`)가 위 세 커밋의 로컬 클론과 이 리포를 읽고 쓴 초안이다. 빌드·실행 검증은 하지 않았다.
