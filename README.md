@@ -132,6 +132,7 @@ npm run verify
 - 아니면 그 커밋을 임시 worktree(이 클론의 `source/`·`.cache/`, lock이 같으면 `node_modules`를 빌려 씀)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다.
 - 원격 브랜치 삭제는 검사하지 않는다.
 - `git push --no-verify`는 모든 훅을 건너뛴다. 이것은 막을 수 없다.
+- 설치 확인 `git config --get core.hooksPath`(→ `.githooks`), 되돌리기 `git config --unset core.hooksPath`.
 
 GitHub Actions(Rust·브라우저 없음):
 - push마다 `verify`: `npm run check`, `npm run test:contracts`.

@@ -28,4 +28,4 @@
 - `docs.sketchps.app` DNS는 대시보드에서 관리한다(CNAME → `sketch-docs.pages.dev`, **DNS only**). wrangler OAuth 토큰에는 DNS 쓰기 권한이 없다.
   - 프록시를 켜면 KT 회선에서 무료 플랜 IP가 해외 colo로 가서 WASM 로딩이 수십 배 느려진다(2026-10-13 실측). 다시 켜지 않는다.
 - 소스 제공: 배포판 정보 창이 빌드 커밋의 GitHub 링크를 건다. 그래서 push되지 않은 커밋은 배포하지 않는다.
-- GitHub Actions: push마다 `verify`(Rust·브라우저 없이 `npm run check`·`npm run test:contracts`만 — 엔진 빌드·브라우저 회귀는 로컬 push 게이트가 맡는다), 매주 `dependency-watch`(`svelte-pdf-mini` 새 판·`npm audit --omit=dev`, gridcraft·craft-libs Cargo.lock `cargo audit` — 걸리면 이슈, 고정판은 바꾸지 않는다). 최신 원본 검사는 로컬 `npm run upstream:check`로만 한다(2026-10-15 결정). 배포 권한은 주지 않는다. `git push --no-verify`는 게이트를 건너뛴다 — 쓰지 않는다.
+- GitHub Actions: push마다 `verify`(Rust·브라우저 없이 `npm run check`·`npm run test:contracts`만 — 엔진 빌드·브라우저 회귀는 로컬 push 게이트가 맡는다), 매주 `dependency-watch`(`svelte-pdf-mini` 새 판·`npm audit --omit=dev`, gridcraft·craft-libs Cargo.lock `cargo audit` — 걸리면 이슈, 고정판은 바꾸지 않는다). 최신 원본 검사는 로컬 `npm run upstream:check`로만 한다(2026-10-15 결정). 배포 권한은 주지 않는다. `git push --no-verify`는 게이트를 건너뛴다 — 쓰지 않는다. 훅은 `npm run hooks:install`(= `git config core.hooksPath .githooks`, 이 클론에 2026-10-15 설치), 되돌리기 `git config --unset core.hooksPath`.
