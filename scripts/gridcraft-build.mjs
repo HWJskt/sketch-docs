@@ -77,7 +77,7 @@ export async function buildGridcraft({ root, lock, cache, output, snapshot, extr
   const inputs = {
     gridcraft: pin.commit, craftLibs: lock['craft-libs'].commit, tools: versions, cargoLock: sha256(cargoLock),
     patches: Object.fromEntries(await Promise.all(patches.map(async path => [relative(root, path), sha256(await readFile(path))]))),
-    fonts: Object.fromEntries(fonts.map(font => [font.file, font.sha256])),
+    fonts: Object.fromEntries(fonts.map(font => [font.file, `${font.sha256} → ${font.target}`])),
     koSketch: sha256(await readFile(join(overlay, 'ko-sketch.json'))),
     script: sha256(await readFile(import.meta.filename)),
     notices: sha256(await readFile(join(import.meta.dirname, 'cargo-licenses.mjs'))),
@@ -92,9 +92,12 @@ export async function buildGridcraft({ root, lock, cache, output, snapshot, extr
       execFileSync('git', ['apply', '--check', path], { cwd: work, stdio: 'inherit' });
       execFileSync('git', ['apply', path], { cwd: work, stdio: 'inherit' });
     }
-    // The Korean fallback face crates/ui-egui/src/theme.rs embeds (korean-font.patch).
+    // The Korean fallback faces crates/ui-egui/src/theme.rs embeds (korean-font.patch), by `target` name.
     await mkdir(join(work, 'crates/ui-egui/assets'), { recursive: true });
-    await writeFile(join(work, 'crates/ui-egui/assets/ko-fallback.ttf'), fonts[0].bytes);
+    for (const font of fonts) {
+      if (!/^[\w.-]+\.ttf$/.test(font.target ?? '')) throw new Error(`${font.file}: upstreams.lock.json needs a target file name`);
+      await writeFile(join(work, 'crates/ui-egui/assets', font.target), font.bytes);
+    }
     // Korean additions and corrections (korean-ui.patch looks them up before ko.rs).
     await writeFile(join(work, 'crates/ui-egui/src/i18n/ko_sketch.rs'), koSketchSource(JSON.parse(await readFile(join(overlay, 'ko-sketch.json'), 'utf8'))));
     // git archive dates files at the commit; a file a dropped patch no longer changes would then look

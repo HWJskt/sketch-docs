@@ -1,19 +1,40 @@
 diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
-index 485b9a2..13341c2 100644
+index 485b9a2..3a2ab44 100644
 --- a/crates/ui-egui/src/theme.rs
 +++ b/crates/ui-egui/src/theme.rs
-@@ -470,8 +470,12 @@ fn load_fallback(fonts: &mut FontDefinitions, han: HanOrder) -> Vec<String> {
+@@ -408,6 +408,12 @@ pub fn font_definitions_with(language: crate::i18n::Language, used: &[String]) -
+         }
+         chain.extend(if role == MONO { base_mono.clone() } else { base_prop.clone() });
+         chain.extend(fallback.iter().cloned());
++        // Sketch Docs: bold roles draw Korean in the bundled bold face, ahead of the regular one.
++        if matches!(role, UI_BOLD | CELL_BOLD | CELL_BOLD_ITALIC)
++            && let Some(at) = chain.iter().position(|k| k == WEB_KO)
++        {
++            chain.insert(at, WEB_KO_BOLD.to_string());
++        }
+         chain.retain(|k| fonts.font_data.contains_key(k));
+         fonts.families.insert(FontFamily::Name(role.into()), chain);
+         bound.push(role.to_string());
+@@ -470,10 +476,20 @@ fn load_fallback(fonts: &mut FontDefinitions, han: HanOrder) -> Vec<String> {
  }
  
  #[cfg(target_arch = "wasm32")]
 -fn load_fallback(_fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
 -    Vec::new()
 +fn load_fallback(fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
-+    // Sketch Docs: the web build has no system fonts, so bundle one Korean face as the fallback.
-+    let key = "web-ko".to_string();
-+    let bytes: &'static [u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ko-fallback.ttf"));
-+    fonts.font_data.insert(key.clone(), Arc::new(FontData::from_static(bytes)));
-+    vec![key]
++    // Sketch Docs: the web build has no system fonts, so bundle one Korean face as the fallback, and
++    // its bold weight for the bold roles (see WEB_KO_BOLD).
++    let regular: &'static [u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ko-fallback.ttf"));
++    let bold: &'static [u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ko-fallback-bold.ttf"));
++    fonts.font_data.insert(WEB_KO.to_string(), Arc::new(FontData::from_static(regular)));
++    fonts.font_data.insert(WEB_KO_BOLD.to_string(), Arc::new(FontData::from_static(bold)));
++    vec![WEB_KO.to_string()]
  }
  
++/// Sketch Docs: keys of the bundled Korean faces (web build only).
++const WEB_KO: &str = "web-ko";
++const WEB_KO_BOLD: &str = "web-ko-bold";
++
  /// Every fallback face we look for, in chain order: `(key, candidate files)`. One file per script
+ /// family is enough — epaint picks the first face with the glyph, and a script's glyphs live in one
+ /// file. Order only matters between faces that both cover a glyph (Japanese vs Chinese kanji), so

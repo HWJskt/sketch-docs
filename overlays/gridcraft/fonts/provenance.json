@@ -4,6 +4,16 @@
   "license": "SIL Open Font License 1.1",
   "files": [
     {
+      "file": "Pretendard-Bold.ttf",
+      "sha256": "c16b88c670d23e83fa1170c954cbc4822d3b8dad3c3cde15d798a94b43d97985",
+      "name_table": {
+        "0": "Copyright © 2023 길형진",
+        "1": "Pretendard",
+        "2": "Bold",
+        "5": "Version 1.309"
+      }
+    },
+    {
       "file": "Pretendard-Regular.ttf",
       "sha256": "6d0af5258997aec7354a6e340fc2325ba321c410ca48b3af858c8c3d6e92a324",
       "name_table": {
@@ -14,5 +24,5 @@
       }
     }
   ],
-  "copiedFrom": "~/Coding/.claude/skills/vi-ko-medical-docx/assets/fonts (2026-10-15), unmodified"
+  "copiedFrom": "~/Coding/.claude/skills/vi-ko-medical-docx/assets/fonts (Regular and Bold, 2026-10-15), unmodified"
 }
