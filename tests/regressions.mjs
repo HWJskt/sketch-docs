@@ -149,6 +149,31 @@ try {
     await page.waitForURL(url => /^\/pdf(?:\.html)?$/.test(new URL(url).pathname));
   });
 
+  const xlsxShown = page => page.waitForFunction(() => !document.querySelector('.engine:has(.xlsx-viewer)')?.hidden && document.querySelector('.xlsx-viewer[data-ready="true"]'), null, { timeout: 60000 });
+  await scenario('clean URLs: the Excel view through the start card, the header, direct URLs, reload and history', async page => {
+    await page.goto(origin + '/');
+    await page.getByRole('link', { name: /Excel 통합 문서/ }).click();
+    await page.waitForURL(url => /^\/xlsx(?:\.html)?$/.test(new URL(url).pathname));
+    await xlsxShown(page);
+    await page.reload();
+    await xlsxShown(page);
+    assert.equal(await page.title(), 'Excel 보기 · Sketch Docs');
+    await page.getByRole('button', { name: 'PDF', exact: true }).click();
+    await page.waitForURL(url => /^\/pdf(?:\.html)?$/.test(new URL(url).pathname));
+    await page.goBack();
+    await xlsxShown(page);
+    assert.equal(new URL(page.url()).pathname, '/xlsx');
+    await page.goForward();
+    await page.waitForFunction(() => !document.querySelector('.engine:has(.pdf-editor)')?.hidden);
+    await page.goto(origin + '/xlsx.html');
+    await page.waitForURL(origin + '/xlsx');
+    await xlsxShown(page);
+    await page.goto(origin + '/word');
+    await wordFrame(page).locator('.product-header').getByRole('button', { name: 'Excel', exact: true }).click();
+    await xlsxShown(page);
+    await page.waitForURL(url => /^\/xlsx(?:\.html)?$/.test(new URL(url).pathname));
+  });
+
   await scenario('service worker install failure still opens Word online', async page => {
     failShell = true;
     try {
@@ -213,6 +238,7 @@ try {
         await page.getByRole('button', { name: 'PDF 열기' }).click();
         await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
       },
+      xlsx: () => page.waitForFunction(() => document.querySelector('.xlsx-viewer[data-ready="true"]'), null, { timeout: 60000 }),
     };
     for (const [name, open] of Object.entries(ready)) {
       const listed = new Set([...engines[name].required, ...engines[name].warm].map(file => file.path));
@@ -274,13 +300,15 @@ try {
   await scenario('the start page preloads engines in the background, last used first, so the editor opens without waiting', async (page, context) => {
     const traffic = await wasmNetworkBytes(context, page);
     const order = [];
-    traffic.cdp.on('Network.requestWillBeSent', event => { const path = new URL(event.request.url).pathname; if (/^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path); });
+    const excel = [];
+    traffic.cdp.on('Network.requestWillBeSent', event => { const path = new URL(event.request.url).pathname; if (/^\/(?:engines\/word|rhwp)\/assets\//.test(path)) order.push(path); if (path.startsWith('/engines/gridcraft/')) excel.push(path); });
     await page.addInitScript(() => localStorage.setItem('sketch-docs-last-engine', 'hwp'));
     await page.goto(origin + '/');
     await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('.wasm') && entry.responseEnd > 0), null, { timeout: 60000 });
     assert.match(order[0] ?? '', /^\/rhwp\//, `the last used editor downloads first (order: ${order.slice(0, 3)})`);
     await page.getByRole('link', { name: /한글 문서/ }).click();
     await hangulReady(page);
+    assert.deepEqual(excel, [], 'the Excel engine is fetched only when chosen');
     const size = await wasmBytes(page);
     assert.ok(traffic.bytes() <= size * 1.05, `the WASM crossed the network once (${traffic.bytes()} bytes received, file ${size})`);
   }, { contextOptions: { serviceWorkers: 'block' }, persistent: true });
@@ -397,6 +425,12 @@ try {
     await page.waitForTimeout(3000);
     assert.deepEqual(engineRequests, []);
   }, { contextOptions: { serviceWorkers: 'block' } });
+
+  await scenario('direct Excel engine URL opens the product shell', async page => {
+    await page.goto(origin + '/engines/gridcraft/index.html');
+    await page.waitForURL(url => /^\/xlsx(?:\.html)?$/.test(new URL(url).pathname));
+    await xlsxShown(page);
+  });
 
   await scenario('direct Word engine URL opens the product shell', async page => {
     await page.goto(origin + '/engines/word/index.html');

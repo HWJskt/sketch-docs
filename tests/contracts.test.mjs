@@ -87,7 +87,7 @@ test('upstream replacements insert overlay text literally, including $ sequences
 
 test('editor mode follows both .html and extensionless paths', async () => {
   const { modeFromPath } = await import('../src/routes.ts');
-  for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word'], ['/pdf.html', 'pdf'], ['/pdf', 'pdf'], ['/app/pdf', 'pdf'], ['/pdfs', 'word'], ['/pdf/', 'word']]) assert.equal(modeFromPath(path), mode, path);
+  for (const [path, mode] of [['/hwp.html', 'hwp'], ['/hwp', 'hwp'], ['/app/hwp', 'hwp'], ['/word.html', 'word'], ['/word', 'word'], ['/', 'word'], ['/hwpx', 'word'], ['/pdf.html', 'pdf'], ['/pdf', 'pdf'], ['/app/pdf', 'pdf'], ['/pdfs', 'word'], ['/pdf/', 'word'], ['/xlsx.html', 'xlsx'], ['/xlsx', 'xlsx'], ['/app/xlsx', 'xlsx'], ['/xlsxs', 'word'], ['/xls', 'word']]) assert.equal(modeFromPath(path), mode, path);
 });
 
 test('the start page path is recognised with and without index.html', async () => {

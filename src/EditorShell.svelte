@@ -6,6 +6,7 @@
     import HangulEditor from './HangulEditor.svelte';
     import EngineProgress from './EngineProgress.svelte';
     import AboutProduct from './AboutProduct.svelte';
+    import XlsxViewer from './XlsxViewer.svelte';
     import { offlineReady } from './offline';
     import { rememberEngine } from './engines';
     import { isHomePath, modeFromPath, type EditorMode } from './routes';
@@ -16,29 +17,31 @@
     let wordLoaded = $state(untrack(() => initialMode === 'word'));
     let hangulLoaded = $state(untrack(() => initialMode === 'hwp'));
     let pdfLoaded = $state(untrack(() => initialMode === 'pdf'));
+    let xlsxLoaded = $state(untrack(() => initialMode === 'xlsx'));
     // An editor mounts only after its engine files are downloaded (EngineProgress shows the wait).
-    let wordFetched = $state(false), hangulFetched = $state(false), pdfFetched = $state(false);
+    let wordFetched = $state(false), hangulFetched = $state(false), pdfFetched = $state(false), xlsxFetched = $state(false);
     let onlineReady = $state(false);
     let frame = $state.raw<HTMLIFrameElement>();
     let hangul = $state.raw<HangulEditor>();
     // The PDF editor and its libraries load only when PDF is chosen (a separate chunk).
     let pdf = $state.raw<{ getState(): EditorStatus }>();
     const pdfModule = () => import('./pdf/PdfEditor.svelte');
+    let xlsx = $state.raw<XlsxViewer>();
     let initialFile = $state.raw<HangulInput | undefined>();
     let controlsReady = $state(false);
     const mountedControls = new Map<Mode, {doc: Document; instance: ReturnType<typeof mount>}>();
     let disposed = false;
     function placeControls() {
         if (disposed) return;
-        // The PDF editor is not in a frame: the shell's own header stays above it.
-        if (active === 'pdf') { controlsReady = false; return; }
+        // The PDF editor and the Excel view keep the shell's own header (Excel's canvas UI has no DOM menu row).
+        if (active === 'pdf' || active === 'xlsx') { controlsReady = false; return; }
         const doc = active === 'word' ? frame?.contentDocument : hangul?.menuDocument();
         const row = doc?.querySelector(active === 'word' ? '.ribbon-tabs' : '#menu-bar');
         // Word's modern toolbar has no menu row: the shell header floats over its right end, so keep that
         // width (.product-header in editorHeader.css) clear of toolbar buttons.
         if (active === 'word' && !row && doc?.querySelector('.toolbar-region') && !doc.getElementById('sketch-header-space')) {
             const space = doc.createElement('style'); space.id = 'sketch-header-space';
-            space.textContent = '.toolbar-region{padding-right:150px;box-sizing:border-box}';
+            space.textContent = '.toolbar-region{padding-right:172px;box-sizing:border-box}';
             doc.head.append(space);
         }
         controlsReady = !!row;
@@ -63,19 +66,20 @@
     let wordStatus = $state<EditorStatus>({ready:false,busy:false,dirty:false,name:''});
     let hangulStatus = $state<EditorStatus>({ready:false,busy:false,dirty:false,name:''});
     let pdfStatus = $state<EditorStatus>({ready:false,busy:false,dirty:false,name:''});
-    const blocked = $derived(wordStatus.busy || hangulStatus.busy || pdfStatus.busy);
+    let xlsxStatus = $state<EditorStatus>({ready:false,busy:false,dirty:false,name:''});
+    const blocked = $derived(wordStatus.busy || hangulStatus.busy || pdfStatus.busy || xlsxStatus.busy);
     function states() {
-        return [frame?.contentWindow?.sketchWord?.state() ?? wordStatus, hangul?.getState() ?? hangulStatus, pdf?.getState() ?? pdfStatus];
+        return [frame?.contentWindow?.sketchWord?.state() ?? wordStatus, hangul?.getState() ?? hangulStatus, pdf?.getState() ?? pdfStatus, xlsx?.getState() ?? xlsxStatus];
     }
-    const pages: Record<Mode, string> = { word: './word.html', hwp: './hwp.html', pdf: './pdf.html' };
-    const titles: Record<Mode, string> = { word: 'Word', hwp: '한글', pdf: 'PDF' };
+    const pages: Record<Mode, string> = { word: './word.html', hwp: './hwp.html', pdf: './pdf.html', xlsx: './xlsx.html' };
+    const titles: Record<Mode, string> = { word: 'Word', hwp: '한글', pdf: 'PDF', xlsx: 'Excel' };
     function switchMode(mode: Mode, updateUrl = true) {
         if (states().some(state => state.busy)) { notice = '파일 작업이 끝난 뒤 편집기를 전환할 수 있습니다.'; return false; }
         const focused = frame?.contentDocument?.activeElement;
         if (focused && 'blur' in focused) (focused as HTMLElement).blur();
         active = mode;
         rememberEngine(mode);
-        if (mode === 'word') wordLoaded = true; else if (mode === 'hwp') hangulLoaded = true; else pdfLoaded = true;
+        if (mode === 'word') wordLoaded = true; else if (mode === 'hwp') hangulLoaded = true; else if (mode === 'pdf') pdfLoaded = true; else xlsxLoaded = true;
         notice = '';
         if (updateUrl) history.pushState({mode}, '', new URL(pages[mode], location.href));
         document.title = `${titles[mode]} · Sketch Docs`;
@@ -124,7 +128,7 @@
 
 <svelte:window onbeforeunload={leaving} onpopstate={popstate} />
 <div class="editor-shell">
-    {#if !controlsReady}<EditorControls mode={active} getBlocked={() => blocked} getName={() => active === 'pdf' ? pdfStatus.name : ''} getDirty={() => active === 'pdf' && pdfStatus.dirty} onSwitch={switchMode} onAbout={() => about = true} />{/if}
+    {#if !controlsReady}<EditorControls mode={active} getBlocked={() => blocked} getName={() => active === 'pdf' ? pdfStatus.name : active === 'xlsx' ? xlsxStatus.name : ''} getDirty={() => active === 'pdf' && pdfStatus.dirty} onSwitch={switchMode} onAbout={() => about = true} />{/if}
     {#if notice}<div class="notice" role="status">{notice}</div>{/if}
     <div class="engines">
         {#if wordLoaded}
@@ -155,6 +159,15 @@
                     {/await}
                 {:else}
                     <EngineProgress engine="pdf" onReady={() => pdfFetched = true} />
+                {/if}
+            </div>
+        {/if}
+        {#if xlsxLoaded}
+            <div class="engine" hidden={active !== 'xlsx'} inert={active !== 'xlsx'}>
+                {#if xlsxFetched}
+                    <XlsxViewer bind:this={xlsx} onState={state => xlsxStatus = state} />
+                {:else}
+                    <EngineProgress engine="xlsx" onReady={() => xlsxFetched = true} />
                 {/if}
             </div>
         {/if}

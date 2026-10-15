@@ -24,7 +24,8 @@ let server, browser;
 try {
   server = await preview({ root, build: { outDir: resolve(root, process.env.TEST_DIST || 'dist') }, preview: { host: 'localhost', port: 4179, strictPort: true } });
   browser = await chromium.launch({ channel: 'chrome', headless: true });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ko-KR', acceptDownloads: true });
+  // Service workers are blocked: once the shell registers one, its fetches bypass page.route (tests/regressions.mjs covers it).
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ko-KR', acceptDownloads: true, serviceWorkers: 'block' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
   const page = await context.newPage();
   page.setDefaultTimeout(60000);
@@ -122,6 +123,65 @@ try {
 
   assert.deepEqual([...external], [], 'no request leaves this origin');
   assert.deepEqual(errors, [], 'page errors');
+
+  // The product: the Excel view in the shell opens a picked file, keeps it across editor switches, and says why edits fail.
+  const product = await context.newPage();
+  product.setDefaultTimeout(60000);
+  product.on('pageerror', error => errors.push(String(error)));
+  product.on('request', request => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== origin) external.add(request.url()); });
+  await product.goto(origin + '/xlsx.html');
+  await product.locator('.xlsx-viewer[data-ready="true"]').waitFor();
+  const pick = async (name, bytes) => {
+    await product.evaluate(async ([name, bytes]) => {
+      const handle = await (await navigator.storage.getDirectory()).getFileHandle(name, { create: true });
+      const stream = await handle.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close();
+      window.showOpenFilePicker = async () => [handle];
+    }, [name, [...bytes]]);
+    await product.getByRole('button', { name: 'Excel 열기' }).click();
+  };
+  await pick('매출.xlsx', koreanWorkbook());
+  await product.locator('.xlsx-viewer[data-sheets="2"]').waitFor();
+  assert.equal(await product.locator('.product-document-name').textContent(), '매출.xlsx');
+  const view = product.locator('iframe[title="Excel 보기"]');
+  const productCell = async address => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await product.keyboard.press('Escape');
+      const column = address.charCodeAt(0) - 65, row = Number(address.slice(1)) - 1;
+      if (attempt) await view.click({ position: { x: 54, y: 223 } });
+      await view.click({ position: { x: 54 + 51 * column, y: 223 + 16.3 * row } });
+      await product.evaluate(() => navigator.clipboard.writeText('(empty)'));
+      await product.keyboard.press('ControlOrMeta+c');
+      await product.waitForFunction(async () => (await navigator.clipboard.readText()) !== '(empty)', null, { timeout: 5000 }).catch(() => {});
+      const text = (await product.evaluate(() => navigator.clipboard.readText())).trim();
+      if (text !== '(empty)') return text;
+    }
+    return '(empty)';
+  };
+  assert.equal(await productCell('B2'), '1200');
+  await product.keyboard.type('5');
+  await product.keyboard.press('Enter');
+  await product.getByRole('status').filter({ hasText: '보기 전용입니다' }).waitFor();
+  // The engine also shows its refusal message; close it and the in-cell editor.
+  await product.keyboard.press('Escape');
+  await product.keyboard.press('Escape');
+  await product.getByRole('button', { name: 'PDF', exact: true }).click();
+  await product.locator('.pdf-editor').waitFor();
+  await product.getByRole('button', { name: 'Excel', exact: true }).click();
+  await product.locator('.xlsx-viewer[data-sheets="2"]').waitFor();
+  assert.equal(await product.locator('.product-document-name').textContent(), '매출.xlsx', 'the workbook stays across editor switches');
+  assert.equal(await productCell('B2'), '1200');
+  await product.screenshot({ path: resolve(root, 'artifacts/xlsx-product.png') });
+  await pick('notes.txt', new TextEncoder().encode('plain'));
+  await product.getByRole('alert').filter({ hasText: 'XLSX 파일만 열 수 있습니다.' }).waitFor();
+  await pick('fake.xlsx', new TextEncoder().encode('not a zip'));
+  await product.getByRole('alert').filter({ hasText: 'XLSX 형식이 아닙니다' }).waitFor();
+  await pick('broken.xlsx', brokenWorkbook());
+  await product.getByRole('alert').filter({ hasText: '파일을 열지 못했습니다.' }).waitFor();
+  assert.equal(await product.locator('.product-document-name').textContent(), '매출.xlsx', 'a refused or failed file keeps the shown workbook');
+  assert.equal(await productCell('B2'), '1200');
+  assert.deepEqual([...external], [], 'no request leaves this origin (product)');
+  assert.deepEqual(errors, [], 'page errors (product)');
+  await product.close();
 
   // Outside the product the engine does not start.
   const alone = await context.newPage();

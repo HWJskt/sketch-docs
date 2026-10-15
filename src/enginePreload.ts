@@ -1,6 +1,6 @@
 // Downloads editor engine files ahead of time into the browser HTTP cache (engines/manifest.json,
 // built by scripts/engine-manifest.mjs) and reports progress while the chosen editor waits for them.
-export type Engine = 'word' | 'hwp' | 'pdf';
+export type Engine = 'word' | 'hwp' | 'pdf' | 'xlsx';
 export interface ManifestFile { path: string; bytes: number }
 export interface EngineFiles { required: ManifestFile[]; warm: ManifestFile[]; requiredBytes: number }
 // An engine can be missing: the dev server and builds before the PDF list existed have no `pdf` entry.

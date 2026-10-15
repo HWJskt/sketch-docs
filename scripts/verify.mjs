@@ -41,7 +41,7 @@ export async function productHash() {
     }
   }
   for (const path of ['src', 'scripts', 'overlays', 'tests']) await walk(path);
-  for (const path of ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'svelte.config.js', 'index.html', 'word.html', 'hwp.html', 'pdf.html', 'public/favicon.svg', 'public/sw.js', 'public/_headers', 'upstreams.lock.json']) hash.update(path).update(await readFile(join(root, path)));
+  for (const path of ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'svelte.config.js', 'index.html', 'word.html', 'hwp.html', 'pdf.html', 'xlsx.html', 'public/favicon.svg', 'public/sw.js', 'public/_headers', 'upstreams.lock.json']) hash.update(path).update(await readFile(join(root, path)));
   return hash.digest('hex');
 }
 export async function verify({ candidate = false, lockPath = join(root, 'upstreams.lock.json') } = {}) {
