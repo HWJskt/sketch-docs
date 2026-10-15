@@ -114,3 +114,22 @@ test('every committed round-trip fixture is readable and equal to itself', async
         assert.deepEqual(compareWorkbooks(bytes, bytes), [], name);
     }
 });
+
+// Review 2026-10-16 #4: the engine does not write these back; the comparison has to see them go.
+test('read-only recommended and a password to modify, ignored error checks, and even/first page headers are compared', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { describeLosses } = await import('../src/xlsx/losses.ts');
+    const base = new Uint8Array(await readFile(new URL('./fixtures/xlsx-roundtrip/01-values.xlsx', import.meta.url)));
+    const files = unzipSync(base);
+    const workbook = Object.keys(files).find(n => /^xl\/workbook\.xml$/.test(n));
+    const sheet = Object.keys(files).find(n => /^xl\/worksheets\/sheet1\.xml$/.test(n));
+    const withAll = variant(base, f => {
+        put(f, workbook, text(f, workbook).replace(/(<workbook\b[^>]*>)/, '$1<fileSharing readOnlyRecommended="1" userName="x" algorithmName="SHA-512" hashValue="aGFzaA==" saltValue="c2FsdA==" spinCount="100000"/>'));
+        put(f, sheet, text(f, sheet).replace('</worksheet>', '<headerFooter differentFirst="1"><oddHeader>odd</oddHeader><firstHeader>first</firstHeader><evenFooter>even</evenFooter></headerFooter><ignoredErrors><ignoredError sqref="A1:B2" numberStoredAsText="1"/></ignoredErrors></worksheet>'));
+    });
+    const keys = compareWorkbooks(withAll, base).map(d => `${d.area}|${d.key}`).sort();
+    assert.deepEqual(keys.filter(k => /fileSharing|ignored-errors|print/.test(k)).length, 3, keys.join(' '));
+    const lines = describeLosses(compareWorkbooks(withAll, base));
+    for (const name of ['읽기 전용 권장·쓰기 암호', '오류 표시 무시 설정', '인쇄 설정']) assert.ok(lines.some(l => l.startsWith(name)), `${name}: ${lines}`);
+    assert.deepEqual(compareWorkbooks(withAll, withAll), [], 'unchanged compares equal');
+});

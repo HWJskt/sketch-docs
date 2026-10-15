@@ -31,7 +31,7 @@ const AREAS: Record<string, string> = {
     'sheet-props': '시트 속성', print: '인쇄 설정', protection: '시트 보호', validation: '데이터 유효성', hyperlink: '하이퍼링크',
     note: '메모', thread: '스레드 댓글', table: '표', filter: '자동 필터', picture: '그림', chart: '차트', shape: '도형',
     name: '이름 정의', 'external-link': '외부 연결', document: '문서 속성', 'custom-property': '사용자 문서 속성',
-    sheet: '시트', 'rich-text': MEASURED.rich, 'conditional-format': MEASURED.conditional, extensions: MEASURED.extensions,
+    sheet: '시트', 'ignored-errors': '오류 표시 무시 설정', 'rich-text': MEASURED.rich, 'conditional-format': MEASURED.conditional, extensions: MEASURED.extensions,
 };
 const UNKNOWN = '이 프로그램이 알 수 없는 내용';
 const UNITS: Record<string, string> = {
@@ -51,6 +51,7 @@ function name(d: Difference): string | null {
         case 'document': return d.key === 'created' ? MEASURED.created : AREAS.document;
         case 'workbook':
             if (d.key === 'extensions') return MEASURED.extensions;
+            if (d.key === 'fileSharing') return '읽기 전용 권장·쓰기 암호';
             return d.key === 'protection' ? '통합 문서 보호' : d.key === 'date1904' ? '날짜 체계(1904)' : '시트 목록';
         case 'part-kind':
             if (/vbaProject/i.test(d.key)) return MEASURED.vba;

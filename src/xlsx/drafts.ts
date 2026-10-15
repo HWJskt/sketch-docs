@@ -88,6 +88,18 @@ export function createDraftStore(root: () => Promise<FileSystemDirectoryHandle> 
                 if (!release) continue;
                 try { await remove(old.key); } finally { release(); }
             }
+            // A workbook left without its description (a tab closed between the two writes or removes) is never
+            // listed: it goes once no tab holds it (review 2026-10-16 #7).
+            const described = new Set((await list()).map(d => d.key));
+            const orphans: string[] = [];
+            for await (const [file, entry] of dir as unknown as AsyncIterable<[string, FileSystemHandle]>) {
+                if (entry.kind === 'file' && file.endsWith('.xlsx') && !described.has(file.slice(0, -5)) && file.slice(0, -5) !== key) orphans.push(file.slice(0, -5));
+            }
+            for (const orphan of orphans) {
+                const release = await holdLock(orphan, true, locks);
+                if (!release) continue;
+                try { await remove(orphan); } finally { release(); }
+            }
         },
         /** A copy's workbook, if it still reads back as written. */
         async read(draft: Draft): Promise<Uint8Array> {

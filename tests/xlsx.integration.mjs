@@ -635,7 +635,7 @@ try {
     await typeIn(overwrite, 'C2', '42');
     const keptBefore = await kept(overwrite);
     // The warning lists what fixture 03 measurably loses (docs/xlsx-roundtrip-losses.md): the rich text in A7 and
-    // the creation date. Cancel: nothing written or kept, still unsaved.
+    // the creation date. Cancel: nothing written, still unsaved; the original was kept first (review 2026-10-16 #3).
     await saveIn(overwrite);
     await warning(overwrite).waitFor();
     assert.deepEqual(await warning(overwrite).locator('li').allTextContents(), ['셀 안 부분 서식 1곳', '만든 날짜']);
@@ -644,7 +644,9 @@ try {
     await answer(overwrite, '취소');
     await overwrite.getByRole('status').filter({ hasText: '저장하지 않았습니다.' }).waitFor();
     assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled, 'a cancelled warning writes nothing');
-    assert.deepEqual(await kept(overwrite), keptBefore, 'a cancelled warning keeps nothing');
+    const keptBytes = async () => (await kept(overwrite)).map(([, bytes]) => bytes);
+    assert.ok((await keptBytes()).some(bytes => JSON.stringify(bytes) === JSON.stringify(styled)), 'the original is kept before the question');
+    assert.equal((await kept(overwrite)).length, keptBefore.length + 1);
     await unsavedIn(overwrite).waitFor();
     // Write permission refused: nothing asked, nothing written.
     await overwrite.evaluate(() => { FileSystemFileHandle.prototype.requestPermission = async () => 'denied'; });
@@ -653,11 +655,11 @@ try {
     await overwrite.evaluate(() => { delete FileSystemFileHandle.prototype.requestPermission; });
     assert.equal(await warning(overwrite).count(), 0);
     assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled);
-    // The original cannot be kept (the copies' folder is a file): nothing is written.
+    // The original cannot be kept (the copies' folder is a file): nothing is asked or written.
     await overwrite.evaluate(async () => { const root = await navigator.storage.getDirectory(); await root.removeEntry('sketch-docs-xlsx-recovery', { recursive: true }).catch(() => {}); await root.getFileHandle('sketch-docs-xlsx-recovery', { create: true }); });
     await saveIn(overwrite);
-    await answer(overwrite, '그래도 저장');
-    await overwrite.getByRole('alert').filter({ hasText: '저장하지 못했습니다.' }).waitFor();
+    await overwrite.getByRole('alert').filter({ hasText: '원본을 보관하지 못해 저장하지 않았습니다' }).waitFor();
+    assert.equal(await warning(overwrite).count(), 0, 'no question without a kept copy');
     assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled, 'no copy, no write');
     await unsavedIn(overwrite).waitFor();
     await overwrite.evaluate(async () => (await navigator.storage.getDirectory()).removeEntry('sketch-docs-xlsx-recovery'));
@@ -688,8 +690,36 @@ try {
     await answer(overwrite, '그래도 저장');
     await overwrite.getByRole('alert').filter({ hasText: '외부에서 변경되었습니다' }).waitFor();
     assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), [1, 2, 3], 'a file changed elsewhere is not overwritten');
-    assert.deepEqual(await kept(overwrite), keptOnce, 'nothing kept for a refused save');
+    assert.deepEqual(await keptBytes(), keptOnce.map(([, bytes]) => bytes), 'only the original stays kept after a refused save');
     await unsavedIn(overwrite).waitFor();
+    // Review 2026-10-16 #2: while a save waits (here for one more click on its picker), opening another file is refused.
+    await overwrite.evaluate(() => { let refused = false; window.showSaveFilePicker = async () => { if (!refused) { refused = true; throw new DOMException('no activation', 'SecurityError'); } throw new DOMException('cancelled', 'AbortError'); }; });
+    await overwrite.getByRole('button', { name: '다른 이름으로 저장', exact: true }).click();
+    await overwrite.getByRole('button', { name: '저장할 위치 고르기' }).waitFor();
+    await overwrite.evaluate(async () => { const h = await (await navigator.storage.getDirectory()).getFileHandle('동시.xlsx', { create: true }); window.showOpenFilePicker = async () => [h]; });
+    await overwrite.locator('iframe[title="Excel 편집기"]').click({ position: { x: 600, y: 500 } });
+    await overwrite.keyboard.press('ControlOrMeta+o');
+    await overwrite.getByRole('alert').filter({ hasText: '저장하는 중에는 다른 파일을 열 수 없습니다' }).waitFor();
+    assert.equal(await overwrite.locator('.xlsx-viewer .name').textContent(), '서식.xlsx', 'the shown file did not change during the save');
+    await overwrite.locator('.pick').getByRole('button', { name: '취소' }).click();
+    await overwrite.locator('.xlsx-viewer[data-saving="false"]').waitFor();
+    // Review #1: after a Save As elsewhere, choosing the opened file again still warns and keeps it; cancel puts it back.
+    await putFile(overwrite, '원본2.xlsx', styled);
+    await openFile(overwrite, '원본2.xlsx');
+    await typeIn(overwrite, 'C2', '7');
+    await overwrite.evaluate(() => { window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('사본2.xlsx', { create: true }); });
+    await overwrite.getByRole('button', { name: '다른 이름으로 저장', exact: true }).click();
+    await overwrite.getByRole('status').filter({ hasText: '저장했습니다: 사본2.xlsx' }).waitFor();
+    await typeIn(overwrite, 'C3', '8');
+    await overwrite.evaluate(() => { window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('원본2.xlsx'); });
+    await overwrite.getByRole('button', { name: '다른 이름으로 저장', exact: true }).click();
+    await answer(overwrite, '취소');
+    await overwrite.getByRole('alert').filter({ hasText: '원래 내용으로 되돌렸습니다' }).waitFor();
+    assert.deepEqual(await fileOf(overwrite, '원본2.xlsx'), styled, 'the opened file is back as it was');
+    // Exporting CSV onto the opened workbook is refused and it is put back.
+    await overwrite.getByRole('button', { name: 'CSV로 내보내기' }).click();
+    await overwrite.getByRole('alert').filter({ hasText: 'CSV·PDF를 쓸 수 없어' }).waitFor();
+    assert.deepEqual(await fileOf(overwrite, '원본2.xlsx'), styled, 'no CSV over the opened workbook');
     await overwrite.close();
     // Two tabs save over the same file: the first is written, the second is refused.
     const left = await openTab(), right = await openTab();

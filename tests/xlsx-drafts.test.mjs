@@ -113,3 +113,18 @@ test('past the limit the oldest copies no tab holds are removed; held ones stay'
     assert.deepEqual(written.filter(key => !keys.includes(key)), written.slice(0, 2), 'the two oldest unheld copies went');
     held.release();
 });
+
+test('a workbook left without its description is removed by the next write, unless a tab holds it', async () => {
+    const root = directory();
+    const store = createDraftStore(async () => root);
+    const folder = await root.getDirectoryHandle(DRAFT_FOLDER);
+    folder.files.set('aaaaaaaaaaaaaaaa--gone--x.xlsx', bytes('left over'));
+    const heldKey = 'bbbbbbbbbbbbbbbb--live--y';
+    folder.files.set(`${heldKey}.xlsx`, bytes('being written'));
+    const held = await holdLock(heldKey);
+    const live = await tab(store);
+    assert.ok(!folder.files.has('aaaaaaaaaaaaaaaa--gone--x.xlsx'), 'the orphan no tab holds went');
+    assert.ok(folder.files.has(`${heldKey}.xlsx`), 'a tab still writing keeps its file');
+    held();
+    live.release();
+});

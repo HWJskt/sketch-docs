@@ -226,8 +226,14 @@ function readSheet(pkg: Package, part: string, sheet: string, styles: ReturnType
         put('hyperlink', `${sheet}!${attr(link, 'ref')}`, { target: id ? rels.get(id)?.target : undefined, location: attr(link, 'location'), display: attr(link, 'display'), tooltip: attr(link, 'tooltip') });
     }
     // Margins compared to 1/10000 inch: a writer may keep them as 32-bit floats (0.3 → 0.30000001192…).
-    put('print', sheet, { margins: Object.fromEntries(Object.entries(child(ws, 'pageMargins')?.attrs ?? {}).map(([k, v]) => [k, round(v, 4)])), setup: norm(Object.fromEntries(Object.entries(child(ws, 'pageSetup')?.attrs ?? {}).map(([k, v]) => [k, k === 'orientation' && v === 'portrait' ? 'default' : v])), DEFAULTS.pageSetup), options: norm(child(ws, 'printOptions')?.attrs, DEFAULTS.printOptions), header: child(child(ws, 'headerFooter'), 'oddHeader')?.text, footer: child(child(ws, 'headerFooter'), 'oddFooter')?.text, rowBreaks: children(child(ws, 'rowBreaks'), 'brk').map(b => attr(b, 'id')), colBreaks: children(child(ws, 'colBreaks'), 'brk').map(b => attr(b, 'id')) });
+    put('print', sheet, { margins: Object.fromEntries(Object.entries(child(ws, 'pageMargins')?.attrs ?? {}).map(([k, v]) => [k, round(v, 4)])), setup: norm(Object.fromEntries(Object.entries(child(ws, 'pageSetup')?.attrs ?? {}).map(([k, v]) => [k, k === 'orientation' && v === 'portrait' ? 'default' : v])), DEFAULTS.pageSetup), options: norm(child(ws, 'printOptions')?.attrs, DEFAULTS.printOptions), header: child(child(ws, 'headerFooter'), 'oddHeader')?.text, footer: child(child(ws, 'headerFooter'), 'oddFooter')?.text,
+        // Even and first pages have their own header and footer (review 2026-10-16 #4: not compared before).
+        evenHeader: child(child(ws, 'headerFooter'), 'evenHeader')?.text, evenFooter: child(child(ws, 'headerFooter'), 'evenFooter')?.text,
+        firstHeader: child(child(ws, 'headerFooter'), 'firstHeader')?.text, firstFooter: child(child(ws, 'headerFooter'), 'firstFooter')?.text,
+        headerFlags: norm(child(ws, 'headerFooter')?.attrs, { differentOddEven: '0', differentFirst: '0', scaleWithDoc: '1', alignWithMargins: '1' }), rowBreaks: children(child(ws, 'rowBreaks'), 'brk').map(b => attr(b, 'id')), colBreaks: children(child(ws, 'colBreaks'), 'brk').map(b => attr(b, 'id')) });
     put('protection', sheet, norm(child(ws, 'sheetProtection')?.attrs, DEFAULTS.sheetProtection));
+    // Error checks the author turned off for ranges (review #4).
+    put('ignored-errors', sheet, children(child(ws, 'ignoredErrors'), 'ignoredError').map(e => norm(e.attrs)));
     const filter = child(ws, 'autoFilter');
     if (filter) put('filter', sheet, { ref: attr(filter, 'ref'), columns: children(filter, 'filterColumn').map(c => [attr(c, 'colId'), c.children.map(x => [x.local, norm(x.attrs, x.local === 'filters' ? DEFAULTS.filters : {}), x.children.map(y => y.attrs)])]) });
     put('extensions', sheet, children(child(ws, 'extLst'), 'ext').map(e => attr(e, 'uri')).sort());
@@ -306,6 +312,8 @@ export function readWorkbook(bytes: Uint8Array): Inventory {
     put('workbook', 'sheets', sheets.map(s => [attr(s, 'name'), attr(s, 'state') ?? 'visible']));
     put('workbook', 'date1904', attr(child(wb, 'workbookPr'), 'date1904'));
     put('workbook', 'protection', norm(child(wb, 'workbookProtection')?.attrs, DEFAULTS.workbookProtection));
+    // "Read-only recommended" and a password to modify (review #4).
+    put('workbook', 'fileSharing', norm(child(wb, 'fileSharing')?.attrs, { readOnlyRecommended: '0' }));
     put('workbook', 'extensions', children(child(wb, 'extLst'), 'ext').map(e => attr(e, 'uri')).sort());
     for (const name of children(child(wb, 'definedNames'), 'definedName')) {
         // The hidden autofilter range Excel keeps for itself; a writer may leave it out and Excel rebuilds it.
