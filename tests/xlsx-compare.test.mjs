@@ -97,6 +97,10 @@ test('spellings of the same meaning compare equal: defaults, booleans, quotes, e
     const exponent = value => variant(original, files => put(files, 'xl/worksheets/sheet1.xml', text(files, 'xl/worksheets/sheet1.xml').replace('<v>1200</v>', `<v>${value}</v>`)));
     assert.deepEqual(compareWorkbooks(exponent('1.5e-05'), exponent('1.5E-5')), []);
     assert.deepEqual(compareWorkbooks(exponent('1.5e-05'), exponent('1.6E-5')).length, 1);
+    const tint = value => variant(original, files => put(files, 'xl/styles.xml', text(files, 'xl/styles.xml').replace('<b/><sz val="11"/>', `<b/><sz val="11"/><color theme="2" tint="${value}"/>`)));
+    const bolded = bytes => variant(bytes, files => put(files, 'xl/worksheets/sheet1.xml', text(files, 'xl/worksheets/sheet1.xml').replace('<c r="A1" t="inlineStr">', '<c r="A1" s="1" t="inlineStr">')));
+    assert.deepEqual(compareWorkbooks(bolded(tint('-0.249977111117893')), bolded(tint('-0.25'))), [], 'a tint rounded at the fourth decimal');
+    assert.equal(compareWorkbooks(bolded(tint('-0.25')), bolded(tint('-0.4'))).length, 1);
 });
 
 test('every committed round-trip fixture is readable and equal to itself', async () => {

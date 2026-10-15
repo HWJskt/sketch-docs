@@ -117,10 +117,11 @@ function resolve(dir: string, target: string): string {
 }
 
 function color(element: XmlElement | undefined) {
-    // indexed 64 is the system's automatic colour, the same as naming none.
+    // indexed 64 is the system's automatic colour, the same as naming none. Tints are compared to 1/1000
+    // (a writer may round -0.2499… to -0.25).
     if (!element || attr(element, 'indexed') === '64' || bool(attr(element, 'auto')) === '1') return undefined;
     const rgb = attr(element, 'rgb');
-    return json({ rgb: rgb ? rgb.toUpperCase().replace(/^FF(?=[0-9A-F]{6}$)/, '') : undefined, theme: attr(element, 'theme'), indexed: attr(element, 'indexed'), tint: round(attr(element, 'tint'), 4), auto: attr(element, 'auto') });
+    return json({ rgb: rgb ? rgb.toUpperCase().replace(/^FF(?=[0-9A-F]{6}$)/, '') : undefined, theme: attr(element, 'theme'), indexed: attr(element, 'indexed'), tint: round(attr(element, 'tint'), 3), auto: attr(element, 'auto') });
 }
 const flag = (element: XmlElement | undefined, name: string) => {
     const e = child(element, name);

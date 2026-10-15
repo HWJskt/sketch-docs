@@ -39,7 +39,11 @@ const report = [];
 try {
     server = await preview({ root, build: { outDir: resolve(root, process.env.TEST_DIST || 'dist') }, preview: { host: 'localhost', port: 4180, strictPort: true } });
     browser = await chromium.launch({ channel: 'chrome', headless: true });
-    const page = await (await browser.newContext({ locale: 'ko-KR', serviceWorkers: 'block' })).newPage();
+    const context = await browser.newContext({ locale: 'ko-KR', serviceWorkers: 'block' });
+    // Nothing leaves this origin: a workbook may hold links to other files or sites, and they must not be followed.
+    let blocked = 0;
+    await context.route(url => new URL(url).origin !== origin, route => { blocked++; return route.abort(); });
+    const page = await context.newPage();
     await page.route(origin + '/roundtrip-harness.html', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: harness }));
     await page.goto(origin + '/roundtrip-harness.html');
     await page.evaluate(() => window.ready);
@@ -60,6 +64,7 @@ try {
             const second = await trip(file, first.bytes);
             entry.stable = second.bytes ? compareWorkbooks(first.bytes, second.bytes) : second.error;
         }
+        entry.blockedRequests = blocked;
         report.push(entry);
         console.log(`${file}: ${entry.error ?? `${entry.differences.length} differences, ${Array.isArray(entry.stable) ? entry.stable.length : entry.stable} on the second trip`}${entry.warnings.length ? `, warnings: ${entry.warnings.join(' / ')}` : ''}`);
     }
