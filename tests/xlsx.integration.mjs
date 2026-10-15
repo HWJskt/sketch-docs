@@ -15,6 +15,16 @@ const harness = `<!doctype html><meta charset="utf-8"><style>body{margin:0}ifram
   const frame = document.getElementById('engine');
   window.messages = [];
   addEventListener('message', event => { if (event.source === frame.contentWindow) messages.push(event.data); });
+  // The engine's snapshot answer, with its bytes as a plain array (an ArrayBuffer does not survive page.evaluate).
+  window.snapshot = (requestId, epoch) => new Promise(done => {
+    const listen = event => {
+      if (event.source !== frame.contentWindow || event.data?.type !== 'sketch-xlsx:snapshot' || event.data.requestId !== requestId) return;
+      removeEventListener('message', listen);
+      done({ ...event.data, bytes: event.data.bytes instanceof ArrayBuffer ? [...new Uint8Array(event.data.bytes)] : null });
+    };
+    addEventListener('message', listen);
+    frame.contentWindow.postMessage({ type: 'sketch-xlsx:snapshot', protocol: 1, requestId, epoch }, location.origin);
+  });
   window.send = (requestId, epoch, name, bytes, protocol = 1) => {
     const buffer = new Uint8Array(bytes).buffer;
     frame.contentWindow.postMessage({ type: 'sketch-xlsx:open', protocol, requestId, epoch, name, bytes: buffer }, location.origin, [buffer]);
@@ -108,6 +118,15 @@ try {
   assert.equal(await cell('B2'), '1200', 'B2 is unchanged after typing, Delete, Cut and Paste');
   await waitFor({ type: 'sketch-xlsx:blocked', action: 'edit' }, 'the refusals are reported');
   assert.deepEqual(downloads, [], 'nothing was saved or downloaded');
+
+  // A snapshot is the shown workbook as a save writes it; it opens again with the same sheets and values.
+  const snapshot = await page.evaluate(() => window.snapshot(50, 1));
+  assert.deepEqual({ ok: snapshot.ok, epoch: snapshot.epoch, uid: typeof snapshot.docUid, zip: snapshot.bytes?.slice(0, 4) }, { ok: true, epoch: 1, uid: 'number', zip: [0x50, 0x4b, 0x03, 0x04] });
+  const again = await open(51, 51, '왕복.xlsx', snapshot.bytes);
+  assert.deepEqual([again.ok, again.sheets, again.warnings], [true, ['매출', '메모'], []]);
+  await engine.click({ position: { x: 600, y: 500 } });
+  assert.equal(await cell('B2'), '1200', 'the snapshot keeps B2');
+  assert.equal(await cell('B4'), '3600', 'the snapshot keeps the formula result');
 
   // A file that cannot be opened leaves the shown workbook.
   const broken = await open(2, 2, 'broken.xlsx', brokenWorkbook());

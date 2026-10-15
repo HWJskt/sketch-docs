@@ -90,3 +90,24 @@ test('the shell learns which workbook the engine shows from every answer, even o
     from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx' });
     assert.deepEqual(shown, ['a.xlsx']);
 });
+
+test('a snapshot resolves with its own answer only, and times out without one', async () => {
+    const { bridge, sent, from } = setup();
+    assert.deepEqual(await bridge.snapshot(), { ok: false, code: 'not-ready', error: 'Excel이 아직 준비되지 않았습니다.' });
+    from({ type: 'sketch-xlsx:ready' });
+    const opening = bridge.open('a.xlsx', bytes);
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx', sheets: ['A'], warnings: [] });
+    await opening;
+    const taking = bridge.snapshot();
+    const asked = sent.at(-1).data;
+    assert.deepEqual(asked, { type: 'sketch-xlsx:snapshot', protocol: PROTOCOL, requestId: 2, epoch: 1 });
+    from({ type: 'sketch-xlsx:snapshot', requestId: 2, epoch: 0, ok: true, docUid: 9, bytes: new Uint8Array([9]).buffer });
+    from({ type: 'sketch-xlsx:snapshot', requestId: 3, epoch: 1, ok: true, docUid: 9, bytes: new Uint8Array([9]).buffer });
+    from({ type: 'sketch-xlsx:snapshot', requestId: 2, epoch: 1, ok: true, docUid: 7, bytes: new Uint8Array([4, 5]).buffer });
+    const result = await taking;
+    assert.deepEqual({ ...result, bytes: [...result.bytes] }, { ok: true, docUid: 7, bytes: [4, 5] });
+    const failing = bridge.snapshot();
+    from({ type: 'sketch-xlsx:snapshot', requestId: 3, epoch: 1, ok: false, error: 'No workbook is open.' });
+    assert.deepEqual(await failing, { ok: false, code: 'error', error: 'No workbook is open.' });
+    assert.equal((await bridge.snapshot()).code, 'timeout');
+});

@@ -26,10 +26,10 @@ index 2920a87..28a1c6f 100644
  #[cfg(target_arch = "wasm32")]
 diff --git a/apps/gridcraft-web/src/sketch.rs b/apps/gridcraft-web/src/sketch.rs
 new file mode 100644
-index 0000000..250fca5
+index 0000000..5d9533e
 --- /dev/null
 +++ b/apps/gridcraft-web/src/sketch.rs
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,296 @@
 +//! Sketch Docs: the view-only bridge to the product shell that frames this page (`?host=sketch`).
 +//!
 +//! Messages are plain objects with a `type` and `protocol` ([`PROTOCOL`]); only the same-origin
@@ -44,6 +44,9 @@ index 0000000..250fca5
 +//!   matches `requestId`/`epoch` and ignores late answers.
 +//! - `sketch-xlsx:blocked` (to the parent): `{ action, count }` when an edit (a refused command or
 +//!   a change put back), save, print or dropped file was refused.
++//! - `sketch-xlsx:snapshot` (from the parent): `{ requestId, epoch }`; (to the parent) `{ requestId,
++//!   epoch, ok: true, docUid, bytes }` with the shown workbook encoded as .xlsx exactly as a save
++//!   would write it (an `ArrayBuffer`, transferred), or `{ requestId, epoch, ok: false, error }`.
 +//!
 +//! View-only holds in two layers: the engine refuses every command outside its view-only list
 +//! (`Session::view_only`), and after every frame a workbook that differs from the one opened is put
@@ -63,6 +66,11 @@ index 0000000..250fca5
 +/// The largest workbook the parent may send (bytes); the parent checks this first.
 +const MAX_BYTES: usize = 100 * 1024 * 1024;
 +
++struct SnapshotRequest {
++    request_id: f64,
++    epoch: f64,
++}
++
 +struct OpenRequest {
 +    request_id: f64,
 +    epoch: f64,
@@ -76,6 +84,7 @@ index 0000000..250fca5
 +    parent: web_sys::Window,
 +    origin: String,
 +    queue: Rc<RefCell<Vec<OpenRequest>>>,
++    snapshots: Rc<RefCell<Vec<SnapshotRequest>>>,
 +    blocked: Rc<RefCell<Vec<&'static str>>>,
 +    refusals: Rc<Cell<u32>>,
 +    /// The engine's refused-command count already reported.
@@ -94,7 +103,7 @@ index 0000000..250fca5
 +            return None;
 +        }
 +        let origin = window.location().origin().ok()?;
-+        Some(Self { window, parent, origin, queue: Rc::default(), blocked: Rc::default(), refusals: Rc::default(), refused_seen: Rc::default() })
++        Some(Self { window, parent, origin, queue: Rc::default(), snapshots: Rc::default(), blocked: Rc::default(), refusals: Rc::default(), refused_seen: Rc::default() })
 +    }
 +
 +    /// Switch off every service that writes a file or reads one outside the parent.
@@ -115,12 +124,23 @@ index 0000000..250fca5
 +        let parent = self.parent.clone();
 +        let origin = self.origin.clone();
 +        let queue = self.queue.clone();
++        let snapshots = self.snapshots.clone();
 +        let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
 +            if event.origin() != origin || !event.source().is_some_and(|s| js_sys::Object::is(&s, &parent)) {
 +                return;
 +            }
 +            let data = event.data();
-+            if string(&data, "type").as_deref() != Some("sketch-xlsx:open") || number(&data, "protocol") != Some(PROTOCOL) {
++            if number(&data, "protocol") != Some(PROTOCOL) {
++                return;
++            }
++            if string(&data, "type").as_deref() == Some("sketch-xlsx:snapshot") {
++                if let (Some(request_id), Some(epoch)) = (number(&data, "requestId"), number(&data, "epoch")) {
++                    snapshots.borrow_mut().push(SnapshotRequest { request_id, epoch });
++                    ctx.request_repaint();
++                }
++                return;
++            }
++            if string(&data, "type").as_deref() != Some("sketch-xlsx:open") {
 +                return;
 +            }
 +            let (Some(request_id), Some(epoch), Some(bytes)) = (number(&data, "requestId"), number(&data, "epoch"), bytes(&data)) else {
@@ -171,6 +191,26 @@ index 0000000..250fca5
 +            }
 +            self.send(&fields);
 +        }
++        // After the opens, so a snapshot asked for after an open encodes that workbook.
++        let snapshots = std::mem::take(&mut *self.snapshots.borrow_mut());
++        for request in snapshots {
++            let base = [("type", JsValue::from("sketch-xlsx:snapshot")), ("requestId", request.request_id.into()), ("epoch", request.epoch.into())];
++            match snapshot(app) {
++                Ok((uid, bytes)) => {
++                    let buffer = js_sys::Uint8Array::from(bytes.as_slice()).buffer();
++                    let mut fields = base.to_vec();
++                    fields.extend([("ok", true.into()), ("docUid", (uid as f64).into()), ("bytes", buffer.clone().into())]);
++                    if !self.send_transfer(&fields, &buffer) {
++                        log::error!("couldn't send the snapshot to the page");
++                    }
++                }
++                Err(error) => {
++                    let mut fields = base.to_vec();
++                    fields.extend([("ok", false.into()), ("error", error.as_str().into())]);
++                    self.send(&fields);
++                }
++            }
++        }
 +    }
 +
 +    /// After each frame: put back a workbook that changed anyway, and tell the parent what was refused.
@@ -201,15 +241,24 @@ index 0000000..250fca5
 +    }
 +
 +    fn send(&self, fields: &[(&str, JsValue)]) -> bool {
++        self.message(fields).is_some_and(|m| self.parent.post_message(&m, &self.origin).is_ok())
++    }
++
++    /// Like `send`, handing `buffer` over instead of copying it.
++    fn send_transfer(&self, fields: &[(&str, JsValue)], buffer: &js_sys::ArrayBuffer) -> bool {
++        self.message(fields).is_some_and(|m| self.parent.post_message_with_transfer(&m, &self.origin, &js_sys::Array::of1(buffer)).is_ok())
++    }
++
++    fn message(&self, fields: &[(&str, JsValue)]) -> Option<js_sys::Object> {
 +        let m = js_sys::Object::new();
 +        let mut all = vec![("protocol", JsValue::from_f64(PROTOCOL))];
 +        all.extend(fields.iter().map(|(k, v)| (*k, v.clone())));
 +        for (key, value) in all {
 +            if js_sys::Reflect::set(&m, &JsValue::from_str(key), &value).is_err() {
-+                return false;
++                return None;
 +            }
 +        }
-+        self.parent.post_message(&m, &self.origin).is_ok()
++        Some(m)
 +    }
 +}
 +
@@ -242,6 +291,16 @@ index 0000000..250fca5
 +    app.show_open_warnings(&r);
 +    let list = |key: &str| r.get(key).and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
 +    Ok((list("sheets"), list("warnings")))
++}
++
++/// The shown workbook as the .xlsx bytes a save writes: the view state (scroll position, active
++/// cell) is recorded first, as `file.saveBytes` does, then that very workbook is encoded.
++fn snapshot(app: &mut SheetApp) -> Result<(u64, Vec<u8>), String> {
++    app.store_view_state();
++    let doc = app.session.active().ok_or_else(|| "No workbook is open.".to_string())?;
++    let (uid, wb) = (doc.uid, doc.wb.clone());
++    let bytes = gridcraft_engine::io::save_bytes(&wb, "x.xlsx").map_err(|e| e.to_string())?;
++    Ok((uid, bytes))
 +}
 +
 +fn strings(items: &[String]) -> JsValue {
