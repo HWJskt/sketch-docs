@@ -32,6 +32,7 @@
 - 굵은 글씨: 굵은 셀의 한국어는 빈 네모 없이 표시되지만 보통 굵기로 그려진다(굵은 한국어 글꼴이 없다). Pretendard Bold를 넣으면 WASM이 약 2.66MB 늘어 약 24.2MB(한도 25MiB = 26.2MB 안, 여유 약 2MB).
 - 거절 경고 창 문구: "보기 전용으로 연 통합 문서라 바꾸거나 저장할 수 없습니다."
 - `npm run build` 뒤 `tests/xlsx.integration.mjs` 통과. `npm run verify` 통과(단위 156, 브라우저 PASS 52·FAIL 0, `XLSX VIEW CHECKS PASSED`).
-- Pretendard Bold 추가 여부는 사용자 결정 대기(넣지 않음).
+- Pretendard Bold 추가(사용자 결정 2026-10-15): sha256 `c16b88c6…7985`를 lock에 고정하고, 굵은 역할(`ui-bold`·`cell-bold`·`cell-bold-italic`) 글꼴 사슬에서 Regular보다 앞에 둔다. 굵은 셀의 한국어가 보통 셀보다 굵게 그려지는 것을 측정 스크린샷(`.cache/i18n-audit/shots/50-bold.png`)으로 확인했다.
+- WASM 24,231,303 B(23.11 MiB, Bold 전 21,552,476 B). Pages 파일당 한도 26,214,400 B(25 MiB)까지 여유 1,983,097 B(1.89 MiB). brotli 11 6,452,397 B. `npm run verify` 통과(단위 156, 브라우저 PASS 52·FAIL 0).
 
 측정하지 못한 것: 마우스를 올려야 나오는 도구 설명(정적 감싸기로 직접 문자열은 덮었지만 화면 확인은 안 함), 보기 전용에서 거절되는 명령이 여는 대화상자, 차트·피벗 창.
