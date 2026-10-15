@@ -1,0 +1,143 @@
+# Weekly dependency checks; neither builds nor runs upstream code. The latest original upstreams are
+# checked locally only (npm run upstream:check, 2026-10-15 user decision), and every push goes through
+# the local release gate (scripts/push-gate.mjs).
+# Each check job holds a read-only token that is not persisted to disk; only its report job, which runs
+# nothing from the network but the GitHub CLI, may write issues.
+name: dependency-watch
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  # Weekly: is there a newer svelte-pdf-mini than our exact pin, and does npm report an advisory for
+  # what we ship? Reads registry data only (the audit uses the lockfile; nothing is installed or run).
+  # A new release is a prompt to review and test it by hand; the pin is never changed here.
+  npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      pinned: ${{ steps.check.outputs.pinned }}
+      latest: ${{ steps.check.outputs.latest }}
+      audit: ${{ steps.check.outputs.audit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - id: check
+        name: Compare svelte-pdf-mini and audit production dependencies
+        run: |
+          pinned=$(node -p "require('./package.json').dependencies['svelte-pdf-mini']")
+          latest=$(npm view svelte-pdf-mini version)
+          echo "svelte-pdf-mini pinned $pinned, latest $latest"
+          if npm audit --omit=dev; then audit=clean; else audit='not clean (advisory or audit error, see the run log)'; fi
+          { echo "pinned=$pinned"; echo "latest=$latest"; echo "audit=$audit"; } >> "$GITHUB_OUTPUT"
+  npm-report:
+    needs: npm
+    if: always() && (needs.npm.result != 'success' || needs.npm.outputs.pinned != needs.npm.outputs.latest || needs.npm.outputs.audit != 'clean')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dependency-watch-npm-report
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the npm check issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.npm.result }}
+          PINNED: ${{ needs.npm.outputs.pinned }}
+          LATEST: ${{ needs.npm.outputs.latest }}
+          AUDIT: ${{ needs.npm.outputs.audit }}
+        run: |
+          title="npm check needs attention"
+          body="Check: $RESULT. svelte-pdf-mini pinned $PINNED, latest $LATEST. npm audit --omit=dev: $AUDIT. The service is unaffected; nothing was changed. Details: $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+  # Weekly: the Rust crates compiled into the Excel engine (GridCraft's and craft-libs' Cargo.lock at
+  # their pinned commits) against the RustSec advisory database. Only the lock files are downloaded; the
+  # cargo-audit release binary is pinned by version and sha256.
+  cargo-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.audit.outputs.result }}
+    env:
+      CARGO_AUDIT_VERSION: 0.22.2
+      CARGO_AUDIT_SHA256: 7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch the pinned Cargo.lock files
+        run: |
+          set -eu
+          for name in gridcraft craft-libs; do
+            commit=$(jq -r --arg n "$name" '.[$n].commit' upstreams.lock.json)
+            mkdir -p "locks/$name"
+            fetched=no
+            for url in $(jq -r --arg n "$name" '.[$n].url, .[$n].mirror' upstreams.lock.json); do
+              repo=${url#https://github.com/}; repo=${repo%.git}
+              if curl -fsSL "https://raw.githubusercontent.com/$repo/$commit/Cargo.lock" -o "locks/$name/Cargo.lock"; then fetched=yes; break; fi
+            done
+            [ "$fetched" = yes ] || { echo "Could not fetch $name Cargo.lock at $commit"; exit 1; }
+          done
+      - name: Install cargo-audit (pinned release, checked hash)
+        run: |
+          set -eu
+          asset="cargo-audit-x86_64-unknown-linux-musl-v${CARGO_AUDIT_VERSION}.tgz"
+          curl -fsSL -o "$RUNNER_TEMP/$asset" "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/$asset"
+          echo "$CARGO_AUDIT_SHA256  $RUNNER_TEMP/$asset" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/cargo-audit-x86_64-unknown-linux-musl-v${CARGO_AUDIT_VERSION}/cargo-audit" "$RUNNER_TEMP/cargo-audit"
+      - id: audit
+        name: Audit against RustSec
+        run: |
+          set -u
+          result=clean
+          for name in gridcraft craft-libs; do
+            echo "== $name"
+            if ! "$RUNNER_TEMP/cargo-audit" audit --db "$RUNNER_TEMP/advisory-db" --file "locks/$name/Cargo.lock"; then
+              result='not clean (advisory or audit error, see the run log)'
+            fi
+          done
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+  cargo-audit-report:
+    needs: cargo-audit
+    if: always() && (needs.cargo-audit.result != 'success' || needs.cargo-audit.outputs.result != 'clean')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dependency-watch-cargo-audit-report
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the cargo audit issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.cargo-audit.result }}
+          AUDIT: ${{ needs.cargo-audit.outputs.result }}
+        run: |
+          title="cargo audit needs attention"
+          body="Check: $RESULT. cargo audit of the pinned GridCraft and craft-libs Cargo.lock: $AUDIT. The service is unaffected; nothing was changed. Details: $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

@@ -122,9 +122,20 @@ npm run verify
 - 후보 검증 뒤 우리 코드가 바뀌면 promote가 거절된다.
 - 채택한 뒤 `npm run mirrors:pin`으로 새 고정 커밋을 보존 fork에 태그로 남긴다(GitHub CLI 인증 필요).
 
-GitHub Actions는 두 가지를 돌린다.
-- push마다: 고정 버전으로 `npm run verify`
-- 매주(와 수동 실행): 최신 원본으로 `upstream:check`. 실패하면 이슈를 연다.
+최신 원본 검사는 로컬 `upstream:check`로만 한다(2026-10-15 결정). 채택은 `upstream:promote` → `npm run verify` → 커밋 → push(아래 게이트 통과).
+
+## push 게이트와 GitHub Actions
+
+`npm run hooks:install`(한 번)이 `core.hooksPath`를 `.githooks`로 맞춘다. pre-push 훅(`scripts/push-gate.mjs`)은 밀려는 커밋마다:
+
+- `artifacts/verified.json`이 그 커밋·깨끗한 작업 트리·같은 제품 파일에서 만든 통과 보고면 바로 통과한다.
+- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`·`.cache/`, lock이 같으면 `node_modules`를 빌려 씀)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다.
+- 원격 브랜치 삭제는 검사하지 않는다.
+- `git push --no-verify`는 모든 훅을 건너뛴다. 이것은 막을 수 없다.
+
+GitHub Actions(Rust·브라우저 없음):
+- push마다 `verify`: `npm run check`, `npm run test:contracts`.
+- 매주(와 수동 실행) `dependency-watch`: `svelte-pdf-mini` 새 판·`npm audit --omit=dev`, 그리고 gridcraft·craft-libs 고정 커밋의 Cargo.lock을 `cargo audit`(판·sha256 고정 바이너리)으로 RustSec과 대조한다. 걸리면 이슈를 연다. 빌드나 upstream 코드 실행은 없고, 쓰기 권한은 이슈를 쓰는 job에만 있다.
 
 ## 배포 (관리자용)
 

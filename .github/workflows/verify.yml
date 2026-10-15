@@ -1,4 +1,6 @@
-# Release gate on every push: pinned upstreams, overlay contracts, unit and Chrome tests.
+# Light checks on every push: type checks and the contract/unit tests, which need neither Rust nor a
+# browser. The full release gate (engine builds and Chrome regressions, also as an English Chrome) runs
+# locally before every push: the pre-push hook (scripts/push-gate.mjs, npm run hooks:install).
 name: verify
 on:
   push:
@@ -13,7 +15,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,16 +25,7 @@ jobs:
           node-version: 24.21.0
           cache: npm
       - run: npm ci
-      - name: Restore pinned upstreams
-        run: npm run upstream:sync
-      - name: Verify
-        run: npm run verify
-      - name: Keep failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verify-evidence
-          path: |
-            artifacts/
-            /tmp/*.png
-          if-no-files-found: ignore
+      - name: Type checks
+        run: npm run check
+      - name: Contract and unit tests
+        run: npm run test:contracts
