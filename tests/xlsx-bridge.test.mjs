@@ -126,7 +126,7 @@ test('editing: the engine state and requests reach the shell; saved and discard 
     assert.deepEqual(blocked, [['refused', 'file.new']]);
     bridge.saved(5, 7);
     bridge.discard(6);
-    assert.deepEqual(sent.slice(-2).map(m => m.data), [{ type: 'sketch-xlsx:saved', protocol: PROTOCOL, requestId: 5, epoch: 0, docUid: 7 }, { type: 'sketch-xlsx:discard', protocol: PROTOCOL, requestId: 6 }]);
+    assert.deepEqual(sent.slice(-2).map(m => m.data), [{ type: 'sketch-xlsx:saved', protocol: PROTOCOL, requestId: 5, epoch: 0, docUid: 7, name: undefined }, { type: 'sketch-xlsx:discard', protocol: PROTOCOL, requestId: 6 }]);
     const exporting = bridge.exportFile('csv');
     const asked = sent.at(-1).data;
     assert.deepEqual(asked, { type: 'sketch-xlsx:export', protocol: PROTOCOL, requestId: 1, epoch: 0, format: 'csv' });

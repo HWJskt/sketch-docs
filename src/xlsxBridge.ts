@@ -136,8 +136,8 @@ export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = 
             if (!ready || !target()) return Promise.resolve(notReady);
             return ask<SnapshotResult>('sketch-xlsx:snapshot', {}, { ok: false, code: 'timeout', error: '통합 문서를 저장 형식으로 만드는 데 시간이 너무 오래 걸립니다.' });
         },
-        /** The file now holds snapshot `id`: the engine makes it the saved state. Send only after the write closed. */
-        saved(id: number, docUid: number) { target()?.postMessage({ type: 'sketch-xlsx:saved', protocol: PROTOCOL, requestId: id, epoch, docUid }, origin); },
+        /** The file now holds snapshot `id`: the engine makes it the saved state (titled `name`). Send only after the write closed. */
+        saved(id: number, docUid: number, name?: string) { target()?.postMessage({ type: 'sketch-xlsx:saved', protocol: PROTOCOL, requestId: id, epoch, docUid, name }, origin); },
         /** Snapshot `id` was not written (cancelled or failed): the engine lets it go. */
         discard(id: number) { target()?.postMessage({ type: 'sketch-xlsx:discard', protocol: PROTOCOL, requestId: id }, origin); },
         /** CSV (the active sheet) or PDF bytes for a new file. */

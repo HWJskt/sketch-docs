@@ -36,6 +36,18 @@ const harness = `<!doctype html><meta charset="utf-8"><style>body{margin:0}ifram
   };
 </script>`;
 
+// The first sheet's cells as a save writes them (engine output: values in <v>, strings shared).
+function cellsOf(bytes) {
+  const files = unzipSync(new Uint8Array(bytes));
+  const strings = [...strFromU8(files['xl/sharedStrings.xml'] ?? new Uint8Array()).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => [...m[1].matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(t => t[1]).join(''));
+  const cells = {};
+  for (const m of strFromU8(files['xl/worksheets/sheet1.xml']).matchAll(/<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    const v = /<v>([^<]*)<\/v>/.exec(m[3] ?? '')?.[1];
+    cells[m[1]] = / t="s"/.test(m[2]) ? strings[Number(v)] : v;
+  }
+  return cells;
+}
+
 let server, browser, context;
 // On a failure, every open page is kept: its screen, what has focus in it and in each of its frames, and the
 // last messages the harness heard from the engine (verify's en-US round once timed out at "the refusals are
@@ -198,17 +210,6 @@ try {
       if (commit) await page.keyboard.press('Enter');
     };
     const takeSnapshot = id => page.evaluate(id => window.snapshot(id, 1), id);
-    // The first sheet's cells as a save writes them (engine output: values in <v>, strings shared).
-    const cellsOf = bytes => {
-      const files = unzipSync(new Uint8Array(bytes));
-      const strings = [...strFromU8(files['xl/sharedStrings.xml'] ?? new Uint8Array()).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => [...m[1].matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(t => t[1]).join(''));
-      const cells = {};
-      for (const m of strFromU8(files['xl/worksheets/sheet1.xml']).matchAll(/<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-        const v = /<v>([^<]*)<\/v>/.exec(m[3] ?? '')?.[1];
-        cells[m[1]] = / t="s"/.test(m[2]) ? strings[Number(v)] : v;
-      }
-      return cells;
-    };
     // Cells read from a snapshot that is let go at once (a read must not count as a save).
     let readId = 900;
     const read = async () => {
@@ -275,8 +276,14 @@ try {
   const product = await context.newPage();
   product.setDefaultTimeout(60000);
   product.on('pageerror', error => errors.push(String(error)));
+  product.on('download', download => downloads.push(download.suggestedFilename()));
+  // Opening another file over unsaved changes asks first; the test answers yes and records the question.
+  const dialogs = [];
+  product.on('dialog', dialog => { dialogs.push(dialog.message()); return dialog.accept(); });
   product.on('request', request => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== origin) external.add(request.url()); });
   await product.goto(origin + '/xlsx.html');
+  // The engine's messages to the shell, kept for the failure evidence (tests/failure-evidence.mjs).
+  await product.evaluate(() => { window.messages = []; addEventListener('message', event => { if (String(event.data?.type).startsWith('sketch-xlsx:')) window.messages.push(event.data); }); });
   await product.locator('.xlsx-viewer[data-ready="true"]').waitFor();
   const pick = async (name, bytes) => {
     await product.evaluate(async ([name, bytes]) => {
@@ -335,6 +342,113 @@ try {
   await product.getByRole('alert').filter({ hasText: '파일을 열지 못했습니다.' }).waitFor();
   assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '매출.xlsx', 'a refused or failed file keeps the shown workbook');
   assert.equal(await productCell('B2'), '5');
+  assert.ok(dialogs.length >= 1 && dialogs.every(text => text.includes('저장하지 않은 변경')), 'opening over unsaved changes asked first');
+
+  // Saving (stage 1b). The pickers hand out files in the origin's private storage (OPFS) in place of the
+  // user's disk; a save picker may refuse once (an expired click), cancel, or give a file that fails to write.
+  const fileBytes = name => product.evaluate(async n => [...new Uint8Array(await (await (await (await navigator.storage.getDirectory()).getFileHandle(n)).getFile()).arrayBuffer())], name);
+  const savePicker = (name, mode = 'ok') => product.evaluate(([n, m]) => {
+    let refused = false;
+    window.showSaveFilePicker = async () => {
+      if (m === 'abort') throw new DOMException('cancelled', 'AbortError');
+      if (m === 'expired' && !refused) { refused = true; throw new DOMException('no activation', 'SecurityError'); }
+      const handle = await (await navigator.storage.getDirectory()).getFileHandle(n, { create: true });
+      // A real handle (so it compares with isSameEntry) whose writes fail.
+      if (m === 'broken') handle.createWritable = async () => { throw new DOMException('disk full', 'QuotaExceededError'); };
+      return handle;
+    };
+  }, [name, mode]);
+  // The engine has the edit in its workbook (not just typed): keys sent in the same frame as the Enter that
+  // closes the cell editor were dropped (plan F1), so a shortcut waits for this.
+  const committed = () => product.waitForFunction(() => { const s = window.messages.filter(m => m.type === 'sketch-xlsx:state').at(-1); return s && s.dirty && !s.editing; }, null, { timeout: 30000 });
+  const unsavedShown = () => product.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).count();
+  // "Still unsaved" is checked after the engine had time to report a change of state (a wrong `saved` would).
+  const stillUnsaved = async label => { await product.waitForTimeout(700); assert.equal(await unsavedShown(), 1, label); };
+  const settled = () => product.locator('.xlsx-viewer[data-saving="false"]').waitFor();
+  const click = label => product.getByRole('button', { name: label, exact: true }).click();
+  // What the opened file holds now (a fixture zipped twice differs in its timestamps, so it is read back).
+  const original = await fileBytes('매출.xlsx');
+  const recoveryCount = () => product.evaluate(async () => { let n = 0; for await (const _ of (await (await navigator.storage.getDirectory()).getDirectoryHandle('sketch-docs-xlsx-recovery', { create: true })).keys()) n++; return n; });
+  assert.equal(await unsavedShown(), 1, 'B2 = 5 is unsaved');
+  // Cancelled: nothing written, still unsaved.
+  await savePicker('취소.xlsx', 'abort');
+  await click('다른 이름으로 저장');
+  await settled();
+  await stillUnsaved('a cancelled save leaves the changes unsaved');
+  // A file that fails to write: still unsaved, the error is shown.
+  await savePicker('실패.xlsx', 'broken');
+  await click('다른 이름으로 저장');
+  await product.getByRole('alert').filter({ hasText: '저장하지 못했습니다. disk full' }).waitFor();
+  await stillUnsaved('a failed write leaves the changes unsaved');
+  // Save As after an expired click: one more click, then a new file with the edit; the opened file is untouched.
+  await savePicker('복사본.xlsx', 'expired');
+  await click('다른 이름으로 저장');
+  await product.getByRole('button', { name: '저장할 위치 고르기' }).click();
+  await product.getByRole('status').filter({ hasText: '저장했습니다: 복사본.xlsx' }).waitFor();
+  await settled();
+  await product.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor({ state: 'detached' });
+  assert.equal(cellsOf(await fileBytes('복사본.xlsx')).B2, '5');
+  assert.deepEqual(await fileBytes('매출.xlsx'), original, 'the opened file is untouched by Save As');
+  assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '복사본.xlsx', 'the next save goes to the new file');
+  // Ctrl+S (inside the engine) saves into that file.
+  await productCell('B3');
+  await product.keyboard.type('7', { delay: 50 });
+  await product.keyboard.press('Enter');
+  await committed();
+  await product.keyboard.press('ControlOrMeta+s');
+  // The notice from the Save As is still shown; the save is done when the changes are no longer unsaved.
+  await product.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor({ state: 'detached' });
+  await settled();
+  assert.deepEqual([cellsOf(await fileBytes('복사본.xlsx')).B2, cellsOf(await fileBytes('복사본.xlsx')).B3], ['5', '7']);
+  // Changed elsewhere since: refused, the file keeps what the other program wrote.
+  await product.evaluate(async () => { const h = await (await navigator.storage.getDirectory()).getFileHandle('복사본.xlsx'); const w = await h.createWritable(); await w.write(new Uint8Array([1, 2, 3])); await w.close(); });
+  await productCell('B3');
+  await product.keyboard.type('8', { delay: 50 });
+  await product.keyboard.press('Enter');
+  await committed();
+  await click('저장');
+  await product.getByRole('alert').filter({ hasText: '외부에서 변경되었습니다' }).waitFor();
+  assert.deepEqual(await fileBytes('복사본.xlsx'), [1, 2, 3], 'a file changed elsewhere is not overwritten');
+  await stillUnsaved('a refused save leaves the changes unsaved');
+  // Exports: new files, the workbook stays unsaved and keeps its file.
+  await savePicker('표.csv');
+  await click('CSV로 내보내기');
+  await product.getByRole('status').filter({ hasText: '내보냈습니다: 표.csv' }).waitFor();
+  assert.match(new TextDecoder().decode(new Uint8Array(await fileBytes('표.csv'))), /사과,5\r?\n배,8/);
+  await savePicker('표.pdf');
+  await click('PDF로 내보내기');
+  await product.getByRole('status').filter({ hasText: '내보냈습니다: 표.pdf' }).waitFor();
+  assert.deepEqual((await fileBytes('표.pdf')).slice(0, 5), [...new TextEncoder().encode('%PDF-')]);
+  await stillUnsaved('an export is not a save');
+  // Save As onto the opened file: its original goes back (kept in OPFS first), and the changes stay unsaved.
+  await pick('매출.xlsx', koreanWorkbook());
+  await product.locator('.xlsx-viewer .name').filter({ hasText: '매출.xlsx' }).waitFor();
+  await productCell('B2');
+  await product.keyboard.type('6', { delay: 50 });
+  await product.keyboard.press('Enter');
+  await committed();
+  const kept = await recoveryCount();
+  const reopened = await fileBytes('매출.xlsx');
+  await savePicker('매출.xlsx');
+  await click('다른 이름으로 저장');
+  await product.getByRole('alert').filter({ hasText: '원래 내용으로 되돌렸습니다' }).waitFor();
+  assert.deepEqual(await fileBytes('매출.xlsx'), reopened, 'the opened file holds its original again');
+  assert.equal(await recoveryCount(), kept + 1, 'the original was kept before being written back');
+  await stillUnsaved('a restored original leaves the changes unsaved');
+  // B1: the engine's Open (Ctrl+O inside it) asks the shell, which asks about the unsaved changes and opens the picked file.
+  const asked = dialogs.length;
+  await pick('두번째.xlsx', otherWorkbook());
+  await product.locator('.xlsx-viewer .name').filter({ hasText: '두번째.xlsx' }).waitFor();
+  assert.equal(dialogs.length, asked + 1, 'the toolbar Open asked about the unsaved changes');
+  await product.evaluate(async bytes => {
+    const handle = await (await navigator.storage.getDirectory()).getFileHandle('매출.xlsx', { create: true });
+    window.showOpenFilePicker = async () => [handle];
+  }, []);
+  await view.click({ position: { x: 600, y: 500 } });
+  await product.keyboard.press('ControlOrMeta+o');
+  await product.locator('.xlsx-viewer .name').filter({ hasText: '매출.xlsx' }).waitFor();
+  assert.equal(await productCell('B2'), '1200', 'the engine Open opened the picked file');
+  assert.deepEqual(downloads, [], 'nothing was downloaded (product)');
   assert.deepEqual([...external], [], 'no request leaves this origin (product)');
   assert.deepEqual(errors, [], 'page errors (product)');
   await product.close();

@@ -26,10 +26,10 @@ index 2920a87..28a1c6f 100644
  #[cfg(target_arch = "wasm32")]
 diff --git a/apps/gridcraft-web/src/sketch.rs b/apps/gridcraft-web/src/sketch.rs
 new file mode 100644
-index 0000000..351024c
+index 0000000..466e498
 --- /dev/null
 +++ b/apps/gridcraft-web/src/sketch.rs
-@@ -0,0 +1,464 @@
+@@ -0,0 +1,469 @@
 +//! Sketch Docs: the bridge to the product shell that frames this page (`?host=sketch`), which owns the
 +//! file: this page never reads or writes one. `&mode=edit` edits the workbook; otherwise it is view-only.
 +//!
@@ -47,7 +47,7 @@ index 0000000..351024c
 +//!   epoch, ok: true, docUid, rev, bytes }`: what is being typed is committed first, then the shown
 +//!   workbook is encoded as .xlsx exactly as a save writes it (an `ArrayBuffer`, transferred) and kept
 +//!   for `saved`; or `{ requestId, epoch, ok: false, error }`.
-+//! - `sketch-xlsx:saved` (from the parent): `{ requestId, docUid }`, sent only once the file
++//! - `sketch-xlsx:saved` (from the parent): `{ requestId, docUid, name? }`, sent only once the file
 +//!   holding that snapshot was written. The snapshot becomes the saved state: the workbook is clean
 +//!   unless it changed since. `sketch-xlsx:discard` (from the parent): `{ requestId }` drops a kept
 +//!   snapshot that was not written.
@@ -88,7 +88,7 @@ index 0000000..351024c
 +enum Incoming {
 +    Open { request_id: f64, epoch: f64, name: String, bytes: Vec<u8> },
 +    Snapshot { request_id: f64, epoch: f64 },
-+    Saved { request_id: f64, doc_uid: f64 },
++    Saved { request_id: f64, doc_uid: f64, name: Option<String> },
 +    Discard { request_id: f64 },
 +    Export { request_id: f64, epoch: f64, format: String },
 +}
@@ -198,7 +198,8 @@ index 0000000..351024c
 +                (Some("sketch-xlsx:snapshot"), Some(request_id), Some(epoch)) => Incoming::Snapshot { request_id, epoch },
 +                (Some("sketch-xlsx:saved"), Some(request_id), _) => {
 +                    let Some(doc_uid) = number(&data, "docUid") else { return };
-+                    Incoming::Saved { request_id, doc_uid }
++                    let name = string(&data, "name").filter(|n| !n.trim().is_empty());
++                    Incoming::Saved { request_id, doc_uid, name }
 +                }
 +                (Some("sketch-xlsx:discard"), Some(request_id), _) => Incoming::Discard { request_id },
 +                (Some("sketch-xlsx:export"), Some(request_id), Some(epoch)) => {
@@ -274,7 +275,7 @@ index 0000000..351024c
 +                        }
 +                    }
 +                }
-+                Incoming::Saved { request_id, doc_uid } => {
++                Incoming::Saved { request_id, doc_uid, name } => {
 +                    let Some((uid, wb)) = self.held.borrow_mut().remove(&request_id.to_bits()) else { continue };
 +                    if let Some(doc) = app.session.active_mut()
 +                        && doc.uid == uid
@@ -284,6 +285,10 @@ index 0000000..351024c
 +                        // snapshot, so the workbook stays dirty (a view change alone also keeps it
 +                        // dirty — the safe side).
 +                        doc.saved = if Arc::ptr_eq(&doc.wb, &wb) { doc.wb.clone() } else { wb };
++                        // The title bar names the file it was saved as.
++                        if let Some(name) = name {
++                            doc.title = name;
++                        }
 +                    }
 +                }
 +                Incoming::Discard { request_id } => {

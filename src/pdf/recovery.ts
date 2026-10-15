@@ -15,8 +15,9 @@ const parse = (file: string): RecoveryCopy | null => {
     try { return { file, name: decodeURIComponent(match[3]), savedAt: Number(match[1]), hash: match[2] }; } catch { return null; }
 };
 
-export function createRecoveryStore(root: () => Promise<FileSystemDirectoryHandle> = () => navigator.storage.getDirectory()) {
-    const folder = async () => (await root()).getDirectoryHandle(RECOVERY_FOLDER, { create: true });
+/** `folderName`: each editor keeps its own copies, so one cannot push out the other's (the Excel editor uses its own). */
+export function createRecoveryStore(root: () => Promise<FileSystemDirectoryHandle> = () => navigator.storage.getDirectory(), folderName = RECOVERY_FOLDER) {
+    const folder = async () => (await root()).getDirectoryHandle(folderName, { create: true });
     // Strictly increasing, so two copies kept in the same millisecond get different names.
     let last = 0;
     async function list(): Promise<RecoveryCopy[]> {
