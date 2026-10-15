@@ -1,6 +1,7 @@
 // The shell's side of the view-only Excel engine bridge (overlays/gridcraft/view-only.patch, sketch.rs).
-// Only messages from the engine frame's window on this origin, in this protocol, are heard; an
-// answer counts only for the latest open request, so a slow answer never replaces a newer workbook.
+// Only messages from the engine frame's window on this origin, in this protocol, are heard. The engine
+// handles opens in order, so every successful answer newer than the last one applied says what it shows
+// (`onShown`), even one the shell stopped waiting for; a request's promise settles only for the latest one.
 export const PROTOCOL = 1;
 /** The largest workbook sent to the engine; the engine refuses larger ones as well. */
 export const MAX_XLSX_BYTES = 100 * 1024 * 1024;
@@ -12,7 +13,7 @@ export type Blocked = 'edit' | 'save' | 'print' | 'drop';
 
 interface Pending { requestId: number; epoch: number; resolve: (result: OpenResult) => void; timer: ReturnType<typeof setTimeout> }
 
-export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = () => {}, onFailed = () => {}, onBlocked = () => {}, onLate = () => {} }: {
+export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = () => {}, onFailed = () => {}, onBlocked = () => {}, onShown = () => {} }: {
     /** The engine frame's window, if it exists. */
     target: () => Window | null | undefined;
     origin: string;
@@ -20,10 +21,10 @@ export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = 
     onReady?: (version: string) => void;
     onFailed?: (error: string) => void;
     onBlocked?: (action: Blocked) => void;
-    /** The latest request answered after it timed out: the engine now shows that result. */
-    onLate?: (result: OpenResult) => void;
+    /** The engine now shows this workbook (a successful answer newer than any applied before). */
+    onShown?: (result: Extract<OpenResult, { ok: true }>) => void;
 }) {
-    let ready = false, requestId = 0, epoch = 0, answered = true;
+    let ready = false, requestId = 0, epoch = 0, applied = 0;
     let pending: Pending | undefined;
     const settle = (result: OpenResult) => {
         if (!pending) return;
@@ -45,14 +46,15 @@ export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = 
                 case 'sketch-xlsx:failed': ready = false; onFailed(String(data.error ?? '')); settle({ ok: false, code: 'error', error: String(data.error ?? '') }); return true;
                 case 'sketch-xlsx:blocked': onBlocked(String(data.action) as Blocked); return true;
                 case 'sketch-xlsx:opened': {
-                    // Only the latest request counts; answers to superseded requests are ignored.
-                    if (data.requestId !== requestId || data.epoch !== epoch) return true;
+                    const id = data.requestId;
+                    if (typeof id !== 'number' || id <= applied || id > requestId) return true;
+                    applied = id;
                     const list = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
                     const result: OpenResult = data.ok === true
                         ? { ok: true, name: String(data.name ?? ''), sheets: list(data.sheets), warnings: list(data.warnings) }
                         : { ok: false, code: data.code === 'password' ? 'password' : 'error', error: String(data.error ?? '') };
-                    if (pending) settle(result); else if (!answered) onLate(result);
-                    answered = true;
+                    if (result.ok) onShown(result);
+                    if (pending && id === pending.requestId && data.epoch === pending.epoch) settle(result);
                     return true;
                 }
             }
@@ -67,7 +69,7 @@ export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = 
             const copy = bytes.slice();
             return new Promise(resolve => {
                 const request: Pending = { requestId: ++requestId, epoch: ++epoch, resolve, timer: setTimeout(() => settle({ ok: false, code: 'timeout', error: '파일을 여는 데 시간이 너무 오래 걸립니다.' }), timeoutMs) };
-                pending = request; answered = false;
+                pending = request;
                 window.postMessage({ type: 'sketch-xlsx:open', protocol: PROTOCOL, requestId: request.requestId, epoch: request.epoch, name, bytes: copy.buffer }, origin, [copy.buffer]);
             });
         },

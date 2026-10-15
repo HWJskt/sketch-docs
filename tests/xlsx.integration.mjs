@@ -117,6 +117,8 @@ try {
   // Two opens in a row: each is answered, and the later workbook is shown alone.
   await page.evaluate(([a, b]) => { window.send(3, 3, 'first.xlsx', a); window.send(4, 4, 'second.xlsx', b); }, [[...koreanWorkbook()], [...otherWorkbook()]]);
   const second = await waitFor({ type: 'sketch-xlsx:opened', requestId: 4 }, 'second open');
+  const first = await waitFor({ type: 'sketch-xlsx:opened', requestId: 3 }, 'first open');
+  assert.deepEqual([first.ok, first.sheets], [true, ['매출', '메모']], 'the earlier open is answered too');
   assert.deepEqual(second.sheets, ['두번째']);
   await engine.click({ position: { x: 600, y: 500 } });
   assert.equal(await cell('A2'), '42');
@@ -141,7 +143,17 @@ try {
   };
   await pick('매출.xlsx', koreanWorkbook());
   await product.locator('.xlsx-viewer[data-sheets="2"]').waitFor();
-  assert.equal(await product.locator('.product-document-name').textContent(), '매출.xlsx');
+  assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '매출.xlsx');
+  assert.equal(await product.locator('.product-document-name').count(), 0, 'the header keeps its width: the name is in the toolbar');
+  // The header floats over the toolbar's right end; nothing in the toolbar may sit under it.
+  for (const width of [1280, 768, 375]) {
+    await product.setViewportSize({ width, height: 900 });
+    const header = await product.locator('.editor-shell > .product-header').boundingBox();
+    for (const box of await product.locator('.xlsx-viewer .toolbar > *:not(input)').evaluateAll(items => items.map(item => { const r = item.getBoundingClientRect(); return { text: item.textContent, right: r.right, bottom: r.bottom }; }))) {
+      assert.ok(box.right <= header.x || box.bottom <= header.y, `${width}px: "${box.text}" (right ${box.right}) is under the header from ${header.x}`);
+    }
+  }
+  await product.setViewportSize({ width: 1280, height: 900 });
   const view = product.locator('iframe[title="Excel 보기"]');
   const productCell = async address => {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -168,16 +180,18 @@ try {
   await product.locator('.pdf-editor').waitFor();
   await product.getByRole('button', { name: 'Excel', exact: true }).click();
   await product.locator('.xlsx-viewer[data-sheets="2"]').waitFor();
-  assert.equal(await product.locator('.product-document-name').textContent(), '매출.xlsx', 'the workbook stays across editor switches');
+  assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '매출.xlsx', 'the workbook stays across editor switches');
   assert.equal(await productCell('B2'), '1200');
   await product.screenshot({ path: resolve(root, 'artifacts/xlsx-product.png') });
   await pick('notes.txt', new TextEncoder().encode('plain'));
   await product.getByRole('alert').filter({ hasText: 'XLSX 파일만 열 수 있습니다.' }).waitFor();
   await pick('fake.xlsx', new TextEncoder().encode('not a zip'));
   await product.getByRole('alert').filter({ hasText: 'XLSX 형식이 아닙니다' }).waitFor();
+  await pick('protected.xlsx', new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]));
+  await product.getByRole('alert').filter({ hasText: '암호가 걸린 통합 문서이거나' }).waitFor();
   await pick('broken.xlsx', brokenWorkbook());
   await product.getByRole('alert').filter({ hasText: '파일을 열지 못했습니다.' }).waitFor();
-  assert.equal(await product.locator('.product-document-name').textContent(), '매출.xlsx', 'a refused or failed file keeps the shown workbook');
+  assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '매출.xlsx', 'a refused or failed file keeps the shown workbook');
   assert.equal(await productCell('B2'), '1200');
   assert.deepEqual([...external], [], 'no request leaves this origin (product)');
   assert.deepEqual(errors, [], 'page errors (product)');

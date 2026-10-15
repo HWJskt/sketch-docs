@@ -5,9 +5,9 @@ import { createXlsxBridge, MAX_XLSX_BYTES, PROTOCOL } from '../src/xlsxBridge.ts
 
 const origin = 'https://docs.example';
 function setup(options = {}) {
-    const sent = [], events = { ready: [], failed: [], blocked: [], late: [] };
+    const sent = [], events = { ready: [], failed: [], blocked: [], shown: [] };
     const engine = { postMessage: (data, to) => sent.push({ data, to }) };
-    const bridge = createXlsxBridge({ target: () => engine, origin, timeoutMs: 50, onReady: v => events.ready.push(v), onFailed: e => events.failed.push(e), onBlocked: a => events.blocked.push(a), onLate: r => events.late.push(r), ...options });
+    const bridge = createXlsxBridge({ target: () => engine, origin, timeoutMs: 50, onReady: v => events.ready.push(v), onFailed: e => events.failed.push(e), onBlocked: a => events.blocked.push(a), onShown: r => events.shown.push(r.name), ...options });
     const from = (data, extra = {}) => bridge.handle({ source: engine, origin, data: { protocol: PROTOCOL, ...data }, ...extra });
     return { bridge, engine, sent, events, from };
 }
@@ -51,13 +51,13 @@ test('a newer open supersedes an older one, and the older answer cannot replace 
     assert.deepEqual(await second, { ok: false, code: 'password', error: 'needs a password' });
 });
 
-test('a timeout reports failure, and a late answer to the latest request is reported once', async () => {
+test('a timeout reports failure, and a late answer still says what is shown, once', async () => {
     const { bridge, events, from } = setup();
     from({ type: 'sketch-xlsx:ready' });
     assert.equal((await bridge.open('slow.xlsx', bytes)).code, 'timeout');
     from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'slow.xlsx' });
     from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'slow.xlsx' });
-    assert.deepEqual(events.late.map(result => result.ok && result.name), ['slow.xlsx']);
+    assert.deepEqual(events.shown, ['slow.xlsx']);
 });
 
 test('nothing is sent before the engine is ready or for a file over the limit; failures and refusals are reported', async () => {
@@ -73,4 +73,20 @@ test('nothing is sent before the engine is ready or for a file over the limit; f
     assert.equal((await opening).code, 'error');
     assert.deepEqual(events.failed, ['no WebGL']);
     assert.equal(bridge.ready, false);
+});
+
+test('the shell learns which workbook the engine shows from every answer, even one it stopped waiting for', async () => {
+    const shown = [];
+    const { bridge, from } = setup({ onShown: result => shown.push(result.name) });
+    from({ type: 'sketch-xlsx:ready' });
+    assert.equal((await bridge.open('a.xlsx', bytes)).code, 'timeout');
+    const second = bridge.open('b.xlsx', bytes);
+    // The engine answers in order: the slow A opened, then B failed and A stays shown.
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx', sheets: ['A'] });
+    from({ type: 'sketch-xlsx:opened', requestId: 2, epoch: 2, ok: false, code: 'error', error: 'bad' });
+    assert.equal((await second).code, 'error');
+    assert.deepEqual(shown, ['a.xlsx']);
+    // An answer older than one already applied cannot move the shown workbook back.
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx' });
+    assert.deepEqual(shown, ['a.xlsx']);
 });

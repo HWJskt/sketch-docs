@@ -17,7 +17,8 @@
         onReady: () => { ready = true; },
         onFailed: reason => { ready = false; error = `Excel 보기를 시작하지 못했습니다. WebGPU 또는 WebGL2를 지원하는 브라우저가 필요합니다. (${reason})`; },
         onBlocked: action => { notice = blockedText[action] ?? blockedText.edit; },
-        onLate: result => show(result),
+        // Every answer the engine gives, even after a timeout, says which workbook it now shows.
+        onShown: result => { name = result.name; sheets = result.sheets; },
     });
     const blockedText: Record<Blocked, string> = {
         edit: '보기 전용입니다. 이 화면에서는 내용을 바꿀 수 없습니다.',
@@ -34,11 +35,14 @@
     });
 
     function show(result: OpenResult) {
-        if (result.ok) { name = result.name; sheets = result.sheets; error = ''; notice = result.warnings.length ? `일부 내용이 다르게 표시될 수 있습니다: ${result.warnings[0]}` : ''; }
+        if (result.ok) { error = ''; notice = result.warnings.length ? `일부 내용이 다르게 표시될 수 있습니다: ${result.warnings[0]}` : ''; }
         else if (result.code !== 'superseded') error = result.code === 'password' ? '암호가 걸린 통합 문서는 열 수 없습니다.' : `파일을 열지 못했습니다. ${result.error}`;
     }
     // .xlsx only for now (2026-10-15 user decision); GridCraft would open any other bytes as text.
-    const isZip = (bytes: Uint8Array) => bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+    const starts = (bytes: Uint8Array, magic: number[]) => magic.every((byte, i) => bytes[i] === byte);
+    const isZip = (bytes: Uint8Array) => starts(bytes, [0x50, 0x4b, 0x03, 0x04]);
+    // An OLE compound file: a password-protected workbook (Excel encrypts .xlsx into one) or an old .xls renamed.
+    const isCompound = (bytes: Uint8Array) => starts(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
     async function load(file: File) {
         error = ''; notice = '';
         if (!/\.xlsx$/i.test(file.name)) { error = 'XLSX 파일만 열 수 있습니다.'; return; }
@@ -46,6 +50,7 @@
         opening = true;
         try {
             const bytes = new Uint8Array(await file.arrayBuffer());
+            if (isCompound(bytes)) { error = '암호가 걸린 통합 문서이거나 이전 형식(XLS) 파일이라 열 수 없습니다.'; return; }
             if (!isZip(bytes)) { error = 'XLSX 형식이 아닙니다. 파일이 손상되었을 수 있습니다.'; return; }
             show(await bridge.open(file.name, bytes));
         } catch (reason) {
@@ -80,12 +85,12 @@
 
 <style>
     .xlsx-viewer {height:100%;display:flex;flex-direction:column;font-family:system-ui,sans-serif;color:#263547}
-    /* The shell header floats over the right end (editorHeader.css, 172px plus the document name). */
+    /* The shell header floats over the right end (editorHeader.css, 172px; the file name stays here, not in it). */
     .toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-height:36px;box-sizing:border-box;padding:4px 190px 4px 12px;border-bottom:1px solid #dce1e8;background:#fff;font-size:13px}
     .toolbar button {font:inherit;padding:4px 12px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     .toolbar button:disabled {opacity:.55;cursor:default}
     .badge {padding:2px 8px;border-radius:10px;background:#eef3e8;color:#3d6b21;font-size:12px}
-    .name {font-weight:600;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .name {font-weight:600;min-width:0;max-width:min(260px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .status {color:#5b6980;font-size:12px}
     .problem {margin:0;padding:6px 12px;background:#fff1ee;color:#9a3412;font-size:13px}
     iframe {flex:1;min-height:0;width:100%;border:0;display:block}
