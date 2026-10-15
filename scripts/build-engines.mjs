@@ -7,6 +7,7 @@ import { cp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { craftLibsPin, upstreamPaths } from './upstream-git.mjs';
 
 export const root = resolve(import.meta.dirname, '..');
 export const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 300 * 1024 * 1024 }).trim();
@@ -22,6 +23,13 @@ export async function verifySources(lock) {
   }
   const rhwp = join(root, 'source/hop/third_party/rhwp');
   if (git(rhwp, 'rev-parse', 'HEAD') !== lock.rhwp.commit || git(rhwp, 'status', '--porcelain')) throw new Error('rhwp checkout differs from lock or has local changes');
+  const paths = upstreamPaths(root, lock);
+  for (const name of ['gridcraft', 'craft-libs']) {
+    if (git(paths[name], 'rev-parse', 'HEAD') !== lock[name].commit) throw new Error(`${name}: checkout differs from lock; use upstream:sync or upstream:check`);
+    if (git(paths[name], 'status', '--porcelain')) throw new Error(`${name}: source has local changes; preserve them before updating`);
+  }
+  // Cargo fetches craft-libs itself; the lock entry must name the very commit GridCraft's Cargo.lock builds.
+  if (craftLibsPin(paths) !== lock['craft-libs'].commit) throw new Error('craft-libs: lock differs from the commit GridCraft\'s Cargo.lock pins');
   execFileSync(process.execPath, [join(root, 'source/hop/scripts/verify-rhwp-upstream.mjs')], { cwd: join(root, 'source/hop'), stdio: 'inherit' });
 }
 async function freshWorkspace(dir) {

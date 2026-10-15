@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { root, git } from './build-engines.mjs';
 import { verify, productHash } from './verify.mjs';
-import { assertUpstreamsClean, checkoutUpstream, latestOriginal, restoreUpstreams, syncUpstreams, upstreamHeads, upstreamPaths } from './upstream-git.mjs';
+import { SUPERPROJECTS, UPSTREAMS, assertUpstreamsClean, checkoutUpstream, latestOriginal, restoreUpstreams, syncUpstreams, upstreamHeads, upstreamPaths } from './upstream-git.mjs';
 
 const lockPath = join(root, 'upstreams.lock.json');
 const locked = JSON.parse(await readFile(lockPath, 'utf8'));
@@ -18,10 +18,10 @@ if (command === 'sync') {
   assertUpstreamsClean(paths);
   const original = upstreamHeads(paths);
   try {
-    // Default: each original's latest default branch. --edentext/--hop REF pick revisions; --current keeps the checkout.
-    const explicit = ['edentext', 'hop'].filter(name => process.argv.includes(`--${name}`));
+    // Default: each original's latest default branch. --edentext/--hop/--gridcraft REF pick revisions; --current keeps the checkout.
+    const explicit = SUPERPROJECTS.filter(name => process.argv.includes(`--${name}`));
     const latest = !explicit.length && !process.argv.includes('--current');
-    for (const name of ['edentext', 'hop']) {
+    for (const name of SUPERPROJECTS) {
       let revision;
       if (latest) {
         revision = latestOriginal(paths[name], locked[name].url);
@@ -34,11 +34,12 @@ if (command === 'sync') {
       if (revision) checkoutUpstream(paths, name, revision);
     }
     const candidate = structuredClone(locked);
-    for (const name of ['edentext', 'hop']) candidate[name].commit = git(join(root, 'source', name), 'rev-parse', 'HEAD');
-    candidate.rhwp.commit = git(join(root, 'source/hop/third_party/rhwp'), 'rev-parse', 'HEAD');
+    // Dependents were moved to their superproject's record (HOP's gitlink, GridCraft's Cargo.lock).
+    const heads = upstreamHeads(paths);
+    for (const name of UPSTREAMS) candidate[name].commit = heads[name];
     candidate.rhwp.version = JSON.parse(await readFile(join(root, 'source/hop/apps/studio-host/vendor/rhwp-core/package.json'), 'utf8')).version;
-    const changes = ['edentext', 'hop', 'rhwp'].filter(name => candidate[name].commit !== locked[name].commit);
-    console.log('Candidate upstreams:\n' + ['edentext', 'hop', 'rhwp'].map(name => `  ${name}: ${locked[name].commit.slice(0, 12)} → ${candidate[name].commit.slice(0, 12)}${changes.includes(name) ? '' : ' (unchanged)'}`).join('\n'));
+    const changes = UPSTREAMS.filter(name => candidate[name].commit !== locked[name].commit);
+    console.log('Candidate upstreams:\n' + UPSTREAMS.map(name => `  ${name}: ${locked[name].commit.slice(0, 12)} → ${candidate[name].commit.slice(0, 12)}${changes.includes(name) ? '' : ' (unchanged)'}`).join('\n'));
     if (latest && !changes.length) {
       console.log('Pinned upstreams are already the latest; push CI verifies them. Nothing to check.');
     } else {
@@ -55,7 +56,7 @@ if (command === 'sync') {
   const report = JSON.parse(await readFile(join(root, 'artifacts/candidate-verified.json'), 'utf8'));
   if (!report.passed || report.productHash !== await productHash()) throw new Error('Candidate verification missing or stale; rerun upstream:check');
   assertUpstreamsClean(paths);
-  for (const name of ['edentext', 'hop']) checkoutUpstream(paths, name, report.upstreams[name].commit);
+  for (const name of SUPERPROJECTS) checkoutUpstream(paths, name, report.upstreams[name].commit);
   await writeFile(lockPath, JSON.stringify(report.upstreams, null, 2) + '\n');
   console.log('Pinned versions updated. Run npm run verify to prepare the release output.');
-} else throw new Error('Use sync, candidate [--current | --edentext REF] [--hop REF], or promote');
+} else throw new Error('Use sync, candidate [--current | --edentext REF] [--hop REF] [--gridcraft REF], or promote');

@@ -6,8 +6,9 @@ const projectRoot = resolve(import.meta.dirname, '..');
 const repositoryUrl = url => url.replace(/\.git$/, '');
 const treeUrl = (url, commit) => `${repositoryUrl(url)}/tree/${commit}`;
 const archiveUrl = (url, commit) => `${repositoryUrl(url)}/archive/${commit}.tar.gz`;
-export const upstreamNames = ['edentext', 'hop', 'rhwp'];
-export const upstreamTitles = { edentext: 'EdenText', hop: 'HOP', rhwp: 'rhwp' };
+export { UPSTREAMS as upstreamNames } from './upstream-git.mjs';
+import { UPSTREAMS as upstreamNames } from './upstream-git.mjs';
+export const upstreamTitles = { edentext: 'EdenText', hop: 'HOP', rhwp: 'rhwp', gridcraft: 'GridCraft', 'craft-libs': 'craft-libs' };
 
 /**
  * Every package the product ships: the root `dependencies` and theirs, resolved the way Node does

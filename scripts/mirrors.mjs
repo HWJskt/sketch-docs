@@ -1,12 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { upstreamPaths } from './upstream-git.mjs';
+import { UPSTREAMS, upstreamPaths } from './upstream-git.mjs';
 
 // Each pinned upstream commit is kept in our backup fork under a tag, so the corresponding
 // source stays available even if the original repository disappears or rewrites history.
 const root = resolve(import.meta.dirname, '..');
-const names = ['edentext', 'hop', 'rhwp'];
+const names = UPSTREAMS;
 export const pinTag = commit => `sketch-docs/pin-${commit}`;
 export function githubRepo(url) {
   const match = /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/.exec(url);

@@ -18,5 +18,17 @@
     "license": "MIT",
     "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
     "version": "0.8.7"
+  },
+  "gridcraft": {
+    "url": "https://github.com/storytold/gridcraft.git",
+    "mirror": "https://github.com/HWJskt/gridcraft.git",
+    "license": "MIT OR Apache-2.0",
+    "commit": "d9d09f0baa912e88c5111107903fc8c640214b57"
+  },
+  "craft-libs": {
+    "url": "https://github.com/storytold/craft-libs.git",
+    "mirror": "https://github.com/HWJskt/craft-libs.git",
+    "license": "MIT OR Apache-2.0",
+    "commit": "d27646a5f7c8b4fc85d9dd3213b8c88b58e0088d"
   }
 }

@@ -13,6 +13,8 @@ const lock = {
   edentext: { url: 'https://github.com/upstream/edentext.git', mirror: 'https://github.com/backup/edentext.git', license: 'AGPL-3.0-only', commit: 'a'.repeat(40) },
   hop: { url: 'https://github.com/upstream/hop.git', mirror: 'https://github.com/backup/hop.git', license: 'MIT', commit: 'b'.repeat(40) },
   rhwp: { url: 'https://github.com/upstream/rhwp.git', mirror: 'https://github.com/backup/rhwp.git', license: 'MIT', commit: 'c'.repeat(40), version: '0.8.7' },
+  gridcraft: { url: 'https://github.com/upstream/gridcraft.git', mirror: 'https://github.com/backup/gridcraft.git', license: 'MIT OR Apache-2.0', commit: 'd'.repeat(40) },
+  'craft-libs': { url: 'https://github.com/upstream/craft-libs.git', mirror: 'https://github.com/backup/craft-libs.git', license: 'MIT OR Apache-2.0', commit: 'e'.repeat(40) },
 };
 
 async function fixture() {
@@ -50,6 +52,8 @@ test('release info links the built commit and every pinned upstream instead of s
       ['edentext', 'AGPL-3.0-only', `https://github.com/upstream/edentext/tree/${'a'.repeat(40)}`, `https://github.com/backup/edentext/tree/${'a'.repeat(40)}`],
       ['hop', 'MIT', `https://github.com/upstream/hop/tree/${'b'.repeat(40)}`, `https://github.com/backup/hop/tree/${'b'.repeat(40)}`],
       ['rhwp', 'MIT', `https://github.com/upstream/rhwp/tree/${'c'.repeat(40)}`, `https://github.com/backup/rhwp/tree/${'c'.repeat(40)}`],
+      ['gridcraft', 'MIT OR Apache-2.0', `https://github.com/upstream/gridcraft/tree/${'d'.repeat(40)}`, `https://github.com/backup/gridcraft/tree/${'d'.repeat(40)}`],
+      ['craft-libs', 'MIT OR Apache-2.0', `https://github.com/upstream/craft-libs/tree/${'e'.repeat(40)}`, `https://github.com/backup/craft-libs/tree/${'e'.repeat(40)}`],
     ]);
     const legal = await readdir(join(root, 'public/legal'));
     assert.deepEqual(legal.filter(name => name.endsWith('.tar.gz')), [], 'no source archive is deployed');

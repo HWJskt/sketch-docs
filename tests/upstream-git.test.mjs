@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { rename } from 'node:fs/promises';
-import { assertUpstreamsClean, checkoutUpstream, latestOriginal, restoreUpstreams, syncUpstreams, upstreamHeads, upstreamPaths } from '../scripts/upstream-git.mjs';
+import { UPSTREAMS, assertUpstreamsClean, cargoGitPin, checkoutUpstream, latestOriginal, restoreUpstreams, syncUpstreams, upstreamHeads, upstreamPaths } from '../scripts/upstream-git.mjs';
 
 // Library calls use plain git; allow local-path submodules like the fixture's own git calls.
 Object.assign(process.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'protocol.file.allow', GIT_CONFIG_VALUE_0: 'always' });
@@ -15,12 +15,13 @@ const git = (dir, ...args) => execFileSync('git', ['-c', 'protocol.file.allow=al
 const put = async (path, text) => { await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, text); };
 const commit = (dir, message) => { git(dir, 'add', '-A'); git(dir, 'commit', '-qm', message); return git(dir, 'rev-parse', 'HEAD'); };
 
-// remotes/{edentext,hop,rhwp} and a product root whose source/ holds clones of them.
+// remotes/{edentext,hop,rhwp,gridcraft,craft-libs} and a product root whose source/ holds clones of them.
+// GridCraft's Cargo.lock pins craft-libs the way HOP's gitlink pins rhwp.
 async function fixture() {
   const base = await mkdtemp(join(tmpdir(), 'upstream-git-test-'));
   const remotes = join(base, 'remotes');
   const rev = {};
-  for (const name of ['edentext', 'rhwp']) {
+  for (const name of ['edentext', 'rhwp', 'craft-libs']) {
     const dir = join(remotes, name);
     await mkdir(dir, { recursive: true });
     git(dir, 'init', '-q', '-b', 'main');
@@ -40,13 +41,23 @@ async function fixture() {
   rev.hop1 = commit(hop, 'hop v1 pins rhwp v1');
   git(join(hop, 'third_party/rhwp'), 'checkout', '-q', rev.rhwp2);
   rev.hop2 = commit(hop, 'hop v2 pins rhwp v2');
+  const gridcraft = join(remotes, 'gridcraft');
+  await mkdir(gridcraft, { recursive: true });
+  git(gridcraft, 'init', '-q', '-b', 'main');
+  for (const n of ['1', '2']) {
+    const pin = rev['craft-libs' + n];
+    await put(join(gridcraft, 'Cargo.lock'), `[[package]]\nname = "craft-ui"\nsource = "git+${join(remotes, 'craft-libs')}?rev=${pin}#${pin}"\n`);
+    rev['gridcraft' + n] = commit(gridcraft, `gridcraft v${n} pins craft-libs v${n}`);
+  }
   const root = join(base, 'product');
   await mkdir(join(root, 'source'), { recursive: true });
   git(join(root, 'source'), 'clone', '-q', join(remotes, 'edentext'), 'edentext');
   git(join(root, 'source'), 'clone', '-q', '--recurse-submodules', hop, 'hop');
-  const paths = upstreamPaths(root);
+  git(join(root, 'source'), 'clone', '-q', gridcraft, 'gridcraft');
+  const paths = upstreamPaths(root, { 'craft-libs': { url: join(remotes, 'craft-libs') } });
   checkoutUpstream(paths, 'edentext', rev.edentext1);
   checkoutUpstream(paths, 'hop', rev.hop1);
+  checkoutUpstream(paths, 'gridcraft', rev.gridcraft1);
   return { base, paths, rev };
 }
 
@@ -75,7 +86,7 @@ test('moving HOP moves rhwp to its recorded gitlink', async () => {
   const { base, paths, rev } = await fixture();
   try {
     checkoutUpstream(paths, 'hop', rev.hop2);
-    assert.deepEqual(upstreamHeads(paths), { edentext: rev.edentext1, hop: rev.hop2, rhwp: rev.rhwp2 });
+    assert.deepEqual(upstreamHeads(paths), { edentext: rev.edentext1, hop: rev.hop2, rhwp: rev.rhwp2, gridcraft: rev.gridcraft1, 'craft-libs': rev['craft-libs1'] });
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 
@@ -84,10 +95,11 @@ test('restore returns every clone, including an rhwp checkout that differs from 
   try {
     git(paths.rhwp, 'checkout', '-q', '--detach', rev.rhwp2);
     const before = upstreamHeads(paths);
-    assert.deepEqual(before, { edentext: rev.edentext1, hop: rev.hop1, rhwp: rev.rhwp2 });
+    assert.deepEqual(before, { edentext: rev.edentext1, hop: rev.hop1, rhwp: rev.rhwp2, gridcraft: rev.gridcraft1, 'craft-libs': rev['craft-libs1'] });
     assert.doesNotThrow(() => assertUpstreamsClean(paths), 'a clean submodule on another commit is allowed');
     checkoutUpstream(paths, 'edentext', rev.edentext2);
     checkoutUpstream(paths, 'hop', rev.hop2);
+    checkoutUpstream(paths, 'gridcraft', rev.gridcraft2);
     git(paths.rhwp, 'checkout', '-q', '--detach', rev.rhwp1);
     restoreUpstreams(paths, before);
     assert.deepEqual(upstreamHeads(paths), before);
@@ -136,7 +148,7 @@ test('a pinned commit missing from origin is fetched from the backup fork', asyn
 
 async function freshProduct(base, rev) {
   const lock = {};
-  for (const name of ['edentext', 'hop', 'rhwp']) {
+  for (const name of UPSTREAMS) {
     const mirror = join(base, 'mirrors', name + '.git');
     git(base, 'clone', '-q', '--mirror', join(base, 'remotes', name), mirror);
     lock[name] = { url: join(base, 'remotes', name), mirror, commit: rev[name + '1'] };
@@ -152,7 +164,7 @@ test('first sync restores rhwp from its backup fork when the original rhwp is go
     const { root, lock } = await freshProduct(base, rev);
     await rename(join(base, 'remotes/rhwp'), join(base, 'remotes/rhwp-deleted'));
     const paths = syncUpstreams(root, lock);
-    assert.deepEqual(upstreamHeads(paths), { edentext: rev.edentext1, hop: rev.hop1, rhwp: rev.rhwp1 });
+    assert.deepEqual(upstreamHeads(paths), { edentext: rev.edentext1, hop: rev.hop1, rhwp: rev.rhwp1, gridcraft: rev.gridcraft1, 'craft-libs': rev['craft-libs1'] });
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 
@@ -179,4 +191,45 @@ test('the latest check reads the original repository even when origin is the bac
     assert.notEqual(rev.edentext2, v3);
     assert.equal(latestOriginal(paths.edentext, original), v3);
   } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('moving GridCraft moves craft-libs to the commit its Cargo.lock pins', async () => {
+  const { base, paths, rev } = await fixture();
+  try {
+    checkoutUpstream(paths, 'gridcraft', rev.gridcraft2);
+    assert.equal(upstreamHeads(paths)['craft-libs'], rev['craft-libs2']);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('moving GridCraft never overwrites ignored user files in craft-libs, and its changes stop the run', async () => {
+  const { base, paths, rev } = await fixture();
+  try {
+    await put(join(paths['craft-libs'], 'local/notes.txt'), 'USER DATA');
+    assert.throws(() => checkoutUpstream(paths, 'gridcraft', rev.gridcraft2));
+    assert.equal(await readFile(join(paths['craft-libs'], 'local/notes.txt'), 'utf8'), 'USER DATA');
+    assert.equal(upstreamHeads(paths)['craft-libs'], rev['craft-libs1']);
+    await put(join(paths['craft-libs'], 'file.txt'), 'edited');
+    assert.throws(() => assertUpstreamsClean(paths), /craft-libs has local changes/);
+    git(paths['craft-libs'], 'checkout', '--', 'file.txt');
+    await put(join(paths.gridcraft, 'new.txt'), 'untracked');
+    assert.throws(() => assertUpstreamsClean(paths), /gridcraft has local changes/);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('first sync restores craft-libs from its backup fork when the original craft-libs is gone', async () => {
+  const { base, rev } = await fixture();
+  try {
+    const { root, lock } = await freshProduct(base, rev);
+    await rename(join(base, 'remotes/craft-libs'), join(base, 'remotes/craft-libs-deleted'));
+    const paths = syncUpstreams(root, lock);
+    assert.equal(upstreamHeads(paths)['craft-libs'], rev['craft-libs1']);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('a Cargo.lock must pin the git dependency at exactly one commit', () => {
+  const a = 'a'.repeat(40), b = 'b'.repeat(40);
+  const line = (url, c) => `source = "git+${url}?rev=${c}#${c}"`;
+  assert.equal(cargoGitPin([line('https://github.com/o/craft-libs', a), line('https://github.com/o/other', b)].join('\n'), 'https://github.com/o/craft-libs.git'), a);
+  assert.throws(() => cargoGitPin([line('https://github.com/o/craft-libs', a), line('https://github.com/o/craft-libs', b)].join('\n'), 'https://github.com/o/craft-libs'), /several commits/);
+  assert.throws(() => cargoGitPin(line('https://github.com/o/other', a), 'https://github.com/o/craft-libs'), /nowhere/);
 });
