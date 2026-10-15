@@ -6,6 +6,7 @@
 - Node 24.21.0, Svelte 5, Vite 8. 새 의존성·upstream 업데이트는 lock과 회귀 검사로 검증한다.
 - `npm run dev`: 원본 검증/엔진 빌드 후 localhost. 원본 폴더에서 제품 서버를 실행하지 않는다.
 - `npm run verify`: 양쪽 타입 검사·저장 계약·실제 Chrome 회귀 검사. 배포 전 필수. OS 파일 선택기와 Word/한컴 재열기는 별도 수동 검사다.
+- Excel 보기 엔진(gridcraft)은 `prepare:engines`가 Trunk로 빌드한다. 도구는 lock에 고정된 판만 허용한다: Rust 1.99.0(`RUSTUP_TOOLCHAIN`으로만, 기본 stable은 바꾸지 않는다)·trunk 0.21.14·wasm-bindgen 0.2.129·wasm-opt 133. 입력이 같으면 재빌드를 생략한다. 계획·결과는 `docs/plans/2026-10-15-xlsx-view.md`.
 - `upstream:check`는 후보만 검증하고 이전 체크아웃으로 돌아온다. 실패를 무시하거나 패치 검사 조건을 느슨하게 만들어 통과시키지 않는다. `upstream:promote`는 검사 당시 소스 해시가 맞을 때만 버전 lock을 바꾼다.
 - 어떤 실행도 사용자 편집 파일, upstream 수정 파일, 백업을 덮어쓰거나 삭제하지 않는다.
 - 공개 저장소 `HWJskt/sketch-docs`(public). push하면 바로 공개된다. 원본 코드·`backups/`·비밀값은 올리지 않는다. push는 명시 요청 때만 한다.
