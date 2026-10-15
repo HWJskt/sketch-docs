@@ -875,8 +875,8 @@
   "basis": "일반"
  },
  {
-  "en": "Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team.",
-  "ko": "Sketch Docs용 수정판(보기 전용). ArtCraft 팀의 GridCraft를 바탕으로 합니다.",
+  "en": "Modified for Sketch Docs. Based on GridCraft by the ArtCraft team.",
+  "ko": "Sketch Docs용 수정판. ArtCraft 팀의 GridCraft를 바탕으로 합니다.",
   "basis": "일반(브랜드 조건: 평문 출처)"
  },
  {
@@ -1268,5 +1268,50 @@
   "en": "Gradebook",
   "ko": "성적표",
   "basis": "일반"
+ },
+ {
+  "en": "Format Cells",
+  "ko": "셀 서식",
+  "basis": "Excel"
+ },
+ {
+  "en": "Alignment",
+  "ko": "맞춤",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Border",
+  "ko": "테두리",
+  "basis": "Excel"
+ },
+ {
+  "en": "Font",
+  "ko": "글꼴",
+  "basis": "Excel"
+ },
+ {
+  "en": "Format Cells|Fill",
+  "ko": "채우기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Protection",
+  "ko": "보호",
+  "basis": "Excel"
+ },
+ {
+  "en": "Category:",
+  "ko": "범주:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Sample",
+  "ko": "보기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Type (custom format code):",
+  "ko": "형식(사용자 지정 서식 코드):",
+  "basis": "Excel"
  }
 ]

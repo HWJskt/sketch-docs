@@ -1,6 +1,6 @@
 // Measures what the Excel view still shows in English: builds GridCraft with scripts/xlsx-i18n-audit.patch
 // (every label asked for without a translation is logged once), puts it into a copy of dist/, and opens
-// the screens a view-only user reaches. Writes .cache/i18n-audit/report.json and screenshots in shots/.
+// the screens an editing user reaches (the product opens the engine with &mode=edit). Writes .cache/i18n-audit/report.json and screenshots in shots/.
 // Needs a built dist/ (npm run build). Usage: node scripts/xlsx-i18n-audit.mjs
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -26,12 +26,12 @@ await rm(shots, { recursive: true, force: true });
 await mkdir(shots);
 
 const harness = `<!doctype html><meta charset="utf-8"><style>body{margin:0}iframe{width:1280px;height:860px;border:0}</style>
-<iframe id="engine" src="./engines/gridcraft/index.html?host=sketch"></iframe>
+<iframe id="engine" src="./engines/gridcraft/index.html?host=sketch&mode=edit"></iframe>
 <script>
   const frame = document.getElementById('engine');
   window.messages = [];
   addEventListener('message', event => { if (event.source === frame.contentWindow) messages.push(event.data); });
-  window.send = (id, name, bytes) => { const b = new Uint8Array(bytes).buffer; frame.contentWindow.postMessage({ type: 'sketch-xlsx:open', protocol: 1, requestId: id, epoch: id, name, bytes: b }, location.origin, [b]); };
+  window.send = (id, name, bytes) => { const b = new Uint8Array(bytes).buffer; frame.contentWindow.postMessage({ type: 'sketch-xlsx:open', protocol: 2, requestId: id, epoch: id, name, bytes: b }, location.origin, [b]); };
 </script>`;
 
 let server, browser;
@@ -82,9 +82,13 @@ try {
   await shot('31-go-to');
   await escape();
   await engine.click({ position: { x: 104, y: 240 } });
-  await page.keyboard.type('5');
+  await page.keyboard.type('5', { delay: 50 });
   await page.keyboard.press('Enter');
-  await shot('40-refusal');
+  await shot('40-edited');
+  await escape();
+  await engine.click({ position: { x: 104, y: 240 } });
+  await page.keyboard.press('ControlOrMeta+1');
+  await shot('41-format-cells');
   await escape();
   await open(2, '굵게.xlsx', boldWorkbook());
   await shot('50-bold');

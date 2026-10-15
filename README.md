@@ -1,24 +1,25 @@
 # Sketch Docs
 
-브라우저에서 Word(DOCX·ODT)와 한글(HWP·HWPX) 문서를 편집하고, PDF를 보며 주석을 다는 웹 편집기. 서버에 문서를 올리지 않는다. 파일은 브라우저의 로컬 파일 API로 열고 저장한다.
+브라우저에서 Word(DOCX·ODT)·한글(HWP·HWPX)·Excel(XLSX) 문서를 편집하고, PDF를 보며 주석을 다는 웹 편집기. 서버에 문서를 올리지 않는다. 파일은 브라우저의 로컬 파일 API로 열고 저장한다.
 
 - 서비스: <https://docs.sketchps.app>
 - 라이선스: [AGPL-3.0-only](LICENSE)
 
-*A browser editor for Word (DOCX/ODT) and Hangul (HWP/HWPX) documents, built on [EdenText](https://github.com/stffnb/edentext), [HOP](https://github.com/golbin/hop) and [rhwp](https://github.com/edwardkim/rhwp). This repository holds only our product code; the upstream projects are restored from pinned commits at build time.*
+*A browser editor for Word (DOCX/ODT), Hangul (HWP/HWPX) and Excel (XLSX) documents, built on [EdenText](https://github.com/stffnb/edentext), [HOP](https://github.com/golbin/hop), [rhwp](https://github.com/edwardkim/rhwp) and [GridCraft](https://github.com/storytold/gridcraft). This repository holds only our product code; the upstream projects are restored from pinned commits at build time.*
 
 ## 구성
 
-Sketch Docs는 오픈 소스 편집기 세 개를 하나의 화면으로 묶는다.
+Sketch Docs는 오픈 소스 편집기들을 하나의 화면으로 묶는다.
 
 | 구성요소 | 역할 | 라이선스 |
 |---|---|---|
 | [EdenText](https://github.com/stffnb/edentext) | Word 편집기 (DOCX/ODT) | AGPL-3.0-only |
 | [HOP](https://github.com/golbin/hop) | 한글 편집 호스트와 검증된 rhwp WASM | MIT |
 | [rhwp](https://github.com/edwardkim/rhwp) | 한글 문서 엔진과 웹 Studio | MIT |
+| [GridCraft](https://github.com/storytold/gridcraft) · [craft-libs](https://github.com/storytold/craft-libs) (보존 fork [gridcraft](https://github.com/HWJskt/gridcraft) · [craft-libs](https://github.com/HWJskt/craft-libs)) | Excel 편집 엔진(Rust → WASM, Trunk로 빌드) | MIT OR Apache-2.0 |
 | [svelte-pdf-mini](https://github.com/julien-blanchon/svelte-pdf-mini) 0.9.1 (npm, 정확한 버전 고정·패치 안 함) | PDF 보기·주석 부품, 주석 읽기·쓰기(pdf.js 6.4.299·@cantoo/pdf-lib 2.11.1) | MIT (pdf.js Apache-2.0) |
 
-**이 저장소에는 우리 코드만 있다.** 세 원본은 `upstreams.lock.json`에 고정한 커밋으로 `source/`에 내려받는다(Git에는 포함하지 않음). 빌드는 다음 순서로 진행한다.
+**이 저장소에는 우리 코드만 있다.** 원본들은 `upstreams.lock.json`에 고정한 커밋으로 `source/`에 내려받는다(Git에는 포함하지 않음). 빌드는 다음 순서로 진행한다.
 
 1. 원본의 고정 커밋을 `.cache/build/`로 복사한다.
 2. 우리 변경(`overlays/`)을 그 복사본에만 적용한다. 원본 클론은 수정하지 않는다.
@@ -33,6 +34,8 @@ Sketch Docs는 오픈 소스 편집기 세 개를 하나의 화면으로 묶는�
 | `scripts/pdf-assets.mjs`, `scripts/pdf-manifest.mjs` | pdf.js 자산을 `pdfjs/<버전>/`에 배치, PDF 엔진 파일 목록 |
 | `scripts/make-pdf-fixtures.mjs`, `tests/fixtures/pdf/` | 시험용 PDF 7종(의존성 없이 생성, `--check`로 재현 비교) |
 | `overlays/edentext/` | EdenText 변경: 한국어 기본값·번역, 저장 메뉴, 셸 연결 |
+| `src/XlsxViewer.svelte`, `src/xlsxBridge.ts`, `src/xlsx/` | Excel: 엔진 프레임과의 브리지, 저장(다른 이름·원본·내보내기), 원본 저장 전 손실 판정(`compare.ts`·`losses.ts`·worker), 엔진 경고 한국어(`engineWarnings.ts`), 편집 중 복구 사본(`drafts.ts`) |
+| `overlays/gridcraft/` | GridCraft 변경: 브랜드, 한국어 글꼴·번역(`ko-sketch.json`), 셸 브리지·명령 처리표(`sketch-bridge.patch`) |
 | `overlays/rhwp/` | rhwp Studio 변경: 호스트 연결(열기·저장·인쇄·변경 상태), 파일 메뉴 스타일 |
 | `scripts/build-engines.mjs` | 원본 검증, 복사본에 변경 적용, 엔진 빌드 |
 | `scripts/upstreams.mjs` | 원본 내려받기·업데이트 후보 검사·채택 |
@@ -43,7 +46,7 @@ Sketch Docs는 오픈 소스 편집기 세 개를 하나의 화면으로 묶는�
 
 ## 실행
 
-필요한 것: Node.js 24.21.0, npm, Git, 데스크톱 Chrome(시험용).
+필요한 것: Node.js 24.21.0, npm, Git, 데스크톱 Chrome(시험용). Excel 엔진 빌드에는 Rust 1.99.0(`RUSTUP_TOOLCHAIN`으로만 고른다 — 기본 stable은 바꾸지 않는다)·trunk 0.21.14·wasm-bindgen 0.2.129·wasm-opt 133이 필요하다. 입력이 같으면 다시 빌드하지 않는다.
 
 ```sh
 git clone https://github.com/HWJskt/sketch-docs.git
@@ -58,10 +61,17 @@ npm run dev                # 엔진 빌드 후 http://localhost:5173
 - `/`: 문서 형식 선택(DOCX·HWPX). 이 화면에 있는 동안 마지막으로 쓴 편집기부터 엔진을 미리 받는다(데이터 절약 모드·2G 제외). 카드를 누르면 페이지를 다시 읽지 않고 같은 화면에서 편집기를 띄워 받던 파일을 이어 쓴다.
 - `/word.html`: Word 편집기. 새 문서는 DOCX로 저장한다.
 - `/hwp.html`: 한글 편집기. 파일 메뉴에서 새 문서·열기·저장·다른 이름으로 저장(.hwpx/.hwp)·인쇄를 할 수 있다.
+- `/xlsx.html`: Excel 편집기(XLSX만).
 
-공통 헤더의 W·한·PDF 버튼은 세 편집기의 작성 중 문서와 저장 대상을 각각 유지한 채 전환한다.
+공통 헤더의 W·한·PDF·X 버튼은 세 편집기의 작성 중 문서와 저장 대상을 각각 유지한 채 전환한다.
 
 PDF 편집기는 형광펜·밑줄·취소선·메모·펜·사각형 주석을 표준 PDF 주석으로 저장한다. 열린 파일에 저장(Ctrl+S)하기 전에 저장본을 다시 읽어 원본과 비교하고(보존 검사), 그 세션에서 처음 덮어쓸 때 원본을 브라우저 저장소에 보관한다("저장 전 원본 복원"). 서명된 PDF와 암호 PDF는 열어서 주석을 달 수 있지만 저장하지 않는다. 형식 변환은 하지 않는다. 파일 열기·저장은 File System Access API를 지원하는 데스크톱 Chrome·Edge에서 동작한다.
+
+Excel 편집기는 GridCraft 엔진을 프레임에 띄우고, 파일은 셸이 연다·저장한다(엔진은 파일을 직접 읽거나 쓰지 않는다).
+- **다른 이름으로 저장**·CSV·PDF 내보내기: 새 파일. 내용 검사를 끝낸 뒤 저장 위치를 고른다.
+- **원본에 저장**(저장·Ctrl+S): 엔진이 다시 쓰면서 빠지거나 바뀌는 요소(셀 안 부분 서식·만든 날짜·조건부 서식 규칙 등, [실측](docs/xlsx-roundtrip-losses.md))를 열 때 재 두었다가 저장 전에 보여 주고 확인을 받는다. 덮어쓰기 전 원본을 브라우저 저장소에 보관하고, "보관한 원본"에서 되돌릴 수 있다. 다른 곳에서 바뀐 파일에는 쓰지 않는다.
+- **복구 사본**: 저장하지 않은 변경이 있으면 30초 동안 입력이 없을 때 브라우저 저장소에 사본을 둔다. 탭을 닫았다가 같은 파일을 다시 열면 복구를 제안한다(다른 탭이 편집 중인 사본은 제안하지 않는다). 저장하거나 변경이 없어지면 지운다. 자동 저장(원본에 자동으로 쓰기)은 없다.
+- 같은 파일을 연 다른 탭이 있으면 알린다. 암호 통합 문서·XLS·그림 삽입·데이터 가져오기는 지원하지 않는다.
 
 ## 빌드와 검증
 

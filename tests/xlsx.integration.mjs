@@ -307,7 +307,7 @@ try {
     }
   }
   await product.setViewportSize({ width: 1280, height: 900 });
-  const view = product.locator('iframe[title="Excel 보기"]');
+  const view = product.locator('iframe[title="Excel 편집기"]');
   const productCell = async address => {
     for (let attempt = 0; attempt < 2; attempt++) {
       await product.keyboard.press('Escape');
@@ -491,7 +491,7 @@ try {
     const typeIn = async (tab, address, text) => {
       const column = address.charCodeAt(0) - 65, row = Number(address.slice(1)) - 1;
       await tab.keyboard.press('Escape');
-      await tab.locator('iframe[title="Excel 보기"]').click({ position: { x: 54 + 51 * column, y: 223 + 16.3 * row } });
+      await tab.locator('iframe[title="Excel 편집기"]').click({ position: { x: 54 + 51 * column, y: 223 + 16.3 * row } });
       await tab.keyboard.type(text, { delay: 50 });
       await tab.keyboard.press('Enter');
       await tab.waitForFunction(() => { const s = window.messages.filter(m => m.type === 'sketch-xlsx:state').at(-1); return s && s.dirty && !s.editing; }, null, { timeout: 30000 });
@@ -534,7 +534,7 @@ try {
     assert.equal(await offered(second).count(), 0);
     const restoredShot = await second.evaluate(() => new Promise(done => {
       // The shown workbook, read the way the harness does (a snapshot let go at once).
-      const frame = document.querySelector('iframe[title="Excel 보기"]').contentWindow;
+      const frame = document.querySelector('iframe[title="Excel 편집기"]').contentWindow;
       const listen = event => { if (event.data?.type !== 'sketch-xlsx:snapshot' || event.data.requestId !== 7001) return; removeEventListener('message', listen); frame.postMessage({ type: 'sketch-xlsx:discard', protocol: 2, requestId: 7001 }, location.origin); done([...new Uint8Array(event.data.bytes)]); };
       addEventListener('message', listen);
       frame.postMessage({ type: 'sketch-xlsx:snapshot', protocol: 2, requestId: 7001, epoch: window.messages.filter(m => m.type === 'sketch-xlsx:opened').at(-1).epoch }, location.origin);

@@ -11,7 +11,7 @@ index fb899c7..a0c7aee 100644
 -            ui.hyperlink_to("Join the ArtCraft Discord", "https://discord.gg/artcraft");
 +            // Sketch Docs: a modified version must drop the ArtCraft marks (docs/brand/LICENSE-brand.txt);
 +            // a plain-text statement of the origin is allowed.
-+            ui.label("Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team.");
++            ui.label("Modified for Sketch Docs. Based on GridCraft by the ArtCraft team.");
 +            ui.hyperlink_to("GridCraft source code", "https://github.com/storytold/gridcraft");
          }
      }

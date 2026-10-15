@@ -193,7 +193,7 @@
 | Start a new workbook | 새 통합 문서 시작 | 한국어 Excel 관례 |
 | GridCraft | GridCraft | 고유명사 |
 | GridCraft source code | GridCraft 소스 코드 | 일반 번역(Word·Excel에 같은 메뉴 없음) |
-| Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team. | Sketch Docs용 수정판(보기 전용). ArtCraft 팀의 GridCraft를 바탕으로 합니다. | 일반(브랜드 조건: 평문 출처) |
+| Modified for Sketch Docs. Based on GridCraft by the ArtCraft team. | Sketch Docs용 수정판. ArtCraft 팀의 GridCraft를 바탕으로 합니다. | 일반(브랜드 조건: 평문 출처) |
 | No contributor data was built into this copy. | 이 빌드에는 기여자 정보가 들어 있지 않습니다. | 일반 번역(Word·Excel에 같은 메뉴 없음) |
 | No model credits were built into this copy. | 이 빌드에는 AI 모델 정보가 들어 있지 않습니다. | 일반 번역(Word·Excel에 같은 메뉴 없음) |
 | Grab bag | 모아 보기 | 일반 번역(Word·Excel에 같은 메뉴 없음) |
@@ -275,3 +275,16 @@
 
 ⏎는 줄바꿈(리본 두 줄 이름)이다.
 
+## 편집 모드에서 더한 것 (2026-10-15, 단계 4 감사 — 셀 서식 창)
+
+| 영어 | 한국어 | 근거 |
+|---|---|---|
+| Format Cells | 셀 서식 | Excel |
+| Alignment | 맞춤 | Excel (결정 B) |
+| Border | 테두리 | Excel |
+| Font | 글꼴 | Excel |
+| Format Cells\|Fill | 채우기 | Excel |
+| Protection | 보호 | Excel |
+| Category: | 범주: | Excel |
+| Sample | 보기 | Excel |
+| Type (custom format code): | 형식(사용자 지정 서식 코드): | Excel |

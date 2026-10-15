@@ -810,11 +810,50 @@ index ae499a1..d501fb5 100644
 +        assert!(["open", "save", "saveAs", "exportCsv", "exportPdf"].contains(action), "{action}");
 +    }
 +}
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index 242ce19..41f11bd 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -967,12 +967,7 @@ fn options(app: &mut SheetApp, ui: &mut Ui) {
+     if ui.checkbox(&mut autocomplete, lang.tr("Enable AutoComplete for cell values")).changed() {
+         app.run_or_alert("options.autoComplete", json!({"on": autocomplete}));
+     }
+-    ui.add_space(18.0);
+-    section(ui, lang, "Options|Save");
+-    let mut autosave = app.grid.autosave();
+-    if ui.checkbox(&mut autosave, lang.tr("Save .xlsx workbooks automatically after every change")).changed() {
+-        app.grid.toggle_autosave();
+-    }
++    // Sketch Docs: no "save automatically" option (decision Q5; the shell saves).
+     let Some(calc) = app.session.active().map(|d| d.wb.calc.clone()) else { return };
+     ui.add_space(18.0);
+     section(ui, lang, "Formulas");
 diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
-index a8e8cb5..9de7875 100644
+index a8e8cb5..de66f8a 100644
 --- a/crates/ui-egui/src/ribbon.rs
 +++ b/crates/ui-egui/src/ribbon.rs
-@@ -1889,7 +1889,9 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
+@@ -51,18 +51,8 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+         }
+         ui.horizontal_centered(|ui| {
+             ui.add_space(TITLE_LEFT_PAD);
+-            // AutoSave toggle (saves after each change when the workbook has a file).
+-            ui.label(egui::RichText::new(crate::i18n::t("AutoSave")).font(theme::ui_font(12.5)).color(t.text_dim));
+-            let on = app.grid.autosave();
+-            let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
+-            ui.painter().rect_filled(r, 8.0, if on { t.accent } else { Color32::TRANSPARENT });
+-            ui.painter().rect_stroke(r, 8.0, Stroke::new(1.0, if on { t.accent } else { t.text_dim }), StrokeKind::Inside);
+-            let knob = if on { pos2(r.right() - 8.0, r.center().y) } else { pos2(r.left() + 8.0, r.center().y) };
+-            ui.painter().circle_filled(knob, 5.0, if on { Color32::WHITE } else { t.text_dim });
+-            if resp.on_hover_text(crate::i18n::t("AutoSave: save after every change (workbooks saved to a file)")).clicked() {
+-                app.grid.toggle_autosave();
+-            }
+-            ui.add_space(6.0);
++            // Sketch Docs: no AutoSave toggle. The page never writes a file (the shell saves, after its checks),
++            // so the engine's AutoSave could not run here (decision Q5).
+             let __k = icon_button(ui, Icon::Home, t.text_dim, "Home", vec2(26.0, ch));
+             control_keytip(app, ui, &__k, "start");
+             if __k.clicked() {
+@@ -1889,7 +1879,9 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
      let gd = big_button(ui, Icon::Folder, "Get Data\n(Text/CSV)", "Import a text or CSV file", false);
      control_keytip(app, ui, &gd, "data.getData");
      if gd.clicked() {

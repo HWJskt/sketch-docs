@@ -196,7 +196,7 @@ try {
     await xlsxShown(page);
     await page.reload();
     await xlsxShown(page);
-    assert.equal(await page.title(), 'Excel 보기 · Sketch Docs');
+    assert.equal(await page.title(), 'Excel 문서 · Sketch Docs');
     await page.getByRole('button', { name: 'PDF', exact: true }).click();
     await page.waitForURL(url => /^\/pdf(?:\.html)?$/.test(new URL(url).pathname));
     await page.goBack();

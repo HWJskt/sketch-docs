@@ -66,7 +66,7 @@
         onRequest: request => { void requested(request); },
     });
     const blockedText: Record<Blocked, string> = {
-        edit: '보기 전용입니다. 이 화면에서는 내용을 바꿀 수 없습니다.',
+        edit: '이 내용은 여기서 바꿀 수 없습니다.',
         save: '저장은 위쪽 막대의 "저장"·"다른 이름으로 저장"을 쓰세요.',
         print: '인쇄할 수 없습니다.',
         drop: '파일을 열려면 "Excel 열기"를 누르세요.',
@@ -486,7 +486,7 @@
             <button type="button" onclick={discardDraft} disabled={opening}>버리기</button>
         </p>
     {/if}
-    <iframe bind:this={frame} title="Excel 보기" src="./engines/gridcraft/index.html?host=sketch&mode=edit" allow="clipboard-write"></iframe>
+    <iframe bind:this={frame} title="Excel 편집기" src="./engines/gridcraft/index.html?host=sketch&mode=edit" allow="clipboard-write"></iframe>
 </section>
 
 <style>

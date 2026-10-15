@@ -46,3 +46,14 @@ test('only display literals in widget calls are wrapped for translation', async 
   assert.equal(wrap('let x = "Not a widget";'), 'let x = "Not a widget";');
   assert.equal(wrap('ui.label(egui::RichText::new("Recent").strong());'), 'ui.label(egui::RichText::new(crate::i18n::t("Recent")).strong());');
 });
+
+// Decision Q5: the engine's AutoSave toggle (title bar) and "save automatically" option (backstage) are gone;
+// the page never writes a file. The overlay removes the only two places that turn AutoSave on.
+test('the overlay removes both AutoSave switches and nothing else turns it on', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const patch = await readFile(new URL('../overlays/gridcraft/sketch-bridge.patch', import.meta.url), 'utf8');
+  const removed = [...patch.matchAll(/^-\s*app\.grid\.toggle_autosave\(\);$/gm)].length;
+  const added = [...patch.matchAll(/^\+.*autosave/gim)].filter(m => !/^\+\s*\/\//.test(m[0])).length;
+  assert.equal(removed, 2, 'the title-bar toggle and the backstage option');
+  assert.equal(added, 0, 'no new code touches AutoSave');
+});
