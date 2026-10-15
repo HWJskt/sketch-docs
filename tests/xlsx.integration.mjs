@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { brokenWorkbook, koreanWorkbook, otherWorkbook } from './xlsx-fixtures.mjs';
 import { saveFailureEvidence } from './failure-evidence.mjs';
 import { strFromU8, unzipSync } from 'fflate';
+import { readFile } from 'node:fs/promises';
 
 const root = resolve(import.meta.dirname, '..');
 const origin = 'http://localhost:4179';
@@ -420,7 +421,8 @@ try {
   await product.getByRole('status').filter({ hasText: '내보냈습니다: 표.pdf' }).waitFor();
   assert.deepEqual((await fileBytes('표.pdf')).slice(0, 5), [...new TextEncoder().encode('%PDF-')]);
   await stillUnsaved('an export is not a save');
-  // Save As onto the opened file: its original goes back (kept in OPFS first), and the changes stay unsaved.
+  // Save As onto the opened file, cancelled at the warning: its original goes back (kept in OPFS first), and the
+  // changes stay unsaved.
   await pick('매출.xlsx', koreanWorkbook());
   await product.locator('.xlsx-viewer .name').filter({ hasText: '매출.xlsx' }).waitFor();
   await productCell('B2');
@@ -431,6 +433,7 @@ try {
   const reopened = await fileBytes('매출.xlsx');
   await savePicker('매출.xlsx');
   await click('다른 이름으로 저장');
+  await product.getByRole('dialog', { name: '원본 파일에 저장' }).getByRole('button', { name: '취소' }).click();
   await product.getByRole('alert').filter({ hasText: '원래 내용으로 되돌렸습니다' }).waitFor();
   assert.deepEqual(await fileBytes('매출.xlsx'), reopened, 'the opened file holds its original again');
   assert.equal(await recoveryCount(), kept + 1, 'the original was kept before being written back');
@@ -567,6 +570,101 @@ try {
     await fourth.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor({ state: 'detached' });
     await waitDrafts(fourth, 0, 'a clean workbook leaves no copy');
     await fourth.close();
+
+    // Saving over the opened file (stage 2, decision Q2 ②): the warning names what goes with the measured names;
+    // Cancel writes nothing; Save keeps the original in OPFS first, then writes; a kept original goes back; a file
+    // changed elsewhere, a copy that cannot be kept and a second tab's save are refused.
+    const styled = [...await readFile(resolve(root, 'tests/fixtures/xlsx-roundtrip/03-styles.xlsx'))];
+    const putFile = (tab, name, bytes) => tab.evaluate(async ([n, b]) => { const h = await (await navigator.storage.getDirectory()).getFileHandle(n, { create: true }); const w = await h.createWritable(); await w.write(new Uint8Array(b)); await w.close(); }, [name, bytes]);
+    const fileOf = (tab, name) => tab.evaluate(async n => [...new Uint8Array(await (await (await (await navigator.storage.getDirectory()).getFileHandle(n)).getFile()).arrayBuffer())], name);
+    const kept = tab => tab.evaluate(async () => { const out = []; for await (const [file, entry] of await (await navigator.storage.getDirectory()).getDirectoryHandle('sketch-docs-xlsx-recovery', { create: true })) out.push([file, [...new Uint8Array(await (await entry.getFile()).arrayBuffer())]]); return out.sort(); });
+    const openFile = async (tab, name) => {
+      await tab.evaluate(async n => { const h = await (await navigator.storage.getDirectory()).getFileHandle(n); window.showOpenFilePicker = async () => [h]; }, name);
+      await tab.getByRole('button', { name: 'Excel 열기' }).click();
+      await tab.locator('.xlsx-viewer[data-sheets="1"] .name').filter({ hasText: name }).waitFor();
+    };
+    const warning = tab => tab.getByRole('dialog', { name: '원본 파일에 저장' });
+    const answer = async (tab, label) => { await warning(tab).waitFor(); await warning(tab).getByRole('button', { name: label }).click(); };
+    const unsavedIn = tab => tab.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' });
+    const saveIn = tab => tab.getByRole('button', { name: '저장', exact: true }).click();
+    const overwrite = await openTab();
+    await putFile(overwrite, '서식.xlsx', styled);
+    await openFile(overwrite, '서식.xlsx');
+    await typeIn(overwrite, 'C2', '42');
+    const keptBefore = await kept(overwrite);
+    // The warning lists what fixture 03 measurably loses (docs/xlsx-roundtrip-losses.md): the rich text in A7 and
+    // the creation date. Cancel: nothing written or kept, still unsaved.
+    await saveIn(overwrite);
+    await warning(overwrite).waitFor();
+    assert.deepEqual(await warning(overwrite).locator('li').allTextContents(), ['셀 안 부분 서식 1곳', '만든 날짜']);
+    await warning(overwrite).getByText('행·열 삽입·삭제나 시트 변경을 했다면 다른 시트·연결된 내용의 셀 참조가 어긋날 수 있습니다.').waitFor();
+    await overwrite.screenshot({ path: resolve(root, 'artifacts/xlsx-overwrite-warning.png') });
+    await answer(overwrite, '취소');
+    await overwrite.getByRole('status').filter({ hasText: '저장하지 않았습니다.' }).waitFor();
+    assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled, 'a cancelled warning writes nothing');
+    assert.deepEqual(await kept(overwrite), keptBefore, 'a cancelled warning keeps nothing');
+    await unsavedIn(overwrite).waitFor();
+    // Write permission refused: nothing asked, nothing written.
+    await overwrite.evaluate(() => { FileSystemFileHandle.prototype.requestPermission = async () => 'denied'; });
+    await saveIn(overwrite);
+    await overwrite.getByRole('alert').filter({ hasText: '쓸 권한이 없어' }).waitFor();
+    await overwrite.evaluate(() => { delete FileSystemFileHandle.prototype.requestPermission; });
+    assert.equal(await warning(overwrite).count(), 0);
+    assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled);
+    // The original cannot be kept (the copies' folder is a file): nothing is written.
+    await overwrite.evaluate(async () => { const root = await navigator.storage.getDirectory(); await root.removeEntry('sketch-docs-xlsx-recovery', { recursive: true }).catch(() => {}); await root.getFileHandle('sketch-docs-xlsx-recovery', { create: true }); });
+    await saveIn(overwrite);
+    await answer(overwrite, '그래도 저장');
+    await overwrite.getByRole('alert').filter({ hasText: '저장하지 못했습니다.' }).waitFor();
+    assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled, 'no copy, no write');
+    await unsavedIn(overwrite).waitFor();
+    await overwrite.evaluate(async () => (await navigator.storage.getDirectory()).removeEntry('sketch-docs-xlsx-recovery'));
+    // Saved over: the original is kept, byte for byte, and the file holds the edit.
+    await saveIn(overwrite);
+    await answer(overwrite, '그래도 저장');
+    await overwrite.getByRole('status').filter({ hasText: '저장했습니다: 서식.xlsx' }).waitFor();
+    await unsavedIn(overwrite).waitFor({ state: 'detached' });
+    assert.equal(cellsOf(await fileOf(overwrite, '서식.xlsx')).C2, '42');
+    const keptOnce = await kept(overwrite);
+    assert.deepEqual(keptOnce.map(([, bytes]) => bytes), [styled], 'the original was kept before it was overwritten');
+    // The next save goes straight in (the file is now what this editor wrote); no second copy.
+    await typeIn(overwrite, 'C3', '43');
+    await saveIn(overwrite);
+    await unsavedIn(overwrite).waitFor({ state: 'detached' });
+    assert.equal(cellsOf(await fileOf(overwrite, '서식.xlsx')).C3, '43');
+    assert.deepEqual(await kept(overwrite), keptOnce);
+    // The kept original goes back over the file, which opens again.
+    await overwrite.evaluate(async () => { const h = await (await navigator.storage.getDirectory()).getFileHandle('서식.xlsx'); window.showSaveFilePicker = async () => h; });
+    await overwrite.getByRole('button', { name: '보관한 원본' }).click();
+    await overwrite.getByRole('region', { name: '보관한 원본' }).getByRole('button', { name: /^서식\.xlsx · / }).click();
+    await overwrite.getByRole('status').filter({ hasText: '저장 전 원본으로 되돌리고 다시 열었습니다' }).waitFor();
+    assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), styled, 'the kept original is back byte for byte');
+    // Changed elsewhere after opening: refused after the warning, the file keeps the other program's bytes, nothing kept.
+    await typeIn(overwrite, 'C2', '44');
+    await putFile(overwrite, '서식.xlsx', [1, 2, 3]);
+    await saveIn(overwrite);
+    await answer(overwrite, '그래도 저장');
+    await overwrite.getByRole('alert').filter({ hasText: '외부에서 변경되었습니다' }).waitFor();
+    assert.deepEqual(await fileOf(overwrite, '서식.xlsx'), [1, 2, 3], 'a file changed elsewhere is not overwritten');
+    assert.deepEqual(await kept(overwrite), keptOnce, 'nothing kept for a refused save');
+    await unsavedIn(overwrite).waitFor();
+    await overwrite.close();
+    // Two tabs save over the same file: the first is written, the second is refused.
+    const left = await openTab(), right = await openTab();
+    await putFile(left, '동시.xlsx', styled);
+    await openFile(left, '동시.xlsx');
+    await openFile(right, '동시.xlsx');
+    await typeIn(left, 'C2', '1');
+    await typeIn(right, 'C2', '2');
+    await saveIn(left);
+    await answer(left, '그래도 저장');
+    await left.getByRole('status').filter({ hasText: '저장했습니다: 동시.xlsx' }).waitFor();
+    await saveIn(right);
+    await answer(right, '그래도 저장');
+    await right.getByRole('alert').filter({ hasText: '외부에서 변경되었습니다' }).waitFor();
+    assert.equal(cellsOf(await fileOf(left, '동시.xlsx')).C2, '1', 'the second tab did not overwrite the first');
+    await left.close();
+    await right.close();
     assert.deepEqual(downloads, [], 'nothing was downloaded (recovery)');
     assert.deepEqual([...external], [], 'no request leaves this origin (recovery)');
     assert.deepEqual(errors, [], 'page errors (recovery)');

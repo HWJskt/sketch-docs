@@ -4,8 +4,9 @@
     // asks where to write (a save picker empties the file it is given); the file is written inside a lock shared
     // by every tab after checking it still holds what this editor last saw, and only after the write closed is
     // the snapshot reported as saved, so a failed or cancelled save leaves the changes unsaved. Saving over the
-    // file that was opened comes with stage 2 (the round-trip check and its warning): until then Save writes into
-    // a file this editor made with Save As, and a Save As onto the opened file puts its original back.
+    // file that was opened (Save, or Save As onto it) first shows what that loses (decision Q2 ②: the opened file
+    // against the engine's snapshot of it right after opening, checked off the main thread — xlsx/losses.ts), then
+    // keeps the original in the origin's private storage, then writes; the kept originals can be put back.
     // While there are unsaved changes, a copy of the workbook is kept in the origin's private storage after a
     // pause (xlsx/drafts.ts, plan §3.6); opening the same file again offers a copy no live tab holds, and tabs
     // showing the same file are told of each other.
@@ -15,6 +16,10 @@
     import { fingerprint, writeIfUnchanged, type PickerWindow } from './fileAccess';
     import { createRecoveryStore } from './pdf/recovery';
     import { createDraftStore, draftKey, holdLock, DRAFT_IDLE_MS, type Draft, type Release } from './xlsx/drafts';
+    import { createChecker, type CheckResult } from './xlsx/checker';
+    import { EDIT_NOTE, STRUCTURE_WARNING } from './xlsx/losses';
+    import { warningText } from './xlsx/engineWarnings';
+    import type { RecoveryCopy } from './pdf/recovery';
     import type { EditorStatus } from './editorState';
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
     const pickers = window as PickerWindow;
@@ -23,6 +28,7 @@
     const LOCK_NAME = 'sketch-docs-office-save';
     const lock = <T,>(work: () => Promise<T>): Promise<T> => (navigator.locks ? navigator.locks.request(LOCK_NAME, work) as Promise<T> : work());
     const recovery = createRecoveryStore(undefined, 'sketch-docs-xlsx-recovery');
+    const checker = createChecker();
     // Copies need the lock that keeps another tab's copy from being offered or removed.
     const drafts = navigator.locks && typeof navigator.storage?.getDirectory === 'function' ? createDraftStore() : null;
     const tab = crypto.randomUUID().slice(0, 8);
@@ -48,7 +54,7 @@
      * The file this editor stands for: as opened, or as last written by Save As (`ours`). `hash` is what the
      * file held then; a write checks the file still holds it.
      */
-    let base = $state.raw<{ name: string; bytes: Uint8Array; hash: string; handle?: FileSystemFileHandle; ours: boolean } | null>(null);
+    let base = $state.raw<{ name: string; bytes: Uint8Array; hash: string; handle?: FileSystemFileHandle; ours: boolean; check?: Promise<CheckResult> } | null>(null);
     const bridge = createXlsxBridge({
         target: () => frame?.contentWindow, origin: location.origin,
         onReady: engineVersion => { ready = true; version = engineVersion; },
@@ -87,6 +93,7 @@
             gone();
             channel?.close();
             clearTimeout(idle);
+            checker.dispose();
             offer?.release();
             own?.release();
         };
@@ -187,7 +194,7 @@
     const savedAt = (time: number) => new Date(time).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
     function show(result: OpenResult) {
-        if (result.ok) { error = ''; notice = result.warnings.length ? `일부 내용이 다르게 표시될 수 있습니다: ${result.warnings[0]}` : ''; }
+        if (result.ok) { error = ''; notice = result.warnings.length ? `일부 내용이 다르게 표시될 수 있습니다: ${warningText(result.warnings[0])}` : ''; }
         else if (result.code !== 'superseded') error = result.code === 'password' ? '암호가 걸린 통합 문서는 열 수 없습니다.' : `파일을 열지 못했습니다. ${result.error}`;
     }
     const message = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
@@ -208,7 +215,7 @@
             const result = await bridge.open(fileName, bytes);
             show(result);
             if (result.ok) {
-                base = { name: fileName, bytes, hash: await hashOf(bytes), handle, ours: false };
+                base = { name: fileName, bytes, hash: await hashOf(bytes), handle, ours: false, check: judge(bytes, result.warnings) };
                 // The changes shown before are gone (asked first when unsaved), and with them this tab's copy.
                 restored = false;
                 void dropDraft();
@@ -290,8 +297,32 @@
     }
     // Saves and exports in this tab run one at a time.
     let queue: Promise<unknown> = Promise.resolve();
-    function serial(work: () => Promise<void>) { const run = queue.then(work); queue = run.catch(() => undefined); return run; }
-    function write(kind: Kind, target: () => Promise<{ handle: FileSystemFileHandle; hash: string } | null>) {
+    function serial<T>(work: () => Promise<T>): Promise<T> { const run = queue.then(work); queue = run.catch(() => undefined); return run; }
+
+    /**
+     * What saving over the opened file would lose: the engine's snapshot taken right after opening, compared
+     * with the file in a worker. Edits made before the snapshot was taken would show as differences too (more
+     * warning, not less).
+     */
+    function judge(original: Uint8Array, warnings: string[]): Promise<CheckResult> {
+        return serial(() => bridge.snapshot()).then(shot => {
+            if (!shot.ok) return { id: 0, ok: false, reason: shot.error };
+            bridge.discard(shot.id);
+            return checker.losses(original, shot.bytes, warnings);
+        });
+    }
+    /** The warning's lines for writing `bytes` over the opened file; empty when nothing would be lost. */
+    async function losses(opened: NonNullable<typeof base>, bytes: Uint8Array): Promise<string[]> {
+        const judged = await (opened.check ?? Promise.resolve<CheckResult>({ id: 0, ok: false, reason: '검사하지 않았습니다.' }));
+        if (!judged.ok) return [`열 때 검사를 끝내지 못해 무엇이 빠지는지 알 수 없습니다(${judged.reason}).`];
+        const now = await checker.structure(bytes);
+        if (!now.ok) return [...judged.lines, `시트 구조를 검사하지 못했습니다(${now.reason}).`];
+        return now.structure === judged.structure ? judged.lines : [...judged.lines, STRUCTURE_WARNING];
+    }
+    let ask = $state.raw<{ lines: string[]; answer: (yes: boolean) => void } | null>(null);
+    const confirmOverwrite = (lines: string[]) => new Promise<boolean>(resolve => { ask = { lines, answer: yes => { ask = null; resolve(yes); } }; });
+
+    function write(kind: Kind, target: () => Promise<{ handle: FileSystemFileHandle; hash: string; picked: boolean } | null>) {
         return serial(async () => {
             if (!canSave) { error = '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'; return; }
             saving = true; error = ''; notice = '';
@@ -305,17 +336,28 @@
                 const chosen = await target();
                 if (!chosen) return;
                 const opened = base;
-                if (opened?.handle && !opened.ours && await opened.handle.isSameEntry(chosen.handle)) {
-                    // The opened file was chosen and the picker has emptied it: its original goes back (kept in
-                    // the origin's private storage first). Saving over it comes with stage 2's check and warning.
+                if (kind === 'xlsx' && opened?.handle && !opened.ours && await opened.handle.isSameEntry(chosen.handle)) {
+                    // Over the opened file: what goes is shown first.
+                    const lines = await losses(opened, made.bytes);
+                    if (lines.length && !await confirmOverwrite(lines)) {
+                        if (chosen.picked) {
+                            // The save picker has emptied the file: its original goes back (kept first as well).
+                            await lock(async () => {
+                                await recovery.keep(opened.name, opened.bytes, opened.hash);
+                                await writeIfUnchanged(chosen.handle, new Uint8Array(opened.bytes), chosen.hash);
+                            });
+                            error = '저장하지 않았습니다. 고른 파일은 원래 내용으로 되돌렸습니다.';
+                        } else notice = '저장하지 않았습니다.';
+                        return;
+                    }
+                    // The original is kept before it is overwritten, and only if the file still holds what was
+                    // seen; a copy that fails stops the save.
                     await lock(async () => {
+                        if (await fingerprint(await chosen.handle.getFile()) !== chosen.hash) throw new Error('파일이 외부에서 변경되었습니다. 다른 이름으로 저장하세요.');
                         await recovery.keep(opened.name, opened.bytes, opened.hash);
-                        await writeIfUnchanged(chosen.handle, new Uint8Array(opened.bytes), chosen.hash);
+                        await writeIfUnchanged(chosen.handle, new Uint8Array(made.bytes), chosen.hash);
                     });
-                    error = '열었던 파일에는 아직 저장할 수 없어 원래 내용으로 되돌렸습니다. 다른 이름을 고르세요.';
-                    return;
-                }
-                await lock(() => writeIfUnchanged(chosen.handle, new Uint8Array(made.bytes), chosen.hash));
+                } else await lock(() => writeIfUnchanged(chosen.handle, new Uint8Array(made.bytes), chosen.hash));
                 if (snapshot) {
                     settled = true;
                     bridge.saved(snapshot.id, snapshot.docUid, chosen.handle.name);
@@ -336,20 +378,56 @@
     }
     const pickTarget = (kind: Kind) => async () => {
         const handle = await chooseSaveFile(`${stem()}.${kind}`, kind);
-        return handle ? { handle, hash: await fingerprint(await handle.getFile()) } : null;
+        return handle ? { handle, hash: await fingerprint(await handle.getFile()), picked: true } : null;
     };
     function saveAs() { return write('xlsx', pickTarget('xlsx')); }
     function exportAs(kind: 'csv' | 'pdf') { return write(kind, pickTarget(kind)); }
-    /** Into the file this editor saved last; the opened file itself waits for stage 2. */
+    /** Into the file shown: the opened one (after the warning) or the one this editor saved last. */
     async function save() {
         const current = base;
-        if (!current?.handle || !current.ours || !canSave) return saveAs();
+        if (!current?.handle || !canSave) return saveAs();
         const handle = current.handle;
         // Write permission is asked while the click still counts as a user action, before the snapshot.
         const permitted = await (handle as FileSystemFileHandle & { requestPermission?: (options: { mode: string }) => Promise<string> }).requestPermission?.({ mode: 'readwrite' }).catch(() => 'denied');
         if (permitted !== undefined && permitted !== 'granted') { error = '파일에 쓸 권한이 없어 저장하지 않았습니다. 다른 이름으로 저장하세요.'; return; }
-        return write('xlsx', async () => ({ handle, hash: base?.hash ?? current.hash }));
+        return write('xlsx', async () => ({ handle, hash: base?.hash ?? current.hash, picked: false }));
     }
+
+    // "보관한 원본": an original kept before it was overwritten is written to a file the user chooses.
+    let copies = $state.raw<RecoveryCopy[] | null>(null);
+    async function showCopies() {
+        if (copies) { copies = null; return; }
+        try { copies = await recovery.list(); }
+        catch (reason) { error = `보관한 원본을 읽지 못했습니다. ${message(reason)}`; }
+    }
+    function restoreCopy(copy: RecoveryCopy) {
+        return serial(async () => {
+            error = ''; notice = ''; saving = true;
+            try {
+                // Read first: the picker empties the file it returns.
+                const bytes = new Uint8Array(await (await recovery.read(copy.file)).arrayBuffer());
+                const handle = await chooseSaveFile(copy.name.replace(/\.xlsx$/i, '') + ' (저장 전 원본).xlsx', 'xlsx');
+                if (!handle) return;
+                await lock(async () => {
+                    const stream = await handle.createWritable();
+                    try { await stream.write(bytes); await stream.close(); }
+                    catch (reason) { await stream.abort().catch(() => undefined); throw reason; }
+                });
+                copies = null;
+                notice = `${copy.name}의 저장 전 원본을 ${handle.name}(으)로 저장했습니다.`;
+                // Put back over the file shown: show what it holds now, unless unsaved changes are to stay.
+                if (base?.handle && await base.handle.isSameEntry(handle)) {
+                    if (unsaved() && !confirm('열린 파일을 저장 전 원본으로 되돌렸습니다. 지금 화면의 저장하지 않은 변경을 버리고 다시 열까요?')) return;
+                    saving = false;
+                    await loadFile(await handle.getFile(), handle);
+                    notice = `${handle.name}을(를) 저장 전 원본으로 되돌리고 다시 열었습니다.`;
+                }
+            } catch (reason) {
+                error = `원본을 복원하지 못했습니다. ${message(reason)}`;
+            } finally { saving = false; }
+        });
+    }
+    const when = (time: number) => new Date(time).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     function shortcut(event: KeyboardEvent) {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
         // Only while the Excel editor is the one shown (the shell hides the others); inside the engine frame the
@@ -368,6 +446,7 @@
         <button type="button" onclick={saveAs} disabled={!ready || !base || saving || !canSave}>다른 이름으로 저장</button>
         <button type="button" onclick={() => exportAs('csv')} disabled={!ready || !base || saving || !canSave}>CSV로 내보내기</button>
         <button type="button" onclick={() => exportAs('pdf')} disabled={!ready || !base || saving || !canSave}>PDF로 내보내기</button>
+        <button type="button" onclick={showCopies} disabled={saving || !canSave} aria-expanded={!!copies}>보관한 원본</button>
         {#if name}<span class="name">{name}</span>{/if}
         {#if unsaved()}<span class="status">저장하지 않은 변경</span>{/if}
         {#if others.length}<span class="status others">이 파일이 다른 탭에서도 열려 있습니다.</span>{/if}
@@ -375,6 +454,30 @@
         {#if opening}<span class="status" role="status">여는 중…</span>{:else if saving}<span class="status" role="status">저장하는 중…</span>{:else if !ready && !error}<span class="status" role="status">Excel을 준비하는 중…</span>{:else if notice}<span class="status" role="status">{notice}</span>{/if}
         <input bind:this={input} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange={picked} />
     </header>
+    {#if copies}
+        <div class="copies" role="region" aria-label="보관한 원본">
+            {#if copies.length}
+                <p>이 브라우저가 덮어쓰기 전에 보관한 원본입니다. 고르면 저장할 파일을 고릅니다(원래 파일을 고르면 그 자리로 되돌립니다).</p>
+                <ul>{#each copies as copy (copy.file)}<li><button type="button" onclick={() => restoreCopy(copy)}>{copy.name} · {when(copy.savedAt)}</button></li>{/each}</ul>
+            {:else}
+                <p>보관한 원본이 없습니다. 열린 파일에 처음 저장할 때 원본을 보관합니다.</p>
+            {/if}
+        </div>
+    {/if}
+    {#if ask}
+        <div class="ask" role="dialog" aria-modal="true" aria-labelledby="xlsx-ask-title">
+            <div class="ask-box">
+                <h2 id="xlsx-ask-title">원본 파일에 저장</h2>
+                <p>{base?.name}에 저장하면 이 편집기가 파일을 다시 쓰면서 아래 내용이 빠지거나 바뀝니다. 저장하기 전에 원본을 이 브라우저에 보관하며, "보관한 원본"에서 되돌릴 수 있습니다.</p>
+                <ul>{#each ask.lines as line, i (i)}<li>{line}</li>{/each}</ul>
+                <p class="note">{EDIT_NOTE}</p>
+                <div class="ask-actions">
+                    <button type="button" onclick={() => ask?.answer(false)}>취소</button>
+                    <button type="button" class="primary" onclick={() => ask?.answer(true)}>그래도 저장</button>
+                </div>
+            </div>
+        </div>
+    {/if}
     {#if error}<p class="problem" role="alert">{error}</p>{/if}
     {#if offer}
         <p class="offer" role="status">
@@ -396,6 +499,18 @@
     .status {color:#5b6980;font-size:12px}
     .pick {font-size:12px}
     .problem {margin:0;padding:6px 12px;background:#fff1ee;color:#9a3412;font-size:13px}
+    .copies {padding:6px 12px;border-bottom:1px solid #dce1e8;font-size:13px}
+    .copies p {margin:0 0 4px}
+    .copies ul {margin:0;padding-left:18px}
+    .copies button {font:inherit;padding:2px 6px;border:0;background:none;color:#1d4ed8;cursor:pointer;text-decoration:underline}
+    .ask {position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.35)}
+    .ask-box {max-width:520px;width:100%;max-height:calc(100% - 32px);overflow:auto;box-sizing:border-box;padding:16px 18px;border-radius:10px;background:#fff;color:#263547;font-size:14px;box-shadow:0 10px 30px rgba(15,23,42,.25)}
+    .ask-box h2 {margin:0 0 8px;font-size:16px}
+    .ask-box ul {margin:8px 0;padding-left:20px}
+    .ask-box .note {color:#5b6980;font-size:13px}
+    .ask-actions {display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+    .ask-actions button {font:inherit;padding:5px 12px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
+    .ask-actions .primary {background:#1d4ed8;border-color:#1d4ed8;color:#fff}
     .offer {margin:0;padding:6px 12px;background:#eef6ff;color:#1e3a5f;font-size:13px}
     .offer button {font:inherit;margin-left:6px;padding:2px 10px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     iframe {flex:1;min-height:0;width:100%;border:0;display:block}
