@@ -13,6 +13,10 @@ export const PAGES_MAX_FILES = 20000;
 // A file this close to the per-file limit is reported (not failed): the Excel engine's WASM sits near it,
 // and an upstream update or another font could cross the limit silently otherwise.
 export const PAGES_WARN_FILE_BYTES = 24 * 1024 * 1024;
+// Every browser runner, once in this machine's Chrome language and once as an English Chrome: GitHub's
+// English runners caught a locale-only failure (4aec08c), and the push gate passes a commit on this report.
+export const BROWSER_TESTS = ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs', 'tests/xlsx.integration.mjs'];
+export const BROWSER_LOCALES = ['', 'en-US'];
 // Every deployed file with its bytes; deploy compares this against the verified output.
 export async function outputHash(dir) {
   const hash = createHash('sha256');
@@ -75,7 +79,10 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   // Reads the build's .vite/ metadata, so it runs before that is removed from the output.
   execFileSync(process.execPath, [join(root, 'tests/bundle-boundary.mjs'), outDir], { cwd: root, stdio: 'inherit' });
   await dropBuildMetadata(outDir);
-  for (const test of ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs', 'tests/xlsx.integration.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
+  for (const locale of BROWSER_LOCALES) {
+    if (locale) console.log(`Browser tests as TEST_LOCALE=${locale}`);
+    for (const test of BROWSER_TESTS) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir, TEST_LOCALE: locale }, timeout: 240000 });
+  }
   const output = await outputHash(outDir);
   assertPagesLimits(output.files);
   for (const warning of pagesSizeWarnings(output.files)) console.warn('WARNING:', warning);

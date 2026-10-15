@@ -2,10 +2,9 @@
 // of every ref a push updates must have passed npm run verify (commits in between are not verified one by
 // one; a deployment is built from a tip). The report in artifacts/verified.json counts when it was made on
 // that very commit in a clean tree whose product files are still the same. Otherwise the commit is checked
-// out in a temporary worktree and verified there, then the browser tests run once more as an English
-// Chrome (TEST_LOCALE=en-US), the case GitHub's runners caught in 4aec08c; a commit that passes through the
-// saved report does not get that English run. `git push --no-verify` skips every hook; nothing here can
-// prevent that.
+// out in a temporary worktree and verified there. Either way the browser tests ran in this machine's
+// language and as an English Chrome (verify does both). `git push --no-verify` skips every hook; nothing
+// here can prevent that.
 import { readFile, mkdtemp, mkdir, realpath, rm, symlink, unlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -13,7 +12,6 @@ import { execFileSync, spawn } from 'node:child_process';
 
 const ZERO = /^0+$/;
 const PREFIX = 'sketch-docs-push-';
-const BROWSER_TESTS = ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs', 'tests/xlsx.integration.mjs'];
 
 /** pre-push stdin: one `<local ref> <local sha> <remote ref> <remote sha>` per line; deletions send nothing to check. */
 export function commitsToCheck(stdin) {
@@ -98,7 +96,6 @@ async function verifyInWorktree(root, sha) {
     await symlink(join(root, '.cache/build/gridcraft-target'), join(dir, '.cache/build/gridcraft-target'));
     await run('npm', ['ci', '--prefer-offline', '--no-audit', '--no-fund'], { cwd: dir });
     await run(process.execPath, [join(dir, 'scripts/verify.mjs')], { cwd: dir });
-    for (const test of BROWSER_TESTS) await run(process.execPath, [join(dir, test)], { cwd: dir, env: { ...process.env, TEST_DIST: join(dir, 'dist'), TEST_LOCALE: 'en-US' }, timeout: 240000 });
   } finally {
     for (const signal of signals) process.off(signal, interrupted);
     await removeWorktree(root, dir);
@@ -121,7 +118,7 @@ export async function gate({ root, stdin }) {
     seen.add(sha);
     const covered = reportCovers(report, { sha, head, clean, productHash: current });
     if (covered.ok) { console.log(`push gate: ${sha.slice(0, 12)} → ${remoteRef}: verified (artifacts/verified.json)`); continue; }
-    console.log(`push gate: ${sha.slice(0, 12)} → ${remoteRef}: ${covered.why}; verifying it in a temporary worktree (npm run verify, then the browser tests as en-US)`);
+    console.log(`push gate: ${sha.slice(0, 12)} → ${remoteRef}: ${covered.why}; verifying it in a temporary worktree (npm run verify)`);
     await verifyInWorktree(root, sha);
     console.log(`push gate: ${sha.slice(0, 12)} passed`);
   }

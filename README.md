@@ -99,6 +99,7 @@ npm run verify   # 배포 전 필수 검사
    - 첫 화면 미리 받기: 마지막으로 쓴 편집기 먼저, 받는 도중에 골라도 처음부터 다시 받지 않음, 뒤로 가기로 첫 화면 복귀, Save-Data면 받지 않음
    - 번들 경계(`tests/bundle-boundary.mjs`): 첫 화면·Word·한글 쪽 청크에 PDF 라이브러리 모듈이 없는지
    - PDF 브라우저 시험(`tests/pdf.integration.mjs`): 보기 기능, 같은 출처 자산, 주석 6종, 다른 이름으로·열린 파일 저장과 재열기, 서명·암호 거절, 두 탭 동시 저장, 원본 복원, 이탈 확인
+   - 5·6의 브라우저 시험(Excel `tests/xlsx.integration.mjs` 포함)은 이 기기의 Chrome 언어로 한 번, 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈다. GitHub 영어 러너에서만 드러난 실패(`4aec08c`)가 있었다.
 7. 배포 산출물이 파일당 25MiB, 전체 20,000개 제한 안에 드는지 확인한다.
 8. 검사하는 동안 우리 코드나 lock이 바뀌지 않았는지 확인한다.
 
@@ -129,7 +130,7 @@ npm run verify
 `npm run hooks:install`(한 번)이 `core.hooksPath`를 `.githooks`로 맞춘다. pre-push 훅(`scripts/push-gate.mjs`)은 push하는 각 ref의 끝 커밋(주석 태그는 가리키는 커밋)마다 — 그 사이 커밋은 하나하나 검사하지 않는다:
 
 - `artifacts/verified.json`이 그 커밋·깨끗한 작업 트리·같은 제품 파일에서 만든 통과 보고면 바로 통과한다.
-- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`와 Cargo 빌드 출력을 빌려 쓰고, `node_modules`(`npm ci --prefer-offline`)와 빌드 작업 폴더는 따로 둠)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다. 저장된 보고로 통과한 커밋은 영어 회차를 거치지 않는다 — 영어 Chrome 확인이 필요하면 `TEST_DIST=dist TEST_LOCALE=en-US node tests/<러너>.mjs`를 직접 돈다.
+- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`와 Cargo 빌드 출력을 빌려 쓰고, `node_modules`(`npm ci --prefer-offline`)와 빌드 작업 폴더는 따로 둠)에서 `npm run verify` 한 뒤 통과한다. 실패하면 push를 막는다. 어느 쪽이든 verify가 영어 Chrome 회차를 포함한다.
 - 중단(Ctrl-C)하면 임시 worktree를 지운다. 강제 종료로 남은 것은 다음 실행이 지운다.
 - 훅은 `.githooks/`에 있으므로 048a813 이전 커밋을 체크아웃한 상태에서는 걸리지 않는다.
 - 원격 브랜치 삭제는 검사하지 않는다.
