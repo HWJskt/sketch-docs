@@ -6,11 +6,15 @@
     // the snapshot reported as saved, so a failed or cancelled save leaves the changes unsaved. Saving over the
     // file that was opened comes with stage 2 (the round-trip check and its warning): until then Save writes into
     // a file this editor made with Save As, and a Save As onto the opened file puts its original back.
+    // While there are unsaved changes, a copy of the workbook is kept in the origin's private storage after a
+    // pause (xlsx/drafts.ts, plan §3.6); opening the same file again offers a copy no live tab holds, and tabs
+    // showing the same file are told of each other.
     // The bridge (xlsxBridge.ts) hears only the engine frame.
     import { onMount } from 'svelte';
     import { createXlsxBridge, MAX_XLSX_BYTES, type Blocked, type EngineRequest, type EngineState, type OpenResult } from './xlsxBridge';
     import { fingerprint, writeIfUnchanged, type PickerWindow } from './fileAccess';
     import { createRecoveryStore } from './pdf/recovery';
+    import { createDraftStore, draftKey, holdLock, DRAFT_IDLE_MS, type Draft, type Release } from './xlsx/drafts';
     import type { EditorStatus } from './editorState';
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
     const pickers = window as PickerWindow;
@@ -19,6 +23,11 @@
     const LOCK_NAME = 'sketch-docs-office-save';
     const lock = <T,>(work: () => Promise<T>): Promise<T> => (navigator.locks ? navigator.locks.request(LOCK_NAME, work) as Promise<T> : work());
     const recovery = createRecoveryStore(undefined, 'sketch-docs-xlsx-recovery');
+    // Copies need the lock that keeps another tab's copy from being offered or removed.
+    const drafts = navigator.locks && typeof navigator.storage?.getDirectory === 'function' ? createDraftStore() : null;
+    const tab = crypto.randomUUID().slice(0, 8);
+    // `?draft-idle=<ms>` shortens the pause for the browser checks (1 to 30 seconds).
+    const idleMs = (() => { const ms = Number(new URLSearchParams(location.search).get('draft-idle')); return ms >= 1000 && ms < DRAFT_IDLE_MS ? ms : DRAFT_IDLE_MS; })();
     let frame = $state.raw<HTMLIFrameElement>();
     let input = $state<HTMLInputElement>();
     let section = $state<HTMLElement>();
@@ -26,6 +35,15 @@
     let name = $state(''), sheets = $state<string[]>([]);
     let error = $state(''), notice = $state('');
     let engine = $state<EngineState>({ dirty: false, editing: false, rev: 0 });
+    let version = '', docUid = 0;
+    /** The shown workbook came from a recovery copy: unsaved until it is saved. */
+    let restored = $state(false);
+    /** This tab's copy (its lock held) and the revision it holds. */
+    let own: { key: string; release: Release; rev: number; docUid: number } | null = null;
+    /** A copy of this file no live tab holds, its lock held by this tab while it is offered. */
+    let offer = $state.raw<{ draft: Draft; release: Release } | null>(null);
+    /** Other tabs showing the same file. */
+    let others = $state.raw<string[]>([]);
     /**
      * The file this editor stands for: as opened, or as last written by Save As (`ours`). `hash` is what the
      * file held then; a write checks the file still holds it.
@@ -33,12 +51,12 @@
     let base = $state.raw<{ name: string; bytes: Uint8Array; hash: string; handle?: FileSystemFileHandle; ours: boolean } | null>(null);
     const bridge = createXlsxBridge({
         target: () => frame?.contentWindow, origin: location.origin,
-        onReady: () => { ready = true; },
+        onReady: engineVersion => { ready = true; version = engineVersion; },
         onFailed: reason => { ready = false; error = `Excel을 시작하지 못했습니다. WebGPU 또는 WebGL2를 지원하는 브라우저가 필요합니다. (${reason})`; },
         onBlocked: action => { notice = blockedText[action] ?? blockedText.refused; },
         // Every answer the engine gives, even after a timeout, says which workbook it now shows.
-        onShown: result => { name = result.name; sheets = result.sheets; },
-        onState: state => { engine = state; },
+        onShown: result => { name = result.name; sheets = result.sheets; docUid = result.docUid; },
+        onState: state => { engine = state; settleDraft(); },
         onRequest: request => { void requested(request); },
     });
     const blockedText: Record<Blocked, string> = {
@@ -48,15 +66,125 @@
         drop: '파일을 열려면 "Excel 열기"를 누르세요.',
         refused: '이 명령은 여기서 쓸 수 없습니다. 파일은 위쪽 막대에서 열고 저장하세요.',
     };
-    const unsaved = () => engine.dirty || engine.editing;
+    const unsaved = () => engine.dirty || engine.editing || restored;
     // A cell being typed in counts as unsaved: leaving now would lose it.
     export function getState(): EditorStatus { return { ready, busy: opening || saving, dirty: unsaved(), name }; }
     $effect(() => { void ready; void opening; void saving; void name; void engine; onState(getState()); });
+    const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('sketch-docs-xlsx') : null;
     onMount(() => {
         const listen = (event: MessageEvent) => { bridge.handle(event); };
         addEventListener('message', listen);
-        return () => removeEventListener('message', listen);
+        // Leaving the tab may be closing it: keep the latest changes now rather than after the pause.
+        const hidden = () => { if (document.visibilityState === 'hidden') void keepDraft(); };
+        document.addEventListener('visibilitychange', hidden);
+        const gone = () => channel?.postMessage({ type: 'gone', tab });
+        addEventListener('pagehide', gone);
+        if (channel) channel.onmessage = ({ data }) => heard(data);
+        return () => {
+            removeEventListener('message', listen);
+            document.removeEventListener('visibilitychange', hidden);
+            removeEventListener('pagehide', gone);
+            gone();
+            channel?.close();
+            clearTimeout(idle);
+            offer?.release();
+            own?.release();
+        };
     });
+
+    // Same file in other tabs (decision Q8: told, not stopped; a save checks the file's content anyway). A file
+    // is its name and the content it was opened with; a handle cannot be sent.
+    const identity = () => (base ? `${base.hash}:${base.name}` : '');
+    function heard(data: { type?: string; tab?: string; file?: string }) {
+        if (!data?.tab || data.tab === tab) return;
+        const same = data.type !== 'gone' && !!data.file && data.file === identity();
+        others = [...others.filter(other => other !== data.tab), ...(same ? [data.tab] : [])];
+        if (same && data.type === 'open') channel?.postMessage({ type: 'here', tab, file: identity() });
+    }
+    function announce() { others = []; channel?.postMessage({ type: 'open', tab, file: identity() }); }
+
+    // Recovery copies. Copies and saves take turns (`serial`); a copy is taken only while nothing is being
+    // typed, since a snapshot puts what is being typed into the workbook.
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    let snapshotMs = 0;
+    function settleDraft() {
+        clearTimeout(idle);
+        if (!unsaved()) { void dropDraft(); return; }
+        // A slow snapshot (a large workbook) holds the engine still: copies come less often.
+        if (base && drafts) idle = setTimeout(() => void keepDraft(), Math.max(idleMs, snapshotMs * 20));
+    }
+    function keepDraft() {
+        if (!drafts || !base || !unsaved() || engine.editing || (own && own.rev === engine.rev && own.docUid === docUid)) return;
+        return serial(async () => {
+            const opened = base;
+            if (!opened || !unsaved() || engine.editing) return;
+            const started = performance.now();
+            const shot = await bridge.snapshot();
+            if (!shot.ok) return;
+            snapshotMs = performance.now() - started;
+            // Only a save's `saved` changes the engine's saved state; this snapshot is let go at once.
+            bridge.discard(shot.id);
+            if (base !== opened || !unsaved()) return;
+            const key = draftKey(opened.name, opened.hash, tab);
+            if (own?.key !== key) {
+                await removeOwn();
+                own = { key, release: (await holdLock(key))!, rev: -1, docUid: -1 };
+            }
+            await drafts.write(key, { name: opened.name, source: opened.hash, tab, engine: version, docUid: shot.docUid, epoch: bridge.epoch, rev: shot.rev, snapshotMs: Math.round(snapshotMs) }, shot.bytes);
+            own.rev = shot.rev; own.docUid = shot.docUid;
+        }).catch(reason => { notice = `복구 사본을 만들지 못했습니다. ${message(reason)}`; });
+    }
+    async function removeOwn() {
+        const mine = own;
+        own = null;
+        if (!mine) return;
+        try { await drafts?.remove(mine.key); } finally { mine.release(); }
+    }
+    /** No unsaved changes left, or another file shown: this tab's copy goes. */
+    function dropDraft() { return serial(removeOwn).catch(() => undefined); }
+    /** Looks for a copy of the file just opened that a closed tab left. */
+    async function offerDraft() {
+        const opened = base;
+        offer?.release();
+        offer = null;
+        if (!drafts || !opened) return;
+        const found = await drafts.claim(opened.name, opened.hash, own?.key).catch(() => null);
+        if (base !== opened || offer) { found?.release(); return; }
+        offer = found;
+    }
+    async function restoreDraft() {
+        const chosen = offer, opened = base;
+        if (!chosen || !opened || !drafts) return;
+        if (unsaved() && !confirm('지금 편집한 내용 대신 복구 사본을 열까요?')) return;
+        offer = null;
+        opening = true;
+        try {
+            const bytes = await drafts.read(chosen.draft);
+            restored = true;
+            const result = await bridge.open(opened.name, bytes);
+            show(result);
+            if (!result.ok) { restored = false; offer = chosen; return; }
+            // The copy becomes this tab's own, replacing any it had.
+            await serial(async () => { await removeOwn(); own = { key: chosen.draft.key, release: chosen.release, rev: -1, docUid: -1 }; });
+            notice = '복구 사본을 열었습니다. 원본 파일은 바뀌지 않았습니다. 저장해야 파일에 남습니다.';
+            settleDraft();
+        } catch (reason) {
+            restored = false;
+            offer = chosen;
+            error = `복구 사본을 열지 못했습니다. ${message(reason)}`;
+        } finally { opening = false; }
+    }
+    async function discardDraft() {
+        const chosen = offer;
+        if (!chosen || !drafts) return;
+        if (!confirm('복구 사본을 지울까요? 지우면 되돌릴 수 없습니다.')) return;
+        offer = null;
+        try { await drafts.remove(chosen.draft.key); }
+        catch (reason) { error = `복구 사본을 지우지 못했습니다. ${message(reason)}`; }
+        finally { chosen.release(); }
+        void offerDraft();
+    }
+    const savedAt = (time: number) => new Date(time).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
     function show(result: OpenResult) {
         if (result.ok) { error = ''; notice = result.warnings.length ? `일부 내용이 다르게 표시될 수 있습니다: ${result.warnings[0]}` : ''; }
@@ -79,7 +207,14 @@
         try {
             const result = await bridge.open(fileName, bytes);
             show(result);
-            if (result.ok) base = { name: fileName, bytes, hash: await hashOf(bytes), handle, ours: false };
+            if (result.ok) {
+                base = { name: fileName, bytes, hash: await hashOf(bytes), handle, ours: false };
+                // The changes shown before are gone (asked first when unsaved), and with them this tab's copy.
+                restored = false;
+                void dropDraft();
+                announce();
+                await offerDraft();
+            }
         } catch (reason) {
             error = `파일을 열지 못했습니다. ${message(reason)}`;
         } finally { opening = false; }
@@ -186,6 +321,9 @@
                     bridge.saved(snapshot.id, snapshot.docUid, chosen.handle.name);
                     base = { name: chosen.handle.name, bytes: made.bytes, hash: await hashOf(made.bytes), handle: chosen.handle, ours: true };
                     name = chosen.handle.name;
+                    restored = false;
+                    announce();
+                    queueMicrotask(settleDraft);
                     notice = `저장했습니다: ${chosen.handle.name}`;
                 } else notice = `내보냈습니다: ${chosen.handle.name}`;
             } catch (reason) {
@@ -232,11 +370,19 @@
         <button type="button" onclick={() => exportAs('pdf')} disabled={!ready || !base || saving || !canSave}>PDF로 내보내기</button>
         {#if name}<span class="name">{name}</span>{/if}
         {#if unsaved()}<span class="status">저장하지 않은 변경</span>{/if}
+        {#if others.length}<span class="status others">이 파일이 다른 탭에서도 열려 있습니다.</span>{/if}
         {#if pickPrompt}<span class="pick" role="status">파일을 만드는 데 시간이 걸렸습니다. <button type="button" onclick={pickPrompt.go}>저장할 위치 고르기</button> <button type="button" onclick={pickPrompt.cancel}>취소</button></span>{/if}
         {#if opening}<span class="status" role="status">여는 중…</span>{:else if saving}<span class="status" role="status">저장하는 중…</span>{:else if !ready && !error}<span class="status" role="status">Excel을 준비하는 중…</span>{:else if notice}<span class="status" role="status">{notice}</span>{/if}
         <input bind:this={input} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange={picked} />
     </header>
     {#if error}<p class="problem" role="alert">{error}</p>{/if}
+    {#if offer}
+        <p class="offer" role="status">
+            이 파일에서 저장하지 않은 편집 내용의 복구 사본이 있습니다({savedAt(offer.draft.savedAt)}). 편집기가 저장 형식으로 만든 사본이라 일부 서식이 빠질 수 있습니다.
+            <button type="button" onclick={restoreDraft} disabled={!ready || opening || saving}>복구</button>
+            <button type="button" onclick={discardDraft} disabled={opening}>버리기</button>
+        </p>
+    {/if}
     <iframe bind:this={frame} title="Excel 보기" src="./engines/gridcraft/index.html?host=sketch&mode=edit" allow="clipboard-write"></iframe>
 </section>
 
@@ -250,5 +396,7 @@
     .status {color:#5b6980;font-size:12px}
     .pick {font-size:12px}
     .problem {margin:0;padding:6px 12px;background:#fff1ee;color:#9a3412;font-size:13px}
+    .offer {margin:0;padding:6px 12px;background:#eef6ff;color:#1e3a5f;font-size:13px}
+    .offer button {font:inherit;margin-left:6px;padding:2px 10px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     iframe {flex:1;min-height:0;width:100%;border:0;display:block}
 </style>

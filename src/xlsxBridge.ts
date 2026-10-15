@@ -146,5 +146,7 @@ export function createXlsxBridge({ target, origin, timeoutMs = 60000, onReady = 
             return ask<ExportResult>('sketch-xlsx:export', { format }, { ok: false, code: 'timeout', error: '내보내는 데 시간이 너무 오래 걸립니다.' });
         },
         get busy() { return !!pending; },
+        /** Counts the workbooks sent to the engine; answers carry the one they were asked in. */
+        get epoch() { return epoch; },
     };
 }

@@ -451,6 +451,127 @@ try {
   assert.deepEqual(downloads, [], 'nothing was downloaded (product)');
   assert.deepEqual([...external], [], 'no request leaves this origin (product)');
   assert.deepEqual(errors, [], 'page errors (product)');
+
+  // Recovery copies and tabs on the same file (stage 3, plan §3.6). Tabs of one browser share the origin's
+  // private storage, its locks and its broadcast channel; `?draft-idle=1500` shortens the pause before a copy.
+  {
+    const drafts = async tab => tab.evaluate(async () => {
+      const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('sketch-docs-xlsx-drafts', { create: true });
+      const found = [];
+      for await (const [file, entry] of dir) if (file.endsWith('.json')) found.push({ ...JSON.parse(await (await entry.getFile()).text()), key: file.slice(0, -5) });
+      return found;
+    });
+    const draftBytes = (tab, key) => tab.evaluate(async key => [...new Uint8Array(await (await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('sketch-docs-xlsx-drafts')).getFileHandle(`${key}.xlsx`)).getFile()).arrayBuffer())], key);
+    const openTab = async () => {
+      const tab = await context.newPage();
+      tab.setDefaultTimeout(60000);
+      tab.on('pageerror', error => errors.push(String(error)));
+      tab.on('download', download => downloads.push(download.suggestedFilename()));
+      tab.on('dialog', dialog => { dialogs.push(dialog.message()); return dialog.accept(); });
+      tab.on('request', request => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== origin) external.add(request.url()); });
+      await tab.goto(origin + '/xlsx.html?draft-idle=1500');
+      await tab.evaluate(() => { window.messages = []; addEventListener('message', event => { if (String(event.data?.type).startsWith('sketch-xlsx:')) window.messages.push(event.data); }); });
+      await tab.locator('.xlsx-viewer[data-ready="true"]').waitFor();
+      return tab;
+    };
+    // One workbook written once: a fixture made again differs in its zip timestamps, so it would be another file.
+    const book = koreanWorkbook();
+    await product.evaluate(async bytes => {
+      const handle = await (await navigator.storage.getDirectory()).getFileHandle('복구.xlsx', { create: true });
+      const stream = await handle.createWritable(); await stream.write(new Uint8Array(bytes)); await stream.close();
+    }, [...book]);
+    const openBook = async tab => {
+      await tab.evaluate(async () => { const handle = await (await navigator.storage.getDirectory()).getFileHandle('복구.xlsx'); window.showOpenFilePicker = async () => [handle]; });
+      await tab.getByRole('button', { name: 'Excel 열기' }).click();
+      await tab.locator('.xlsx-viewer[data-sheets="2"] .name').filter({ hasText: '복구.xlsx' }).waitFor();
+    };
+    const typeIn = async (tab, address, text) => {
+      const column = address.charCodeAt(0) - 65, row = Number(address.slice(1)) - 1;
+      await tab.keyboard.press('Escape');
+      await tab.locator('iframe[title="Excel 보기"]').click({ position: { x: 54 + 51 * column, y: 223 + 16.3 * row } });
+      await tab.keyboard.type(text, { delay: 50 });
+      await tab.keyboard.press('Enter');
+      await tab.waitForFunction(() => { const s = window.messages.filter(m => m.type === 'sketch-xlsx:state').at(-1); return s && s.dirty && !s.editing; }, null, { timeout: 30000 });
+    };
+    const offered = tab => tab.locator('.xlsx-viewer .offer');
+    const othersShown = tab => tab.locator('.xlsx-viewer .others');
+    const waitDrafts = async (tab, count, label) => {
+      for (let i = 0; i < 100 && (await drafts(tab)).length !== count; i++) await tab.waitForTimeout(200);
+      assert.equal((await drafts(tab)).length, count, label);
+    };
+
+    // An edit is copied after the pause; the copy holds the edit.
+    const first = await openTab();
+    await openBook(first);
+    await waitDrafts(first, 0, 'no copy before an edit');
+    await typeIn(first, 'B2', '11');
+    await waitDrafts(first, 1, 'a copy after the pause');
+    const [copy] = await drafts(first);
+    assert.deepEqual([copy.name, cellsOf(await draftBytes(first, copy.key)).B2], ['복구.xlsx', '11']);
+    const copyBytes = await draftBytes(first, copy.key);
+
+    // A second tab on the same file: both are told; the first tab's copy is not offered and stays as it was.
+    const second = await openTab();
+    await openBook(second);
+    await othersShown(second).waitFor();
+    await othersShown(first).waitFor();
+    await second.waitForTimeout(1000);
+    assert.equal(await offered(second).count(), 0, 'a copy a live tab holds is not offered');
+    assert.deepEqual(await draftBytes(second, copy.key), copyBytes, 'the other tab\'s copy is untouched');
+
+    // The first tab closes; opening the file again offers its copy, and restoring shows the edit, unsaved.
+    await first.close();
+    await openBook(second);
+    await offered(second).waitFor();
+    assert.equal(await othersShown(second).count(), 0, 'the closed tab is no longer listed');
+    await second.screenshot({ path: resolve(root, 'artifacts/xlsx-draft-offer.png') });
+    await second.getByRole('button', { name: '복구', exact: true }).click();
+    await second.getByRole('status').filter({ hasText: '복구 사본을 열었습니다' }).waitFor();
+    await second.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor();
+    assert.equal(await offered(second).count(), 0);
+    const restoredShot = await second.evaluate(() => new Promise(done => {
+      // The shown workbook, read the way the harness does (a snapshot let go at once).
+      const frame = document.querySelector('iframe[title="Excel 보기"]').contentWindow;
+      const listen = event => { if (event.data?.type !== 'sketch-xlsx:snapshot' || event.data.requestId !== 7001) return; removeEventListener('message', listen); frame.postMessage({ type: 'sketch-xlsx:discard', protocol: 2, requestId: 7001 }, location.origin); done([...new Uint8Array(event.data.bytes)]); };
+      addEventListener('message', listen);
+      frame.postMessage({ type: 'sketch-xlsx:snapshot', protocol: 2, requestId: 7001, epoch: window.messages.filter(m => m.type === 'sketch-xlsx:opened').at(-1).epoch }, location.origin);
+    }));
+    assert.equal(cellsOf(restoredShot).B2, '11', 'the restored workbook holds the edit');
+    assert.equal((await drafts(second)).length, 1, 'the restored copy is kept until saved');
+    // Saved: the copy goes.
+    await second.evaluate(() => { window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('복구-저장.xlsx', { create: true }); });
+    await second.getByRole('button', { name: '다른 이름으로 저장', exact: true }).click();
+    await second.getByRole('status').filter({ hasText: '저장했습니다: 복구-저장.xlsx' }).waitFor();
+    await second.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor({ state: 'detached' });
+    await waitDrafts(second, 0, 'a saved workbook leaves no copy');
+    await second.close();
+
+    // A copy that is not wanted: Discard (asked first) removes it.
+    const third = await openTab();
+    await openBook(third);
+    await typeIn(third, 'B3', '22');
+    await waitDrafts(third, 1, 'the third tab\'s copy');
+    await third.close();
+    const fourth = await openTab();
+    await openBook(fourth);
+    await offered(fourth).waitFor();
+    const asked = dialogs.length;
+    await fourth.getByRole('button', { name: '버리기', exact: true }).click();
+    await offered(fourth).waitFor({ state: 'detached' });
+    assert.equal(dialogs.length, asked + 1, 'discarding asked first');
+    await waitDrafts(fourth, 0, 'a discarded copy is removed');
+    // Undoing back to the opened workbook leaves nothing to recover: no copy stays.
+    await typeIn(fourth, 'B3', '33');
+    await waitDrafts(fourth, 1, 'the fourth tab\'s copy');
+    await fourth.keyboard.press('ControlOrMeta+z');
+    await fourth.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor({ state: 'detached' });
+    await waitDrafts(fourth, 0, 'a clean workbook leaves no copy');
+    await fourth.close();
+    assert.deepEqual(downloads, [], 'nothing was downloaded (recovery)');
+    assert.deepEqual([...external], [], 'no request leaves this origin (recovery)');
+    assert.deepEqual(errors, [], 'page errors (recovery)');
+  }
+
   await product.close();
 
   // Outside the product the engine does not start.
