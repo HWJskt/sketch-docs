@@ -1,6 +1,6 @@
 # 통합 웹 편집기
 
-- **최신 인계: `docs/handoff-2026-10-15.md`** — 새 세션은 여기서 시작한다(push·배포 남은 단계·push 뒤 확인할 것·지킬 결정). `docs/handoff-2026-10-14.md`는 지난 기록이다.
+- **최신 인계: `docs/handoff-2026-10-15-xlsx-edit.md`** — 새 세션은 여기서 시작한다(Excel 편집 단계 3부터, 지킬 결정·overlay 고치는 법). `docs/handoff-2026-10-15.md`(배포 `d9f41e7`까지)와 `docs/handoff-2026-10-14.md`는 지난 기록이다.
 - 루트가 우리 제품 저장소다. `source/edentext`, `source/hop`와 rhwp 서브모듈은 읽기 전용 upstream 클론이다. 제품 변경은 루트 `src/`, `overlays/`, `scripts/`, `tests/`에 둔다.
 - `backups/`는 사용자 작업 보존본이다. 삭제·정리하지 않는다. `.cache/`와 `public/engines`, `public/rhwp`는 우리 빌드 생성물이며 다시 만들 수 있다.
 - Node 24.21.0, Svelte 5, Vite 8. 새 의존성·upstream 업데이트는 lock과 회귀 검사로 검증한다.
