@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sketch Docs push gate (scripts/push-gate.mjs). Installed by `npm run hooks:install`.
+# `git push --no-verify` skips it; nothing can prevent that.
+exec node "$(git rev-parse --show-toplevel)/scripts/push-gate.mjs" "$@"

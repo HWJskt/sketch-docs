@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer, preview } from 'vite';
 import { chromium } from 'playwright-core';
+import { assertTestLocale, launchArgs } from './browser-locale.mjs';
 import { unzipSync, strFromU8 } from 'fflate';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -16,8 +17,9 @@ try {
     server = await createServer({ root, server: address });
     await server.listen();
   } else server = await preview({ root, build: { outDir: resolve(root, process.env.TEST_DIST || 'dist') }, preview: address });
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await assertTestLocale(page);
   page.setDefaultTimeout(60000);
   const errors = [], dialogs = [], external = new Set();
   let cancelExit = false, exitPrompts = 0;

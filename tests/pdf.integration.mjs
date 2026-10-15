@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { preview } from 'vite';
 import { chromium } from 'playwright-core';
+import { launchArgs } from './browser-locale.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const outDir = resolve(root, process.env.TEST_DIST || 'dist');
@@ -747,7 +748,7 @@ const scenarios = [
 let server, browser;
 try {
     server = await preview({ root, logLevel: 'warn', build: { outDir }, preview: { host: 'localhost', port, strictPort: true } });
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
     for (const [name, run] of scenarios) {
         await run(browser);
         console.log(`PASS pdf: ${name}`);

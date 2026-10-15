@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { chromium } from 'playwright-core';
+import { assertTestLocale, launchArgs } from './browser-locale.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const dist = resolve(root, process.env.TEST_DIST || 'dist');
@@ -68,7 +69,7 @@ const scenario = async (name, run, { needsServer = false, contextOptions = {}, p
   if (live && needsServer) { console.log('SKIP (live)', name); return; }
   const options = { viewport: { width: 1280, height: 900 }, ...contextOptions };
   const profile = persistent ? await mkdtemp(join(tmpdir(), 'sketch-docs-profile-')) : undefined;
-  const context = profile ? await chromium.launchPersistentContext(profile, { channel: 'chrome', headless: true, ...options }) : await browser.newContext(options);
+  const context = profile ? await chromium.launchPersistentContext(profile, { channel: 'chrome', headless: true, ...launchArgs, ...options }) : await browser.newContext(options);
   const errors = [];
   try {
     const page = await context.newPage();
@@ -87,7 +88,8 @@ const wordFrame = page => page.frameLocator('iframe[title="Word 문서 편집기
 
 try {
   if (!live) await new Promise((ok, fail) => server.once('error', fail).listen(port, 'localhost', ok));
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
+  { const probe = await browser.newPage(); await assertTestLocale(probe); await probe.close(); }
 
   await scenario('clean URLs: navigation, reload, history and offline Word', async (page, context) => {
     await page.goto(origin + '/');
