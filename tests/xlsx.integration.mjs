@@ -282,6 +282,36 @@ try {
     await page.waitForFunction(() => window.messages.filter(m => m.type === 'sketch-xlsx:request').length >= 4, null, { timeout: 30000 });
     assert.deepEqual((await messages()).filter(m => m.type === 'sketch-xlsx:request').map(m => m.action), ['save', 'saveAs', 'saveAs', 'open']);
     assert.deepEqual(downloads, [], 'nothing was downloaded');
+    // Plan F1: characters typed in the same frame as the one that starts a cell edit are kept (typed fast,
+    // "999" became 9; a character right after an arrow lost the ones after it). The Enter comes separately,
+    // as a person presses it. The screen is read by moving with the keyboard and copying (a click right after
+    // an edit can leave the selection where it was, plan §4.1); what a save writes is read from a snapshot.
+    // Both must be what was typed.
+    const screenAbove = async () => {
+      await page.waitForTimeout(500);
+      await page.keyboard.press('ArrowUp');
+      await page.evaluate(() => navigator.clipboard.writeText('(none)'));
+      await page.keyboard.press('ControlOrMeta+c');
+      await page.waitForFunction(async () => (await navigator.clipboard.readText()) !== '(none)', null, { timeout: 5000 }).catch(() => {});
+      return (await page.evaluate(() => navigator.clipboard.readText())).trim();
+    };
+    await select('C5');
+    await focused();
+    await page.keyboard.type('999');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Enter');
+    await waitState({ editing: false }, 'fast typing committed');
+    const shown999 = await screenAbove();
+    await select('C6');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.type('44');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Enter');
+    await waitState({ editing: false }, 'typing right after an arrow committed');
+    const shown44 = await screenAbove();
+    const fast = await read();
+    assert.deepEqual([fast.C5, fast.C7], ['999', '44'], 'no character is lost (what a save writes)');
+    assert.deepEqual([shown999, shown44], ['999', '44'], 'the screen shows what a save writes');
     assert.deepEqual(errors, [], 'page errors (editing)');
   }
 

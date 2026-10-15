@@ -8,9 +8,9 @@
 | 항목 | 값 |
 |---|---|
 | 배포판 | `d9f41e7`(보기 전용 Excel). 이후 커밋은 **push·배포하지 않았다**(사용자 지시 때만) |
-| 로컬 `main` | `340fe5a` 다음의 이 문서 커밋. 깨끗한 트리 |
-| 마지막 `npm run verify` | 통과 `6ad477b`(단위 175, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`) |
-| Excel 엔진 WASM | 24,259,624 B(23.14 MiB). 24 MiB 경고선까지 약 0.86 MiB |
+| 로컬 `main` | F1 커밋(이 문서를 갱신한 커밋). 깨끗한 트리. push 안 함 |
+| 마지막 `npm run verify` | 통과 — F1 커밋(단위 190, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`) |
+| Excel 엔진 WASM | 24,277,249 B(23.15 MiB). 24 MiB 경고선까지 약 0.85 MiB |
 | 엔진 overlay | `overlays/gridcraft/sketch-bridge.patch`(옛 `view-only.patch`). 고칠 때는 패치를 적용한 사본에서 고쳐 `git diff`로 다시 만든다 — 아래 "작업 방법" |
 
 ## 이번 세션에 한 일 (커밋)
@@ -25,6 +25,11 @@
 | 0a 스냅샷 · 0b 왕복 손실 실측(비교기 `src/xlsx/compare.ts`, fixture 13, 실제 파일 3개 — 종류·개수만 기록) | `00d2fd9` `07185c1` `c3daa77` `f612bb1` |
 | 1a 편집 모드·브리지 2·처리표(Rust 시험 2 + 변이 2) | `2458ec6` |
 | 1b 다른 이름으로 저장·CSV/PDF·B1·되돌리기(변이 2) | `6ad477b` |
+| 3 복구 사본·같은 파일 탭 알림(단위 변이 4·브라우저 변이 2) | `2a24e54`, `f69ae70` |
+| 2a·2b 원본 저장 — 손실 경고(실측 이름)·OPFS 원본 보관·되돌리기·엔진 경고 한국어(변이 3) | `f40e78e` |
+| 4 자동 저장 토글 숨김·"보기 전용" 문구·README·i18n 감사(영어 0) | `2fffcb7` |
+| B2 글꼴 목록·Pretendard 등록(변이 1), 깨진 upstream 시험 2개 | `0a3d2a2`, `6407f68` |
+| F1 원인 조사(upstream 엔진) → 빠른 입력 유실 고침(그리드 우회, 변이 1) | `99ace40`, 이 커밋 |
 
 ## 다음 할 일 (순서 — 사용자 결정 1b → 3 → 2)
 
@@ -40,7 +45,7 @@
    - 지금 `XlsxViewer`의 원본 선택 되돌리기 분기를 "경고 → 확인 → 덮어쓰기"로 바꾼다. 원본 저장(Ctrl+S on 연 파일)도 연다.
 3. ~~**단계 4**~~ **끝**(계획 §4.1 "4" 행): 자동 저장 토글 숨김(엔진 패치), "보기 전용" 남은 문구, README·`xlsx-i18n-audit`.
 4. **고칠 것 F1·F2**(계획 §4.2):
-   - F1(**원인 조사 끝**, 계획 §4.2 — upstream `grid.rs` `keyboard()`; 고치기는 허락 대기): 셀 편집기를 여닫는 프레임의 키 유실("999" → 9, Enter와 같은 프레임의 Ctrl+S). 먼저 upstream 웹판에서 재현되는지 가린다(허락 뒤 별도 빌드).
+   - F1(**빠른 입력 유실 고침** — 그리드 우회만. **Enter 직후 같은 프레임 단축키 무시는 남은 일**, 실패한 방식 목록과 함께 계획 §4.2): 셀 편집기를 여닫는 프레임의 키 유실("999" → 9, Enter와 같은 프레임의 Ctrl+S). 먼저 upstream 웹판에서 재현되는지 가린다(허락 뒤 별도 빌드).
    - F2: 한글 Enter 확정은 사용자 수동 확인 절차가 문서에 있다.
 5. ~~**B2 글꼴 드롭다운**~~ **끝**(계획 §4.1 "B2" 행): 결정 F1~F5 모두 추천대로(조율자 `decision-xlsx-fonts.md`). A(편집) 뒤에 한다.
 6. 엔진 메뉴 "파일 → 열기 → 찾아보기" **클릭 경로** 브라우저 시험이 아직 없다. 같은 요청 경로는 Ctrl+O로 시험했다. 좌표를 찾는 실행이 필요하다.
@@ -58,6 +63,9 @@
 2. `brand`·`korean-font`·`korean-ui` 패치를 적용해 각각 커밋한다.
 3. `sketch-bridge.patch`를 적용한다.
 4. 고친 뒤 `git add -A && git diff --cached <korean-ui 커밋> > overlays/gridcraft/sketch-bridge.patch`.
+   - Rust 시험을 사본에서 돌릴 때는 생성 파일 `crates/ui-egui/src/i18n/ko_sketch.rs`를 `.cache/build/gridcraft/…`에서 복사해 넣는다. **패치를 만들기 전에 지운다**(생성 파일이 패치에 들어가면 안 된다 — 패치에 `ko_sketch.rs`가 0건인지 확인).
+   - overlay를 바꾸면 `sketch_`만이 아니라 **ui-egui 전체** `cargo test --no-fail-fast -p gridcraft-ui-egui`를 돌린다(조율자 지시 — B2 때 `sketch_`만 돌려 upstream 시험 2개가 깨진 것을 놓쳤다).
+   - kittest 통과는 웹 동작의 증거가 아니다(프레임 강제·포커스 차이, F1에서 확인). 입력·포커스 부류는 브라우저 시험으로 판정한다.
 5. Rust 시험: 그 사본에서 `RUSTUP_TOOLCHAIN=1.99.0 CARGO_TARGET_DIR=<scratch>/gc-target cargo test --offline --locked -p gridcraft-engine --lib sketch_`
 6. 빌드: `npm run prepare:engines` → `npm run build` → `TEST_DIST=dist node tests/xlsx.integration.mjs`
 
@@ -70,4 +78,4 @@
 
 ## 다음 세션 시작 지시문
 
-"`docs/handoff-2026-10-15-xlsx-edit.md`와 계획 `docs/plans/2026-10-15-xlsx-edit.md`를 읽고 Excel 편집 단계 3(OPFS 복구 사본·탭 알림)부터 이어가라. 무거운 실행·push·배포는 조율자 허락 뒤에, 실제 사용자 파일 정보는 기록하지 않는다."
+"`docs/handoff-2026-10-15-xlsx-edit.md`와 계획 `docs/plans/2026-10-15-xlsx-edit.md`(§4.1 진행, §4.2 F1 남은 일·실패한 방식)를 읽어라. 계획한 단계(3·2a·2b·4·B2)와 F1 빠른 입력 유실은 끝났다. 남은 것: Enter 직후 같은 프레임 단축키(§4.2 — 넘기기 방식 금지), F2 한글 Enter 수동 확인, 행·열 삽입 감지(엔진 명령 보고), 엔진 메뉴 열기 클릭 경로 시험, 각 단계의 '남은 것' 목록. 조율자 지시를 기다린다. 무거운 실행·push·배포는 조율자 허락 뒤에, 실제 사용자 파일 정보는 기록하지 않는다."

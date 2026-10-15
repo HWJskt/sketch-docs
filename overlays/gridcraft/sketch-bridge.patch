@@ -863,6 +863,59 @@ index d5a8ea1..4a5db32 100644
      let Some(cat) = catalog_now() else { return out };
      let mut seen: HashSet<String> = out.iter().map(|s| s.to_lowercase()).collect();
      let mut installed: Vec<String> = cat.iter().map(|f| f.family.clone()).collect();
+diff --git a/crates/ui-egui/src/grid.rs b/crates/ui-egui/src/grid.rs
+index de93661..5308615 100644
+--- a/crates/ui-egui/src/grid.rs
++++ b/crates/ui-egui/src/grid.rs
+@@ -2590,7 +2590,7 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
+             if !m.alt && (m.ctrl || m.command || (m.shift && *key == egui::Key::Space)))
+     });
+     let page = ((geo.cells.height() / geo.z) / sh.default_row_height).floor().max(1.0) as i64;
+-    for ev in events {
++    for (at, ev) in events.iter().cloned().enumerate() {
+         match ev {
+             egui::Event::Copy => {
+                 app.copy_to_clipboard(ctx, "edit.copy");
+@@ -2602,9 +2602,39 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
+             egui::Event::Text(_) if shortcut_pressed => {}
+             egui::Event::Text(text) if text.chars().all(|c| !c.is_control()) && !text.is_empty() => {
+                 app.begin_edit(Some(text), false);
++                // Sketch Docs (plan F1): characters typed right after in this same frame (with their own key
++                // events) go straight into the new editor. Its text field does not take them yet on the web
++                // (it has only just been made), so they were lost ("999" typed fast became 9). IME input stops
++                // this: composition (Korean) keeps its own path. What follows (an Enter…) stays for the editor.
++                let mut handled = at + 1;
++                while let Some(next) = events.get(handled) {
++                    match next {
++                        egui::Event::Text(more) if more.chars().all(|c| !c.is_control()) && !more.is_empty() => {
++                            if let Some(ed) = app.editor.as_mut() {
++                                ed.text.push_str(more);
++                            }
++                        }
++                        egui::Event::Key { key, modifiers: m, .. } if !m.alt && !m.ctrl && !m.command && key.symbol_or_name().chars().count() == 1 => {}
++                        _ => break,
++                    }
++                    handled += 1;
++                }
+                 if let Some(ed) = app.editor.as_mut() {
+                     ed.caret = ed.text.chars().count();
+                 }
++                // The editor does not see again the keys and characters handled here (an arrow the grid
++                // already moved by would commit it); the rest of the frame is left as it was.
++                let mut drop = events.iter().take(handled).filter(|e| matches!(e, egui::Event::Key { pressed: true, .. } | egui::Event::Text(_))).count();
++                ctx.input_mut(|i| {
++                    i.events.retain(|e| {
++                        if drop > 0 && matches!(e, egui::Event::Key { pressed: true, .. } | egui::Event::Text(_)) {
++                            drop -= 1;
++                            false
++                        } else {
++                            true
++                        }
++                    })
++                });
+                 return;
+             }
+             egui::Event::Key { key, physical_key, pressed: true, modifiers: m, .. } => {
 diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
 index a8e8cb5..2d281de 100644
 --- a/crates/ui-egui/src/ribbon.rs
@@ -1036,3 +1089,117 @@ index 24be742..29721fd 100644
      // Arrows after typing move the highlight, not the text cursor: type a filter,
      // then Down twice and Enter must apply the second match's neighbour logic.
      key(&mut h, Key::Escape);
+diff --git a/crates/ui-egui/tests/sketch_keys.rs b/crates/ui-egui/tests/sketch_keys.rs
+new file mode 100644
+index 0000000..bd7e134
+--- /dev/null
++++ b/crates/ui-egui/tests/sketch_keys.rs
+@@ -0,0 +1,108 @@
++//! Sketch Docs (plan F1): characters typed in the same frame as the one that starts a cell edit go into
++//! the new editor (on the web its text field does not take them yet). IME input is left to its own path.
++
++use egui::{Event, ImeEvent, Key, Modifiers};
++use gridcraft_engine::Session;
++use gridcraft_ui_egui::SheetApp;
++use serde_json::{Value, json};
++
++type Harness = egui_kittest::Harness<'static, SheetApp>;
++
++fn harness() -> Harness {
++    let mut session = Session::new();
++    session.new_workbook();
++    session.execute("selection.set", json!({"cell": "D6"})).unwrap();
++    let mut h = Harness::builder().with_size(egui::vec2(1200.0, 800.0)).build_ui_state(
++        |ui, app: &mut SheetApp| {
++            let ctx = ui.ctx().clone();
++            app.logic(&ctx);
++            app.ui(ui);
++        },
++        SheetApp::new(session, Default::default()),
++    );
++    h.run_steps(4);
++    h
++}
++
++fn frame(h: &mut Harness, events: Vec<Event>) {
++    h.input_mut().events.extend(events);
++    h.run_steps(1);
++}
++fn settle(h: &mut Harness) {
++    h.run_steps(4);
++}
++fn key(key: Key, modifiers: Modifiers) -> Event {
++    Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }
++}
++/// A typed character as the web build sends it: its text, then its key.
++fn typed(c: char) -> Vec<Event> {
++    vec![Event::Text(c.to_string()), key(Key::from_name(&c.to_ascii_uppercase().to_string()).unwrap(), Modifiers::NONE)]
++}
++fn value(h: &mut Harness, cell: &str) -> Value {
++    h.state_mut().session.execute("cell.get", json!({"cell": cell})).unwrap()["value"].clone()
++}
++fn editor_text(h: &Harness) -> Option<String> {
++    h.state().editor.as_ref().map(|e| e.text.clone())
++}
++
++#[test]
++fn sketch_every_character_typed_in_one_frame_is_kept() {
++    let mut h = harness();
++    frame(&mut h, "999".chars().flat_map(typed).collect());
++    assert_eq!(editor_text(&h).as_deref(), Some("999"));
++    settle(&mut h);
++    frame(&mut h, vec![key(Key::Enter, Modifiers::NONE)]);
++    settle(&mut h);
++    assert_eq!(value(&mut h, "D6"), json!(999.0));
++}
++
++#[test]
++fn sketch_characters_and_an_enter_in_one_frame_commit_all_of_them() {
++    let mut h = harness();
++    let mut events: Vec<Event> = "999".chars().flat_map(typed).collect();
++    events.push(key(Key::Enter, Modifiers::NONE));
++    frame(&mut h, events);
++    settle(&mut h);
++    assert_eq!(value(&mut h, "D6"), json!(999.0));
++    assert!(h.state().editor.is_none());
++}
++
++#[test]
++fn sketch_characters_right_after_an_arrow_go_to_the_new_cell() {
++    let mut h = harness();
++    let mut events = vec![key(Key::ArrowDown, Modifiers::NONE)];
++    events.extend("44".chars().flat_map(typed));
++    frame(&mut h, events);
++    assert_eq!(editor_text(&h).as_deref(), Some("44"), "the arrow already moved; it must not commit the edit");
++    settle(&mut h);
++    frame(&mut h, vec![key(Key::Enter, Modifiers::NONE)]);
++    settle(&mut h);
++    assert_eq!(value(&mut h, "D7"), json!(44.0));
++}
++
++/// IME composition (Korean) keeps its own path: in an open editor it reaches the text field, and IME input
++/// in the frame that starts an edit is not put into the text by the grid.
++#[test]
++fn sketch_ime_input_is_left_to_its_own_path() {
++    let mut h = harness();
++    frame(&mut h, typed('a'));
++    settle(&mut h);
++    frame(&mut h, vec![Event::Ime(ImeEvent::Preedit { text: "가".into(), active_range_chars: None }), Event::Ime(ImeEvent::Commit("가".into()))]);
++    settle(&mut h);
++    assert_eq!(editor_text(&h).as_deref(), Some("a가"));
++    frame(&mut h, vec![key(Key::Escape, Modifiers::NONE)]);
++    settle(&mut h);
++    let mut events = typed('b');
++    events.push(Event::Ime(ImeEvent::Commit("나".into())));
++    events.extend(typed('c'));
++    frame(&mut h, events);
++    assert_eq!(editor_text(&h).as_deref(), Some("b"), "the grid stops at IME input");
++}
++
++#[test]
++fn sketch_shift_space_still_does_not_start_an_edit() {
++    let mut h = harness();
++    frame(&mut h, vec![key(Key::Space, Modifiers::SHIFT), Event::Text(" ".into())]);
++    settle(&mut h);
++    assert!(h.state().editor.is_none());
++}
