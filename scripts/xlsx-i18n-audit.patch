@@ -1,0 +1,29 @@
+diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
+index 061698d..5f6abb0 100644
+--- a/crates/ui-egui/src/i18n.rs
++++ b/crates/ui-egui/src/i18n.rs
+@@ -130,6 +130,9 @@ impl Language {
+             Self::Fr => fr::translate(text),
+             Self::Sr => sr::translate(text),
+         };
++        if translated.is_none() && self != Self::En {
++            audit_miss(text);
++        }
+         translated.unwrap_or_else(|| text.rsplit_once('|').map_or(text, |(_, label)| label))
+     }
+ }
+@@ -715,3 +718,14 @@ mod tests {
+         }
+     }
+ }
++
++/// Sketch Docs measurement build only (scripts/xlsx-i18n-audit): each label asked for that has no
++/// translation is logged once, so the runner can list what the interface still shows in English.
++fn audit_miss(text: &str) {
++    thread_local! { static SEEN: std::cell::RefCell<std::collections::BTreeSet<String>> = std::cell::RefCell::default(); }
++    SEEN.with(|seen| {
++        if seen.borrow_mut().insert(text.to_string()) {
++            log::warn!("i18n-miss\t{text}");
++        }
++    });
++}

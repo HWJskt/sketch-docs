@@ -1,0 +1,1361 @@
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index 922baab..242ce19 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -333,7 +333,7 @@ fn new_tiles(app: &mut SheetApp, ui: &mut Ui, out: &mut Outcome) {
+             out.close = true;
+         }
+         for (i, (name, title)) in gridcraft_engine::sample::SAMPLES.iter().enumerate() {
+-            if tile(ui, title, Some(i)).clicked() {
++            if tile(ui, lang.tr(title), Some(i)).clicked() {
+                 app.run_or_alert("file.new", json!({"sample": name}));
+                 out.close = true;
+             }
+diff --git a/crates/ui-egui/src/border_preview.rs b/crates/ui-egui/src/border_preview.rs
+index 11ff351..336edd7 100644
+--- a/crates/ui-egui/src/border_preview.rs
++++ b/crates/ui-egui/src/border_preview.rs
+@@ -53,7 +53,7 @@ pub(crate) fn preset_button(ui: &mut Ui, label: &str, preset: &str) -> Response
+ /// and explicit border colors faithful in both light and dark application themes.
+ pub(crate) fn sample(ui: &mut Ui, borders: &Borders, theme: &Theme) {
+     ui.add_space(8.0);
+-    ui.label("Preview");
++    ui.label(crate::i18n::t("Preview"));
+     let (area, response) = ui.allocate_exact_size(vec2(248.0, 104.0), Sense::hover());
+     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Border preview"));
+     let t = Tokens::get(ui.ctx());
+diff --git a/crates/ui-egui/src/credits.rs b/crates/ui-egui/src/credits.rs
+index 5ab099c..b18d350 100644
+--- a/crates/ui-egui/src/credits.rs
++++ b/crates/ui-egui/src/credits.rs
+@@ -215,14 +215,14 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+     let id = egui::Id::new("credits_view");
+     let mut v = ui.data_mut(|d| d.get_temp::<View>(id)).unwrap_or_default();
+     ui.horizontal_wrapped(|ui| {
+-        ui.label("Show");
++        ui.label(crate::i18n::t("Show"));
+         for m in NameMode::ALL {
+             if ui.selectable_label(v.names == m, m.label()).clicked() {
+                 v.names = m;
+             }
+         }
+         ui.separator();
+-        ui.label("Sort");
++        ui.label(crate::i18n::t("Sort"));
+         egui::ComboBox::from_id_salt("credits_sort").selected_text(v.key.label().0).show_ui(ui, |ui| {
+             for k in SortKey::ALL {
+                 if ui.selectable_label(v.key == k, k.label().0).clicked() {
+@@ -231,14 +231,14 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+                 }
+             }
+         });
+-        if ui.button(if v.ascending { "▲" } else { "▼" }).on_hover_text("Reverse the order").clicked() {
++        if ui.button(if v.ascending { "▲" } else { "▼" }).on_hover_text(crate::i18n::t("Reverse the order")).clicked() {
+             v.ascending = !v.ascending;
+         }
+         ui.separator();
+-        if ui.selectable_label(!v.table, "Grab bag").clicked() {
++        if ui.selectable_label(!v.table, crate::i18n::t("Grab bag")).clicked() {
+             v.table = false;
+         }
+-        if ui.selectable_label(v.table, "Table").clicked() {
++        if ui.selectable_label(v.table, crate::i18n::t("Table")).clicked() {
+             v.table = true;
+         }
+     });
+@@ -247,7 +247,7 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+     ui.separator();
+     egui::ScrollArea::both().auto_shrink([false, false]).max_height(340.0).show(ui, |ui| {
+         if list.is_empty() {
+-            ui.label("No contributor data was built into this copy.");
++            ui.label(crate::i18n::t("No contributor data was built into this copy."));
+         } else if v.table {
+             table(ui, &list, &mut v);
+         } else {
+@@ -297,7 +297,7 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
+ /// About ▸ Models: AI models credited in Co-Authored-By trailers.
+ pub fn models_ui(ui: &mut egui::Ui) {
+     if MODELS.is_empty() {
+-        ui.label("No model credits were built into this copy.");
++        ui.label(crate::i18n::t("No model credits were built into this copy."));
+         return;
+     }
+     let assisted: u64 = MODELS.iter().map(|m| m.commits).max().unwrap_or(0).max(1);
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index a0c7aee..1082523 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -1063,7 +1063,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
+                 "solverResults" => solver_results(app, ui, &mut d, &mut open),
+                 "spelling" => spelling(app, ui, &mut d, &mut open),
+                 "agents" => {
+-                    ui.label("GridCraft is fully drivable by agents. Every menu item, button and gesture is a command:");
++                    ui.label(crate::i18n::t("GridCraft is fully drivable by agents. Every menu item, button and gesture is a command:"));
+                     ui.add_space(4.0);
+                     ui.monospace("gridcraft --control 7979        # JSON-lines control channel\ngridcraft-cli mcp --connect 7979   # MCP bridged to this window\ngridcraft-cli mcp                   # headless MCP server");
+                     ui.add_space(4.0);
+@@ -1108,14 +1108,14 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
+                         let name = d.values.get("alt").and_then(Json::as_str).unwrap_or("No picture selected");
+                         ui.label(name);
+                     } else {
+-                        ui.label("Picture file path (PNG or JPEG):");
++                        ui.label(crate::i18n::t("Picture file path (PNG or JPEG):"));
+                         let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
+                         if ui.text_edit_singleline(&mut path).changed() {
+                             d.values.remove("base64");
+                             d.values.insert("path".into(), json!(path));
+                         }
+                     }
+-                    if (app.services.pick_picture.is_some() || app.services.pick_picture_async.is_some()) && ui.button("Browse…").clicked() {
++                    if (app.services.pick_picture.is_some() || app.services.pick_picture_async.is_some()) && ui.button(crate::i18n::t("Browse…")).clicked() {
+                         if let Some(start) = &app.services.pick_picture_async {
+                             let inbox = crate::Inbox::default();
+                             start(inbox.clone());
+@@ -1129,13 +1129,13 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
+                             d.values.insert("path".into(), json!(path));
+                         }
+                     }
+-                    ui.label("Description (optional):");
++                    ui.label(crate::i18n::t("Description (optional):"));
+                     let mut alt = d.values.get("alt").and_then(Json::as_str).unwrap_or("").to_string();
+                     if ui.text_edit_singleline(&mut alt).changed() {
+                         d.values.insert("alt".into(), json!(alt));
+                     }
+                     if d.values.get("placement").and_then(Json::as_str) == Some("cell") {
+-                        ui.label(egui::RichText::new("Fits inside the selected cell and moves with its content.").small());
++                        ui.label(egui::RichText::new(crate::i18n::t("Fits inside the selected cell and moves with its content.")).small());
+                     }
+                     ok_cancel(ui, &mut confirm, &mut open);
+                 }
+@@ -1184,15 +1184,15 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
+                 "saveChanges" => {
+                     ui.label(format!("Do you want to save the changes you made to {}?", d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")));
+                     ui.horizontal(|ui| {
+-                        if ui.button("Don't Save").clicked() {
++                        if ui.button(crate::i18n::t("Don't Save")).clicked() {
+                             app.run_or_alert("file.close", json!({"force": true}));
+                             open = false;
+                         }
+-                        if ui.button("Cancel").clicked() {
++                        if ui.button(crate::i18n::t("Cancel")).clicked() {
+                             open = false;
+                         }
+                         // File operations must include the cell the user is still editing (as the File > Save menu item already does).
+-                        if ui.button("Save").clicked() && app.commit_edit(0, 0, false, false) {
++                        if ui.button(crate::i18n::t("Save")).clicked() && app.commit_edit(0, 0, false, false) {
+                             app.run_or_alert("file.save", json!({}));
+                             if app.session.active().is_some_and(|x| !x.is_dirty()) {
+                                 app.run_or_alert("file.close", json!({"force": true}));
+@@ -1202,9 +1202,9 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
+                     });
+                 }
+                 "start" => {
+-                    ui.heading("Start a new workbook");
++                    ui.heading(crate::i18n::t("Start a new workbook"));
+                     ui.horizontal_wrapped(|ui| {
+-                        if ui.button("Blank workbook").clicked() {
++                        if ui.button(crate::i18n::t("Blank workbook")).clicked() {
+                             app.run_or_alert("file.new", json!({}));
+                             open = false;
+                         }
+@@ -1216,14 +1216,14 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
+                         }
+                     });
+                     ui.separator();
+-                    ui.label(egui::RichText::new("Recent").strong());
++                    ui.label(egui::RichText::new(crate::i18n::t("Recent")).strong());
+                     for path in app.ui.recent.clone() {
+                         if ui.link(&path).clicked() {
+                             app.open_path(&path);
+                             open = false;
+                         }
+                     }
+-                    if ui.button("Open…").clicked() {
++                    if ui.button(crate::i18n::t("Open…")).clicked() {
+                         app.open_dialog("open", json!({}));
+                         open = false;
+                     }
+@@ -1419,7 +1419,7 @@ fn form_fields(ui: &mut egui::Ui, d: &mut Dialog) {
+                         if ui.add(egui::TextEdit::singleline(&mut s).password(!d.show_password).desired_width(320.0)).changed() {
+                             d.values.insert(key.into(), json!(s));
+                         }
+-                        ui.checkbox(&mut d.show_password, "Show password");
++                        ui.checkbox(&mut d.show_password, crate::i18n::t("Show password"));
+                     });
+                 }
+                 Field::Number { key, label } => {
+@@ -1473,7 +1473,7 @@ fn form_fields(ui: &mut egui::Ui, d: &mut Dialog) {
+ fn about(ui: &mut egui::Ui, d: &mut Dialog) {
+     ui.horizontal(|ui| {
+         for tab in ["About", "Contributors", "Models"] {
+-            if ui.selectable_label(d.tab == tab, tab).clicked() {
++            if ui.selectable_label(d.tab == tab, crate::i18n::t(tab)).clicked() {
+                 d.tab = tab.to_string();
+             }
+         }
+@@ -1483,13 +1483,13 @@ fn about(ui: &mut egui::Ui, d: &mut Dialog) {
+         "Contributors" => crate::credits::contributors_ui(ui),
+         "Models" => crate::credits::models_ui(ui),
+         _ => {
+-            ui.heading("GridCraft");
++            ui.heading(crate::i18n::t("GridCraft"));
+             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+             ui.add_space(4.0);
+             // Sketch Docs: a modified version must drop the ArtCraft marks (docs/brand/LICENSE-brand.txt);
+             // a plain-text statement of the origin is allowed.
+-            ui.label("Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team.");
+-            ui.hyperlink_to("GridCraft source code", "https://github.com/storytold/gridcraft");
++            ui.label(crate::i18n::t("Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team."));
++            ui.hyperlink_to(crate::i18n::t("GridCraft source code"), "https://github.com/storytold/gridcraft");
+         }
+     }
+ }
+@@ -1498,11 +1498,11 @@ fn about(ui: &mut egui::Ui, d: &mut Dialog) {
+ /// preserved VBA project. Mirrors Excel's Developer ▸ Macros list, but is honest that VBA is
+ /// preserved and not executed.
+ fn macros(ui: &mut egui::Ui, d: &mut Dialog) {
+-    ui.label("Automation in this workbook. GridCraft runs its own scripts; a file's VBA project is preserved but not executed.");
++    ui.label(crate::i18n::t("Automation in this workbook. GridCraft runs its own scripts; a file's VBA project is preserved but not executed."));
+     ui.add_space(6.0);
+     let items: Vec<Json> = d.result.as_ref().and_then(Json::as_array).cloned().unwrap_or_default();
+     if items.is_empty() {
+-        ui.weak("This workbook has no scripts or macros.");
++        ui.weak(crate::i18n::t("This workbook has no scripts or macros."));
+         return;
+     }
+     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+@@ -1512,7 +1512,7 @@ fn macros(ui: &mut egui::Ui, d: &mut Dialog) {
+             ui.horizontal(|ui| {
+                 ui.label(egui::RichText::new(name).strong());
+                 if is_vba {
+-                    ui.weak("— VBA project (preserved, not run)");
++                    ui.weak(crate::i18n::t("— VBA project (preserved, not run)"));
+                 } else {
+                     let steps = it.get("steps").and_then(Json::as_u64).unwrap_or(0);
+                     ui.weak(format!("— {steps} step{}", if steps == 1 { "" } else { "s" }));
+@@ -1748,8 +1748,8 @@ fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm:
+ 
+ fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool) {
+     ui.horizontal(|ui| {
+-        ui.label("Search:");
+-        let r = ui.add(egui::TextEdit::singleline(&mut d.search).desired_width(300.0).hint_text("e.g. lookup, average, date"));
++        ui.label(crate::i18n::t("Search:"));
++        let r = ui.add(egui::TextEdit::singleline(&mut d.search).desired_width(300.0).hint_text(crate::i18n::t("e.g. lookup, average, date")));
+         r.request_focus();
+     });
+     let locale = app.ui.language.formula_locale();
+@@ -1804,7 +1804,7 @@ fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confir
+ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+     ui.horizontal(|ui| {
+         for tab in ["Find", "Replace"] {
+-            if ui.selectable_label(d.tab == tab, tab).clicked() {
++            if ui.selectable_label(d.tab == tab, crate::i18n::t(tab)).clicked() {
+                 d.tab = tab.into();
+             }
+         }
+@@ -1812,12 +1812,12 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+     let mut what = d.values.get("what").and_then(Json::as_str).unwrap_or("").to_string();
+     let mut with = d.values.get("with").and_then(Json::as_str).unwrap_or("").to_string();
+     ui.horizontal(|ui| {
+-        ui.label("Find what:");
++        ui.label(crate::i18n::t("Find what:"));
+         ui.add(egui::TextEdit::singleline(&mut what).desired_width(260.0));
+     });
+     if d.tab == "Replace" {
+         ui.horizontal(|ui| {
+-            ui.label("Replace with:");
++            ui.label(crate::i18n::t("Replace with:"));
+             ui.add(egui::TextEdit::singleline(&mut with).desired_width(244.0));
+         });
+     }
+@@ -1825,9 +1825,9 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+     let mut whole = d.values.get("wholeCell").and_then(Json::as_bool).unwrap_or(false);
+     let mut wb = d.values.get("within").and_then(Json::as_str) == Some("workbook");
+     ui.horizontal(|ui| {
+-        ui.checkbox(&mut case, "Match case");
+-        ui.checkbox(&mut whole, "Match entire cell contents");
+-        ui.checkbox(&mut wb, "Within workbook");
++        ui.checkbox(&mut case, crate::i18n::t("Match case"));
++        ui.checkbox(&mut whole, crate::i18n::t("Match entire cell contents"));
++        ui.checkbox(&mut wb, crate::i18n::t("Within workbook"));
+     });
+     d.values.insert("what".into(), json!(what));
+     d.values.insert("with".into(), json!(with));
+@@ -1837,7 +1837,7 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+     let base = json!({"what": what, "matchCase": case, "wholeCell": whole, "within": if wb { "workbook" } else { "sheet" }});
+     ui.horizontal(|ui| {
+         if d.tab == "Replace" {
+-            if ui.button("Replace All").clicked() {
++            if ui.button(crate::i18n::t("Replace All")).clicked() {
+                 let mut p = base.clone();
+                 p["with"] = json!(with);
+                 p["all"] = json!(true);
+@@ -1846,7 +1846,7 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+                     Err(e) => app.message = Some(("Find and Replace".into(), crate::clean_error(&e))),
+                 }
+             }
+-            if ui.button("Replace").clicked() {
++            if ui.button(crate::i18n::t("Replace")).clicked() {
+                 let mut p = base.clone();
+                 p["with"] = json!(with);
+                 p["all"] = json!(false);
+@@ -1854,12 +1854,12 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+                 let _ = app.run("edit.find", base.clone());
+             }
+         }
+-        if ui.button("Find All").clicked() {
++        if ui.button(crate::i18n::t("Find All")).clicked() {
+             let mut p = base.clone();
+             p["all"] = json!(true);
+             d.result = app.run("edit.find", p).ok();
+         }
+-        if ui.button("Find Next").clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
++        if ui.button(crate::i18n::t("Find Next")).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+             if let Err(e) = app.run("edit.find", base.clone()) {
+                 app.message = Some(("Find and Replace".into(), crate::clean_error(&e)));
+             }
+@@ -1900,11 +1900,11 @@ fn go_to(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bo
+     }
+     let mut r = d.values.get("reference").and_then(Json::as_str).unwrap_or("").to_string();
+     ui.horizontal(|ui| {
+-        ui.label("Reference:");
++        ui.label(crate::i18n::t("Reference:"));
+         ui.text_edit_singleline(&mut r).request_focus();
+     });
+     d.values.insert("reference".into(), json!(r.clone()));
+-    if ui.button("Special…").clicked() {
++    if ui.button(crate::i18n::t("Special…")).clicked() {
+         app.open_dialog("goToSpecial", json!({}));
+         return;
+     }
+@@ -1921,13 +1921,13 @@ fn go_to(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bo
+ 
+ fn sort(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool) {
+     let mut header = d.values.get("header").and_then(Json::as_bool).unwrap_or(true);
+-    ui.checkbox(&mut header, "My list has headers");
++    ui.checkbox(&mut header, crate::i18n::t("My list has headers"));
+     d.values.insert("header".into(), json!(header));
+     let mut levels: Vec<Json> = d.values.get("levels").and_then(Json::as_array).cloned().unwrap_or_default();
+     let mut remove = None;
+     for (i, lv) in levels.iter_mut().enumerate() {
+         ui.horizontal(|ui| {
+-            ui.label(if i == 0 { "Sort by" } else { "Then by" });
++            ui.label(if i == 0 { crate::i18n::t("Sort by") } else { crate::i18n::t("Then by") });
+             let mut col = lv["column"].as_str().unwrap_or("A").to_string();
+             ui.add(egui::TextEdit::singleline(&mut col).desired_width(50.0));
+             lv["column"] = json!(col.to_ascii_uppercase());
+@@ -1939,14 +1939,14 @@ fn sort(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut boo
+                     _ => "Cell Values",
+                 })
+                 .show_ui(ui, |ui| {
+-                    ui.selectable_value(&mut by, "values".into(), "Cell Values");
+-                    ui.selectable_value(&mut by, "cellColor".into(), "Cell Color");
+-                    ui.selectable_value(&mut by, "fontColor".into(), "Font Color");
++                    ui.selectable_value(&mut by, "values".into(), crate::i18n::t("Cell Values"));
++                    ui.selectable_value(&mut by, "cellColor".into(), crate::i18n::t("Cell Color"));
++                    ui.selectable_value(&mut by, "fontColor".into(), crate::i18n::t("Font Color"));
+                 });
+             lv["by"] = json!(by);
+             let mut desc = lv["order"].as_str() == Some("desc");
+-            ui.radio_value(&mut desc, false, "A to Z");
+-            ui.radio_value(&mut desc, true, "Z to A");
++            ui.radio_value(&mut desc, false, crate::i18n::t("A to Z"));
++            ui.radio_value(&mut desc, true, crate::i18n::t("Z to A"));
+             lv["order"] = json!(if desc { "desc" } else { "asc" });
+             if ui.small_button("✕").clicked() {
+                 remove = Some(i);
+@@ -1958,7 +1958,7 @@ fn sort(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut boo
+     {
+         levels.remove(i);
+     }
+-    if ui.button("+ Add Level").clicked() {
++    if ui.button(crate::i18n::t("+ Add Level")).clicked() {
+         levels.push(json!({"column": "B", "order": "asc"}));
+     }
+     d.values.insert("levels".into(), Json::Array(levels.clone()));
+@@ -1978,10 +1978,10 @@ fn name_manager(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mu
+     let selected = names.get(d.list_index).cloned();
+     let field = |n: &Json, k: &str| n.get(k).and_then(Json::as_str).unwrap_or("").to_string();
+     ui.horizontal(|ui| {
+-        if ui.button("New…").clicked() {
++        if ui.button(crate::i18n::t("New…")).clicked() {
+             app.open_dialog("defineName", json!({}));
+         }
+-        if ui.add_enabled(selected.is_some(), egui::Button::new("Edit…")).clicked()
++        if ui.add_enabled(selected.is_some(), egui::Button::new(crate::i18n::t("Edit…"))).clicked()
+             && let Some(n) = &selected
+         {
+             app.open_dialog(
+@@ -1992,7 +1992,7 @@ fn name_manager(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mu
+                 }),
+             );
+         }
+-        if ui.add_enabled(selected.is_some(), egui::Button::new("Delete")).clicked()
++        if ui.add_enabled(selected.is_some(), egui::Button::new(crate::i18n::t("Delete"))).clicked()
+             && let Some(n) = &selected
+         {
+             app.run_or_alert("formulas.deleteName", json!({"name": field(n, "name"), "scope": field(n, "scope")}));
+@@ -2001,13 +2001,13 @@ fn name_manager(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mu
+     ui.add_space(4.0);
+     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+         egui::Grid::new("names").striped(true).num_columns(4).show(ui, |ui| {
+-            ui.strong("Name");
+-            ui.strong("Value");
+-            ui.strong("Refers To");
+-            ui.strong("Scope");
++            ui.strong(crate::i18n::t("Name"));
++            ui.strong(crate::i18n::t("Value"));
++            ui.strong(crate::i18n::t("Refers To"));
++            ui.strong(crate::i18n::t("Scope"));
+             ui.end_row();
+             if names.is_empty() {
+-                ui.label(egui::RichText::new("No names defined").italics());
++                ui.label(egui::RichText::new(crate::i18n::t("No names defined")).italics());
+                 ui.end_row();
+             }
+             for (i, n) in names.iter().enumerate() {
+@@ -2023,7 +2023,7 @@ fn name_manager(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mu
+     });
+     ui.add_space(8.0);
+     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+-        if ui.button(" Close ").clicked() {
++        if ui.button(crate::i18n::t(" Close ")).clicked() {
+             *open = false;
+         }
+     });
+@@ -2087,7 +2087,7 @@ fn chart_icon(t: &str) -> Icon {
+ fn recommended_charts(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool) {
+     ui.horizontal(|ui| {
+         for tab in ["Recommended Charts", "All Charts"] {
+-            if ui.selectable_label(d.tab == tab, tab).clicked() && d.tab != tab {
++            if ui.selectable_label(d.tab == tab, crate::i18n::t(tab)).clicked() && d.tab != tab {
+                 d.tab = tab.to_string();
+                 select_chart(d, 0);
+             }
+@@ -2160,7 +2160,7 @@ fn select_data(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &
+     };
+     edit(ui, d, "range", "Chart data range:");
+     ui.add_space(6.0);
+-    ui.strong("Legend Entries (Series)");
++    ui.strong(crate::i18n::t("Legend Entries (Series)"));
+     let names: Vec<String> =
+         d.values.get("names").and_then(Json::as_array).map(|a| a.iter().map(|n| n.as_str().unwrap_or("").to_string()).collect()).unwrap_or_default();
+     let mut remove: Vec<u64> =
+@@ -2174,10 +2174,10 @@ fn select_data(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &
+                 let label = if name.is_empty() { format!("Series{}", i + 1) } else { name.clone() };
+                 ui.label(if removed { egui::RichText::new(label).strikethrough().weak() } else { egui::RichText::new(label) });
+                 if removed {
+-                    if ui.small_button("Keep").clicked() {
++                    if ui.small_button(crate::i18n::t("Keep")).clicked() {
+                         remove.retain(|x| *x != i);
+                     }
+-                } else if ui.add_enabled(kept > 1, egui::Button::new("Remove").small()).clicked() {
++                } else if ui.add_enabled(kept > 1, egui::Button::new(crate::i18n::t("Remove")).small()).clicked() {
+                     remove.push(i);
+                 }
+             });
+@@ -2216,7 +2216,7 @@ fn manage_rules(app: &mut SheetApp, ui: &mut egui::Ui) {
+     let list = app.session.run("home.manageRules", json!({})).unwrap_or(Json::Null);
+     let rules = list["rules"].as_array().cloned().unwrap_or_default();
+     if rules.is_empty() {
+-        ui.label("There are no conditional formatting rules on this sheet.");
++        ui.label(crate::i18n::t("There are no conditional formatting rules on this sheet."));
+     }
+     for (i, r) in rules.iter().enumerate() {
+         ui.horizontal(|ui| {
+@@ -2232,7 +2232,7 @@ fn manage_rules(app: &mut SheetApp, ui: &mut egui::Ui) {
+             if ui.small_button("▼").clicked() {
+                 app.run_or_alert("home.manageRules", json!({"moveDown": i}));
+             }
+-            if ui.small_button("Delete").clicked() {
++            if ui.small_button(crate::i18n::t("Delete")).clicked() {
+                 app.run_or_alert("home.manageRules", json!({"delete": i}));
+             }
+         });
+@@ -2240,7 +2240,7 @@ fn manage_rules(app: &mut SheetApp, ui: &mut egui::Ui) {
+ }
+ 
+ fn command_search(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool) {
+-    let r = ui.add(egui::TextEdit::singleline(&mut d.search).desired_width(480.0).hint_text("Type a command, e.g. freeze, chart, bold…"));
++    let r = ui.add(egui::TextEdit::singleline(&mut d.search).desired_width(480.0).hint_text(crate::i18n::t("Type a command, e.g. freeze, chart, bold…")));
+     r.request_focus();
+     let q = d.search.to_ascii_lowercase();
+     let cmds: Vec<(String, String, String)> = app
+@@ -2282,13 +2282,13 @@ fn goal_seek(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mu
+     let get = |k: &str| d.values.get(k).and_then(Json::as_str).unwrap_or("").to_string();
+     let (mut set, mut to, mut changing) = (get("set"), get("to"), get("changing"));
+     egui::Grid::new("gs").show(ui, |ui| {
+-        ui.label("Set cell:");
++        ui.label(crate::i18n::t("Set cell:"));
+         ui.text_edit_singleline(&mut set);
+         ui.end_row();
+-        ui.label("To value:");
++        ui.label(crate::i18n::t("To value:"));
+         ui.text_edit_singleline(&mut to);
+         ui.end_row();
+-        ui.label("By changing cell:");
++        ui.label(crate::i18n::t("By changing cell:"));
+         ui.text_edit_singleline(&mut changing);
+         ui.end_row();
+     });
+@@ -2387,14 +2387,14 @@ fn toolpak_defaults(sel: &str, tool: &str) -> Map<String, Json> {
+ fn analysis_toolpak(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool) {
+     use gridcraft_engine::cmd::analysis::TOOLS;
+     if d.values.get("askOverwrite").and_then(Json::as_bool) == Some(true) {
+-        ui.label("The output range already holds data. Replace it with the report?");
++        ui.label(crate::i18n::t("The output range already holds data. Replace it with the report?"));
+         ui.horizontal(|ui| {
+-            if ui.button("Replace").clicked() {
++            if ui.button(crate::i18n::t("Replace")).clicked() {
+                 d.values.remove("askOverwrite");
+                 d.values.insert("overwrite".into(), json!(true));
+                 *confirm = true;
+             }
+-            if ui.button("Cancel").clicked() {
++            if ui.button(crate::i18n::t("Cancel")).clicked() {
+                 d.values.remove("askOverwrite");
+             }
+         });
+@@ -2402,7 +2402,7 @@ fn analysis_toolpak(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confi
+     }
+     let tool = d.values.get("tool").and_then(Json::as_str).unwrap_or("").to_string();
+     let Some((_, label)) = TOOLS.iter().find(|(id, _)| *id == tool) else {
+-        ui.label(egui::RichText::new("Analysis Tools").strong());
++        ui.label(egui::RichText::new(crate::i18n::t("Analysis Tools")).strong());
+         let pick = d.values.get("pick").and_then(Json::as_str).unwrap_or("").to_string();
+         let mut chosen = false;
+         egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+@@ -2429,11 +2429,11 @@ fn analysis_toolpak(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confi
+     d.fields = toolpak_fields(&tool);
+     form_fields(ui, d);
+     ui.separator();
+-    ui.label(egui::RichText::new("Output options").strong());
++    ui.label(egui::RichText::new(crate::i18n::t("Output options")).strong());
+     let to = d.values.get("outputTo").and_then(Json::as_str).unwrap_or("newSheet").to_string();
+     for (key, choice, text_label) in [("output", "range", "Output Range:"), ("newSheet", "newSheet", "New Worksheet Ply:")] {
+         ui.horizontal(|ui| {
+-            if ui.radio(to == choice, text_label).clicked() {
++            if ui.radio(to == choice, crate::i18n::t(text_label)).clicked() {
+                 d.values.insert("outputTo".into(), json!(choice));
+             }
+             let mut t = d.values.get(key).and_then(Json::as_str).unwrap_or("").to_string();
+@@ -2457,22 +2457,22 @@ fn solver(ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool
+         }
+     };
+     ui.horizontal(|ui| {
+-        ui.label("Set Objective:");
++        ui.label(crate::i18n::t("Set Objective:"));
+         edit(ui, d, "objective", 200.0);
+     });
+     let goal = text(d, "goal");
+     ui.horizontal(|ui| {
+-        ui.label("To:");
++        ui.label(crate::i18n::t("To:"));
+         for (g, label) in [("max", "Max"), ("min", "Min"), ("value", "Value Of:")] {
+-            if ui.radio(goal == g, label).clicked() {
++            if ui.radio(goal == g, crate::i18n::t(label)).clicked() {
+                 d.values.insert("goal".into(), json!(g));
+             }
+         }
+         edit(ui, d, "value", 80.0);
+     });
+-    ui.label("By Changing Variable Cells:");
++    ui.label(crate::i18n::t("By Changing Variable Cells:"));
+     edit(ui, d, "variables", 420.0);
+-    ui.label("Subject to the Constraints:");
++    ui.label(crate::i18n::t("Subject to the Constraints:"));
+     let list: Vec<String> = d
+         .values
+         .get("constraints")
+@@ -2502,7 +2502,7 @@ fn solver(ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool
+         if !matches!(op.as_str(), "int" | "bin") {
+             edit(ui, d, "newRhs", 110.0);
+         }
+-        if ui.button("Add").clicked() {
++        if ui.button(crate::i18n::t("Add")).clicked() {
+             let lhs = text(d, "newLhs");
+             if !lhs.trim().is_empty() {
+                 let rhs = if matches!(op.as_str(), "int" | "bin") { String::new() } else { format!(" {}", text(d, "newRhs").trim()) };
+@@ -2513,7 +2513,7 @@ fn solver(ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool
+                 d.values.insert("newRhs".into(), json!(""));
+             }
+         }
+-        if ui.add_enabled(d.list_index < list.len(), egui::Button::new("Delete")).clicked() {
++        if ui.add_enabled(d.list_index < list.len(), egui::Button::new(crate::i18n::t("Delete"))).clicked() {
+             let mut list = list.clone();
+             if d.list_index < list.len() {
+                 list.remove(d.list_index);
+@@ -2522,12 +2522,12 @@ fn solver(ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool
+         }
+     });
+     let mut nonneg = d.values.get("nonNegative").and_then(Json::as_bool).unwrap_or(true);
+-    if ui.checkbox(&mut nonneg, "Make Unconstrained Variables Non-Negative").changed() {
++    if ui.checkbox(&mut nonneg, crate::i18n::t("Make Unconstrained Variables Non-Negative")).changed() {
+         d.values.insert("nonNegative".into(), json!(nonneg));
+     }
+     let method = text(d, "method");
+     ui.horizontal(|ui| {
+-        ui.label("Select a Solving Method:");
++        ui.label(crate::i18n::t("Select a Solving Method:"));
+         let label = |m: &str| match m {
+             "simplex" => "Simplex LP",
+             "evolutionary" => "Evolutionary",
+@@ -2552,11 +2552,11 @@ fn solver(ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool
+     ui.add_space(8.0);
+     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+         let solve =
+-            ui.add(egui::Button::new(egui::RichText::new("  Solve  ").color(Color32::WHITE)).fill(crate::theme::Tokens::get(ui.ctx()).accent));
++            ui.add(egui::Button::new(egui::RichText::new(crate::i18n::t("  Solve  ")).color(Color32::WHITE)).fill(crate::theme::Tokens::get(ui.ctx()).accent));
+         if solve.clicked() && !text(d, "objective").trim().is_empty() {
+             *confirm = true;
+         }
+-        if ui.button(" Close ").clicked() {
++        if ui.button(crate::i18n::t(" Close ")).clicked() {
+             *open = false;
+         }
+     });
+@@ -2570,10 +2570,10 @@ fn solver_results(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &
+     let restore = d.values.get("restore").and_then(Json::as_bool).unwrap_or(false);
+     if changed {
+         ui.add_space(4.0);
+-        if ui.radio(!restore, "Keep Solver Solution").clicked() {
++        if ui.radio(!restore, crate::i18n::t("Keep Solver Solution")).clicked() {
+             d.values.insert("restore".into(), json!(false));
+         }
+-        if ui.radio(restore, "Restore Original Values").clicked() {
++        if ui.radio(restore, crate::i18n::t("Restore Original Values")).clicked() {
+             d.values.insert("restore".into(), json!(true));
+         }
+     }
+@@ -2581,10 +2581,10 @@ fn solver_results(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &
+     let solved = d.values.get("values").and_then(Json::as_object).is_some_and(|v| !v.is_empty());
+     if solved {
+         ui.add_space(4.0);
+-        ui.label("Reports:");
++        ui.label(crate::i18n::t("Reports:"));
+         for (key, label) in [("answerReport", "Answer"), ("limitsReport", "Limits")] {
+             let mut on = d.values.get(key).and_then(Json::as_bool).unwrap_or(false);
+-            if ui.checkbox(&mut on, label).changed() {
++            if ui.checkbox(&mut on, crate::i18n::t(label)).changed() {
+                 d.values.insert(key.into(), json!(on));
+             }
+         }
+@@ -2618,8 +2618,8 @@ fn spelling(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mut bo
+     }
+     let issues = r["issues"].as_array().cloned().unwrap_or_default();
+     let Some(it) = issues.get(d.list_index) else {
+-        ui.label("The spelling check is complete for the entire sheet.");
+-        if ui.button("OK").clicked() {
++        ui.label(crate::i18n::t("The spelling check is complete for the entire sheet."));
++        if ui.button(crate::i18n::t("OK")).clicked() {
+             *open = false;
+         }
+         return;
+@@ -2630,7 +2630,7 @@ fn spelling(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mut bo
+     ui.label(egui::RichText::new(&word).strong().color(Color32::from_rgb(0xC4, 0x2B, 0x1C)));
+     let sugg: Vec<String> =
+         it["suggestions"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+-    ui.label("Suggestions:");
++    ui.label(crate::i18n::t("Suggestions:"));
+     let mut pick = d.values.get("pick").and_then(Json::as_str).unwrap_or("").to_string();
+     for s in &sugg {
+         if ui.selectable_label(pick == *s, s).clicked() {
+@@ -2638,24 +2638,24 @@ fn spelling(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, open: &mut bo
+         }
+     }
+     if sugg.is_empty() {
+-        ui.label(egui::RichText::new("(No suggestions)").italics());
++        ui.label(egui::RichText::new(crate::i18n::t("(No suggestions)")).italics());
+     }
+     d.values.insert("pick".into(), json!(pick.clone()));
+     let _ = app.session.run("selection.set", json!({"cell": cell}));
+     ui.horizontal(|ui| {
+-        if ui.button("Ignore Once").clicked() {
++        if ui.button(crate::i18n::t("Ignore Once")).clicked() {
+             d.list_index += 1;
+         }
+-        if ui.button("Add to Dictionary").clicked() {
++        if ui.button(crate::i18n::t("Add to Dictionary")).clicked() {
+             let _ = app.session.run("review.addToDictionary", json!({"word": word}));
+             d.list_index += 1;
+         }
+         if !pick.is_empty() {
+-            if ui.button("Change").clicked() {
++            if ui.button(crate::i18n::t("Change")).clicked() {
+                 app.run_or_alert("review.changeSpelling", json!({"cell": cell, "word": word, "to": pick}));
+                 d.list_index += 1;
+             }
+-            if ui.button("Change All").clicked() {
++            if ui.button(crate::i18n::t("Change All")).clicked() {
+                 app.run_or_alert("review.changeSpelling", json!({"word": word, "to": pick, "all": true}));
+                 d.list_index += 1;
+             }
+diff --git a/crates/ui-egui/src/formula_bar.rs b/crates/ui-egui/src/formula_bar.rs
+index 7f1ad87..0495473 100644
+--- a/crates/ui-egui/src/formula_bar.rs
++++ b/crates/ui-egui/src/formula_bar.rs
+@@ -143,7 +143,7 @@ fn name_box(app: &mut SheetApp, ui: &mut egui::Ui, t: &Tokens) {
+     let r = ui.interact(mb, id.with("drop"), Sense::click());
+     egui::Popup::menu(&r).show(|ui| {
+         if names.is_empty() {
+-            ui.label(egui::RichText::new("No names defined").italics());
++            ui.label(egui::RichText::new(crate::i18n::t("No names defined")).italics());
+         }
+         for n in names {
+             if ui.button(&n).clicked() {
+diff --git a/crates/ui-egui/src/grid.rs b/crates/ui-egui/src/grid.rs
+index 97b787e..de93661 100644
+--- a/crates/ui-egui/src/grid.rs
++++ b/crates/ui-egui/src/grid.rs
+@@ -1832,7 +1832,7 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
+         } else if on_handle(p) && app.editor.is_none() {
+             ctx.set_cursor_icon(CursorIcon::Crosshair);
+             if app.grid.drag == Drag::None && !pointer.any_down() {
+-                resp.clone().on_hover_text_at_pointer("Drag to fill cells. Drag from inside a cell to select a range.");
++                resp.clone().on_hover_text_at_pointer(crate::i18n::t("Drag to fill cells. Drag from inside a cell to select a range."));
+             }
+         } else if in_cells && app.editor.is_none() && on_cur_border(p) {
+             ctx.set_cursor_icon(CursorIcon::Move);
+@@ -2773,20 +2773,20 @@ fn filter_menu(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, was_open: bool)
+     let response = area.show(ui.ctx(), |ui| {
+         egui::Frame::popup(ui.style()).show(ui, |ui| {
+             ui.set_width(230.0);
+-            if ui.button("↑  Sort Ascending").clicked() {
++            if ui.button(crate::i18n::t("↑  Sort Ascending")).clicked() {
+                 let _ = app.run("data.sortAscending", json!({"column": col_to_letters(col)}));
+                 close = true;
+             }
+-            if ui.button("↓  Sort Descending").clicked() {
++            if ui.button(crate::i18n::t("↓  Sort Descending")).clicked() {
+                 let _ = app.run("data.sortDescending", json!({"column": col_to_letters(col)}));
+                 close = true;
+             }
+             ui.separator();
+-            ui.label(egui::RichText::new("Filter").strong());
++            ui.label(egui::RichText::new(crate::i18n::t("Filter")).strong());
+             let mut checks: Vec<(String, bool)> = ui.ctx().data_mut(|d| d.get_temp::<Vec<(String, bool)>>(key)).unwrap_or(values.clone());
+             // A search narrows the list; Select All and Apply then only cover the matches.
+             let mut search: String = ui.ctx().data_mut(|d| d.get_temp(search_key)).unwrap_or_default();
+-            let field = ui.add(egui::TextEdit::singleline(&mut search).hint_text("Search").desired_width(f32::INFINITY));
++            let field = ui.add(egui::TextEdit::singleline(&mut search).hint_text(crate::i18n::t("Search")).desired_width(f32::INFINITY));
+             if !was_open {
+                 field.request_focus();
+             }
+@@ -2814,11 +2814,11 @@ fn filter_menu(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, was_open: bool)
+             let checks: Vec<(String, bool)> = checks.iter().map(|(v, on)| (v.clone(), *on && matches(v))).collect();
+             ui.separator();
+             ui.horizontal(|ui| {
+-                if ui.button("Clear Filter").clicked() {
++                if ui.button(crate::i18n::t("Clear Filter")).clicked() {
+                     let _ = app.run("data.filterBy", json!({"column": col_to_letters(col), "clear": true}));
+                     close = true;
+                 }
+-                if ui.button("Apply").clicked() {
++                if ui.button(crate::i18n::t("Apply")).clicked() {
+                     let blanks = checks.iter().any(|(v, on)| v == "(Blanks)" && *on);
+                     let vals: Vec<String> = checks.iter().filter(|(v, on)| *on && v != "(Blanks)").map(|(v, _)| v.clone()).collect();
+                     let p = if checks.iter().all(|(_, b)| *b) {
+diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
+index 061698d..45096a3 100644
+--- a/crates/ui-egui/src/i18n.rs
++++ b/crates/ui-egui/src/i18n.rs
+@@ -14,6 +14,8 @@ mod de;
+ mod es;
+ mod fr;
+ mod ko;
++/// Sketch Docs: Korean additions and corrections, generated at build time from overlays/gridcraft/ko-sketch.json.
++mod ko_sketch;
+ mod pt;
+ mod ru;
+ mod sr;
+@@ -122,7 +124,7 @@ impl Language {
+             Self::Es => es::translate(text),
+             Self::Ja => JAPANESE.iter().find(|(english, _)| *english == text).map(|(_, translated)| *translated),
+             Self::Zh => zh::translate(text),
+-            Self::Ko => ko::translate(text),
++            Self::Ko => ko_sketch::translate(text).or_else(|| ko::translate(text)),
+             Self::Ru => ru::translate(text),
+             Self::PtBr => pt::translate(text),
+             Self::De => de::translate(text),
+@@ -171,6 +173,18 @@ pub fn current(ctx: &egui::Context) -> Language {
+ /// Sets the language for the current frame; call once per frame before anything is drawn.
+ pub fn set_current(ctx: &egui::Context, language: Language) {
+     ctx.data_mut(|d| d.insert_temp(lang_key(), language));
++    CURRENT.with(|current| current.set(language));
++}
++
++thread_local! {
++    /// Sketch Docs: the language [`set_current`] chose for this frame, for [`t`].
++    static CURRENT: std::cell::Cell<Language> = const { std::cell::Cell::new(Language::En) };
++}
++
++/// Sketch Docs: translates a literal shown by a widget into the language of the frame being drawn
++/// (scripts/xlsx-wrap-tr.mjs wraps such literals; labels that already call `tr` are unchanged).
++pub fn t(text: &str) -> &str {
++    CURRENT.with(std::cell::Cell::get).tr(text)
+ }
+ 
+ /// English label → Japanese. Keys are the exact interface strings (command ids, file names and
+diff --git a/crates/ui-egui/src/panes.rs b/crates/ui-egui/src/panes.rs
+index aaa9bec..8051e9a 100644
+--- a/crates/ui-egui/src/panes.rs
++++ b/crates/ui-egui/src/panes.rs
+@@ -55,7 +55,7 @@ fn comments(app: &mut SheetApp, ui: &mut Ui) {
+     let Some(sh) = d.wb.active() else { return };
+     let list: Vec<(String, gridcraft_engine::model::Comment)> = sh.comments.iter().map(|(c, m)| (c.a1(), m.clone())).collect();
+     if list.is_empty() {
+-        ui.label(egui::RichText::new("No comments on this sheet yet. Select a cell and choose New Comment.").italics());
++        ui.label(egui::RichText::new(crate::i18n::t("No comments on this sheet yet. Select a cell and choose New Comment.")).italics());
+     }
+     for (cell, c) in list {
+         egui::Frame::NONE
+@@ -72,7 +72,7 @@ fn comments(app: &mut SheetApp, ui: &mut Ui) {
+                     }
+                     ui.label(egui::RichText::new(&c.author).color(Color32::from_gray(90)));
+                     if c.resolved {
+-                        ui.label(egui::RichText::new("Resolved").small().color(Color32::from_rgb(0x10, 0x7C, 0x41)));
++                        ui.label(egui::RichText::new(crate::i18n::t("Resolved")).small().color(Color32::from_rgb(0x10, 0x7C, 0x41)));
+                     }
+                 });
+                 ui.label(&c.text);
+@@ -85,14 +85,14 @@ fn comments(app: &mut SheetApp, ui: &mut Ui) {
+                 // a field sized by a guess wider than the row pushes the resizable pane wider every frame.
+                 ui.horizontal(|ui| {
+                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+-                        if ui.small_button("Delete").clicked() {
++                        if ui.small_button(crate::i18n::t("Delete")).clicked() {
+                             app.run_or_alert("review.deleteComment", json!({"cell": cell}));
+                         }
+-                        if ui.small_button(if c.resolved { "Reopen" } else { "Resolve" }).clicked() {
++                        if ui.small_button(if c.resolved { crate::i18n::t("Reopen") } else { crate::i18n::t("Resolve") }).clicked() {
+                             app.run_or_alert("review.resolveComment", json!({"cell": cell, "resolved": !c.resolved}));
+                         }
+-                        let send = ui.small_button("Send").clicked();
+-                        let r = ui.add(egui::TextEdit::singleline(&mut draft).hint_text("Reply…").desired_width(ui.available_width()));
++                        let send = ui.small_button(crate::i18n::t("Send")).clicked();
++                        let r = ui.add(egui::TextEdit::singleline(&mut draft).hint_text(crate::i18n::t("Reply…")).desired_width(ui.available_width()));
+                         if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) || send) && !draft.is_empty() {
+                             app.run_or_alert("review.replyComment", json!({"cell": cell, "text": draft}));
+                             draft.clear();
+@@ -106,7 +106,7 @@ fn comments(app: &mut SheetApp, ui: &mut Ui) {
+ }
+ 
+ fn watch(app: &mut SheetApp, ui: &mut Ui) {
+-    if ui.button("Add Watch (active cell)").clicked()
++    if ui.button(crate::i18n::t("Add Watch (active cell)")).clicked()
+         && let Some(d) = app.session.active()
+         && let Some(sh) = d.wb.active()
+     {
+@@ -115,9 +115,9 @@ fn watch(app: &mut SheetApp, ui: &mut Ui) {
+     }
+     let list = app.session.run("formulas.watchWindow", json!({})).unwrap_or(Json::Null);
+     egui::Grid::new("watch_grid").striped(true).num_columns(4).show(ui, |ui| {
+-        ui.strong("Cell");
+-        ui.strong("Value");
+-        ui.strong("Formula");
++        ui.strong(crate::i18n::t("Cell"));
++        ui.strong(crate::i18n::t("Value"));
++        ui.strong(crate::i18n::t("Formula"));
+         ui.label("");
+         ui.end_row();
+         for w in list.as_array().cloned().unwrap_or_default() {
+@@ -137,7 +137,7 @@ fn selection(app: &mut SheetApp, ui: &mut Ui) {
+     let list = app.session.run("arrange.selectionPane", json!({})).unwrap_or(Json::Null);
+     let items = list.as_array().cloned().unwrap_or_default();
+     if items.is_empty() {
+-        ui.label(egui::RichText::new("There are no shapes, pictures or charts on this sheet.").italics());
++        ui.label(egui::RichText::new(crate::i18n::t("There are no shapes, pictures or charts on this sheet.")).italics());
+     }
+     for it in items.iter().rev() {
+         let kind = it["kind"].as_str().unwrap_or("").to_string();
+@@ -147,13 +147,13 @@ fn selection(app: &mut SheetApp, ui: &mut Ui) {
+             if ui.selectable_label(sel, it["name"].as_str().unwrap_or("")).clicked() {
+                 app.selected_chart = Some(id);
+             }
+-            if ui.small_button("▲").on_hover_text("Bring Forward").clicked() {
++            if ui.small_button("▲").on_hover_text(crate::i18n::t("Bring Forward")).clicked() {
+                 app.run_or_alert("arrange.bringForward", json!({"kind": kind, "id": id}));
+             }
+-            if ui.small_button("▼").on_hover_text("Send Backward").clicked() {
++            if ui.small_button("▼").on_hover_text(crate::i18n::t("Send Backward")).clicked() {
+                 app.run_or_alert("arrange.sendBackward", json!({"kind": kind, "id": id}));
+             }
+-            if ui.small_button("✕").on_hover_text("Delete").clicked() {
++            if ui.small_button("✕").on_hover_text(crate::i18n::t("Delete")).clicked() {
+                 app.run_or_alert("object.delete", json!({"kind": kind, "id": id}));
+             }
+         });
+@@ -162,11 +162,11 @@ fn selection(app: &mut SheetApp, ui: &mut Ui) {
+ 
+ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
+     let Some(id) = app.selected_chart else {
+-        ui.label(egui::RichText::new("Select a chart to format it.").italics());
++        ui.label(egui::RichText::new(crate::i18n::t("Select a chart to format it.")).italics());
+         return;
+     };
+     let Some(chart) = app.session.active().and_then(|d| d.wb.active().and_then(|s| s.charts.iter().find(|c| c.id == id).cloned())) else {
+-        ui.label("The chart no longer exists.");
++        ui.label(crate::i18n::t("The chart no longer exists."));
+         return;
+     };
+     let theme = app.session.active().map(|d| d.wb.theme.clone()).unwrap_or_default();
+@@ -199,7 +199,7 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
+         ui.horizontal(|ui| {
+             for (l, v) in [("None", "none"), ("Bottom", "bottom"), ("Top", "top"), ("Left", "left"), ("Right", "right")] {
+                 let cur = format!("{:?}", chart.legend).eq_ignore_ascii_case(v);
+-                if ui.selectable_label(cur, l).clicked() {
++                if ui.selectable_label(cur, crate::i18n::t(l)).clicked() {
+                     app.run_or_alert("chart.set", json!({"chart": id, "legend": v}));
+                 }
+             }
+@@ -207,22 +207,22 @@ fn format_chart(app: &mut SheetApp, ui: &mut Ui) {
+     });
+     ui.collapsing("Elements", |ui| {
+         let mut dl = chart.data_labels;
+-        if ui.checkbox(&mut dl, "Data Labels").changed() {
++        if ui.checkbox(&mut dl, crate::i18n::t("Data Labels")).changed() {
+             app.run_or_alert("chart.set", json!({"chart": id, "dataLabels": dl}));
+         }
+         let mut gl = chart.gridlines;
+-        if ui.checkbox(&mut gl, "Gridlines").changed() {
++        if ui.checkbox(&mut gl, crate::i18n::t("Gridlines")).changed() {
+             app.run_or_alert("chart.set", json!({"chart": id, "gridlines": gl}));
+         }
+         ui.horizontal(|ui| {
+-            ui.label("Horizontal axis title:");
++            ui.label(crate::i18n::t("Horizontal axis title:"));
+             let field = egui::Id::new(("gridcraft.chart_x_title", id));
+             if let Some(xt) = crate::widgets::committed_text(ui, field, chart.x_title.as_deref().unwrap_or(""), None) {
+                 app.run_or_alert("chart.set", json!({"chart": id, "xTitle": if xt.is_empty() { Json::Null } else { json!(xt) }}));
+             }
+         });
+         ui.horizontal(|ui| {
+-            ui.label("Vertical axis title:");
++            ui.label(crate::i18n::t("Vertical axis title:"));
+             let field = egui::Id::new(("gridcraft.chart_y_title", id));
+             if let Some(yt) = crate::widgets::committed_text(ui, field, chart.y_title.as_deref().unwrap_or(""), None) {
+                 app.run_or_alert("chart.set", json!({"chart": id, "yTitle": if yt.is_empty() { Json::Null } else { json!(yt) }}));
+diff --git a/crates/ui-egui/src/paper_view.rs b/crates/ui-egui/src/paper_view.rs
+index 621a979..308d167 100644
+--- a/crates/ui-egui/src/paper_view.rs
++++ b/crates/ui-egui/src/paper_view.rs
+@@ -900,10 +900,10 @@ pub fn ribbon_tab(app: &mut SheetApp, ui: &mut egui::Ui) {
+         .unwrap_or_default();
+     ui.vertical(|ui| {
+         let (mut f, mut o) = (first, odd_even);
+-        if ui.checkbox(&mut f, tr(app, "Different First Page")).changed() {
++        if ui.checkbox(&mut f, tr(app, crate::i18n::t("Different First Page"))).changed() {
+             set_option(app, "differentFirst", f);
+         }
+-        if ui.checkbox(&mut o, tr(app, "Different Odd & Even Pages")).changed() {
++        if ui.checkbox(&mut o, tr(app, crate::i18n::t("Different Odd & Even Pages"))).changed() {
+             set_option(app, "differentOddEven", o);
+         }
+     });
+diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
+index 9c6d89e..a8e8cb5 100644
+--- a/crates/ui-egui/src/ribbon.rs
++++ b/crates/ui-egui/src/ribbon.rs
+@@ -52,14 +52,14 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+         ui.horizontal_centered(|ui| {
+             ui.add_space(TITLE_LEFT_PAD);
+             // AutoSave toggle (saves after each change when the workbook has a file).
+-            ui.label(egui::RichText::new("AutoSave").font(theme::ui_font(12.5)).color(t.text_dim));
++            ui.label(egui::RichText::new(crate::i18n::t("AutoSave")).font(theme::ui_font(12.5)).color(t.text_dim));
+             let on = app.grid.autosave();
+             let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
+             ui.painter().rect_filled(r, 8.0, if on { t.accent } else { Color32::TRANSPARENT });
+             ui.painter().rect_stroke(r, 8.0, Stroke::new(1.0, if on { t.accent } else { t.text_dim }), StrokeKind::Inside);
+             let knob = if on { pos2(r.right() - 8.0, r.center().y) } else { pos2(r.left() + 8.0, r.center().y) };
+             ui.painter().circle_filled(knob, 5.0, if on { Color32::WHITE } else { t.text_dim });
+-            if resp.on_hover_text("AutoSave: save after every change (workbooks saved to a file)").clicked() {
++            if resp.on_hover_text(crate::i18n::t("AutoSave: save after every change (workbooks saved to a file)")).clicked() {
+                 app.grid.toggle_autosave();
+             }
+             ui.add_space(6.0);
+@@ -84,7 +84,7 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+                 let labels: Vec<String> =
+                     app.session.active().map(|d| d.undo.iter().rev().take(20).map(|e| e.label.clone()).collect()).unwrap_or_default();
+                 if labels.is_empty() {
+-                    ui.label("Can't Undo");
++                    ui.label(crate::i18n::t("Can't Undo"));
+                 }
+                 for (i, l) in labels.iter().enumerate() {
+                     if ui.button(format!("Undo {l}")).clicked() {
+@@ -108,7 +108,7 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+                         app.run_or_alert(id, json!({}));
+                     }
+                 }
+-                if ui.button("Print…").clicked() {
++                if ui.button(crate::i18n::t("Print…")).clicked() {
+                     app.print_now(json!({}));
+                 }
+             });
+@@ -129,9 +129,9 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+                 if __k.clicked() {
+                     app.open_dialog("commandSearch", json!({}));
+                 }
+-                let share = small_button(ui, Icon::Share, "Share", "Share: export or save a copy", true);
++                let share = small_button(ui, Icon::Share, crate::i18n::t("Share"), crate::i18n::t("Share: export or save a copy"), true);
+                 egui::Popup::menu(&share).show(|ui| {
+-                    if ui.button("Export as PDF…").clicked() {
++                    if ui.button(crate::i18n::t("Export as PDF…")).clicked() {
+                         app.run_or_alert("file.exportPdf", json!({}));
+                     }
+                     for (label, fmt) in
+@@ -425,7 +425,7 @@ pub(crate) fn editable_combo(
+             });
+         }
+         let text_id = anchor.id.with(salt).with("__combo_text");
+-        let te = ui.add(egui::TextEdit::singleline(&mut st.text).id(text_id).desired_width(220.0).hint_text("Type to filter…"));
++        let te = ui.add(egui::TextEdit::singleline(&mut st.text).id(text_id).desired_width(220.0).hint_text(crate::i18n::t("Type to filter…")));
+         if open_now && !te.has_focus() {
+             ui.ctx().memory_mut(|m| m.request_focus(text_id));
+             // Select all once focus lands so typing replaces the filter.
+@@ -657,7 +657,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+                     }
+                 }
+                 ui.separator();
+-                if ui.button("More Borders…").clicked() {
++                if ui.button(crate::i18n::t("More Borders…")).clicked() {
+                     app.open_dialog("formatCells", json!({"tab": "Border"}));
+                 }
+             });
+@@ -712,7 +712,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+                     act(app, id, json!({}));
+                 }
+             }
+-            let o = small_button(ui, Icon::Orientation, "", "Orientation", true);
++            let o = small_button(ui, Icon::Orientation, "", crate::i18n::t("Orientation"), true);
+             control_keytip(app, ui, &o, "home.orientation");
+             let forced_o = invoke(app, "home.orientation");
+             egui::Popup::menu(&o).open_memory(popup_command(forced_o, o.clicked())).show(|ui| {
+@@ -854,7 +854,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+     sep(ui);
+     // Cells
+     ui.vertical(|ui| {
+-        let ins = small_button(ui, Icon::Insert, "Insert", "Insert", true);
++        let ins = small_button(ui, Icon::Insert, crate::i18n::t("Insert"), crate::i18n::t("Insert"), true);
+         for sequence in keytip_table::group_extension(
+             app.keytips.prefix().unwrap_or_default(),
+             &["dialog:insertCells", "home.insertRows", "home.insertColumns", "home.insertSheet"],
+@@ -873,7 +873,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+                 ],
+             );
+         });
+-        let del = small_button(ui, Icon::Delete, "Delete", "Delete", true);
++        let del = small_button(ui, Icon::Delete, crate::i18n::t("Delete"), crate::i18n::t("Delete"), true);
+         for sequence in keytip_table::group_extension(
+             app.keytips.prefix().unwrap_or_default(),
+             &["dialog:deleteCells", "home.deleteRows", "home.deleteColumns", "home.deleteSheet"],
+@@ -892,7 +892,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+                 ],
+             );
+         });
+-        let fmt = small_button(ui, Icon::Format, "Format", "Format", true);
++        let fmt = small_button(ui, Icon::Format, crate::i18n::t("Format"), crate::i18n::t("Format"), true);
+         for sequence in keytip_table::group_extension(
+             app.keytips.prefix().unwrap_or_default(),
+             &[
+@@ -965,12 +965,12 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+                     }
+                 }
+                 ui.separator();
+-                if ui.button("More Functions…").clicked() {
++                if ui.button(crate::i18n::t("More Functions…")).clicked() {
+                     app.open_dialog("insertFunction", json!({}));
+                 }
+             });
+         });
+-        let fill = small_button(ui, Icon::FillDown, "", "Fill", true);
++        let fill = small_button(ui, Icon::FillDown, "", crate::i18n::t("Fill"), true);
+         for sequence in keytip_table::group_extension(
+             app.keytips.prefix().unwrap_or_default(),
+             &["edit.fillDown", "edit.fillRight", "edit.fillUp", "edit.fillLeft", "dialog:series", "edit.flashFill"],
+@@ -991,7 +991,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
+                 ],
+             );
+         });
+-        let clear = small_button(ui, Icon::Eraser, "", "Clear", true);
++        let clear = small_button(ui, Icon::Eraser, "", crate::i18n::t("Clear"), true);
+         for sequence in keytip_table::group_extension(
+             app.keytips.prefix().unwrap_or_default(),
+             &["edit.clearAll", "edit.clearFormats", "edit.clearContents", "edit.clearComments", "edit.clearHyperlinks"],
+@@ -1148,13 +1148,13 @@ fn cf_menu(app: &mut SheetApp, ui: &mut Ui) {
+                 app.open_dialog("cfQuick", json!({"type": "cellIs", "operator": op, "title": label}));
+             }
+         }
+-        if ui.button("Text that Contains…").clicked() {
++        if ui.button(crate::i18n::t("Text that Contains…")).clicked() {
+             app.open_dialog("cfQuick", json!({"type": "containsText", "title": "Text that Contains"}));
+         }
+-        if ui.button("A Date Occurring…").clicked() {
++        if ui.button(crate::i18n::t("A Date Occurring…")).clicked() {
+             app.open_dialog("cfQuick", json!({"type": "timePeriod", "title": "A Date Occurring"}));
+         }
+-        if ui.button("Duplicate Values…").clicked() {
++        if ui.button(crate::i18n::t("Duplicate Values…")).clicked() {
+             act(app, "home.conditionalFormat", json!({"rule": {"type": "duplicate"}}));
+         }
+     });
+@@ -1210,7 +1210,7 @@ fn cf_menu(app: &mut SheetApp, ui: &mut Ui) {
+         }
+     });
+     ui.separator();
+-    if ui.button("New Rule…").clicked() {
++    if ui.button(crate::i18n::t("New Rule…")).clicked() {
+         app.open_dialog("cfQuick", json!({"type": "expression", "title": "New Formatting Rule"}));
+     }
+     ui.menu_button("Clear Rules", |ui| {
+@@ -1223,7 +1223,7 @@ fn cf_menu(app: &mut SheetApp, ui: &mut Ui) {
+             ],
+         );
+     });
+-    if ui.button("Manage Rules…").clicked() {
++    if ui.button(crate::i18n::t("Manage Rules…")).clicked() {
+         app.open_dialog("manageRules", json!({}));
+     }
+ }
+@@ -1797,12 +1797,12 @@ fn formulas(app: &mut SheetApp, ui: &mut Ui) {
+         app.open_dialog("nameManager", json!({}));
+     }
+     ui.vertical(|ui| {
+-        let __k = small_button(ui, Icon::Name, "Define Name", "Define Name", false);
++        let __k = small_button(ui, Icon::Name, crate::i18n::t("Define Name"), crate::i18n::t("Define Name"), false);
+         control_keytip(app, ui, &__k, "dialog:defineName");
+         if __k.clicked() {
+             app.open_dialog("defineName", json!({}));
+         }
+-        let use_in = small_button(ui, Icon::Function, "Use in Formula", "Use in Formula", true);
++        let use_in = small_button(ui, Icon::Function, crate::i18n::t("Use in Formula"), crate::i18n::t("Use in Formula"), true);
+         anchor_keytip(app, ui, &use_in, &["formulas.pasteName"]);
+         egui::Popup::menu(&use_in).show(|ui| {
+             let names: Vec<String> = app.session.active().map(|d| d.wb.names.iter().map(|n| n.name.clone()).collect()).unwrap_or_default();
+@@ -1813,7 +1813,7 @@ fn formulas(app: &mut SheetApp, ui: &mut Ui) {
+                 }
+             }
+         });
+-        let __k = small_button(ui, Icon::Table, "Create from Selection", "Create from Selection", false);
++        let __k = small_button(ui, Icon::Table, crate::i18n::t("Create from Selection"), crate::i18n::t("Create from Selection"), false);
+         control_keytip(app, ui, &__k, "formulas.createFromSelection");
+         if __k.clicked() {
+             act(app, "formulas.createFromSelection", json!({}));
+@@ -1821,32 +1821,32 @@ fn formulas(app: &mut SheetApp, ui: &mut Ui) {
+     });
+     sep(ui);
+     ui.vertical(|ui| {
+-        if small_button(ui, Icon::Trace, "Trace Precedents", "Trace Precedents", false).clicked()
++        if small_button(ui, Icon::Trace, crate::i18n::t("Trace Precedents"), crate::i18n::t("Trace Precedents"), false).clicked()
+             && let Ok(r) = app.run("formulas.tracePrecedents", json!({}))
+         {
+             app.grid.trace = Some(r);
+         }
+-        if small_button(ui, Icon::Trace, "Trace Dependents", "Trace Dependents", false).clicked()
++        if small_button(ui, Icon::Trace, crate::i18n::t("Trace Dependents"), crate::i18n::t("Trace Dependents"), false).clicked()
+             && let Ok(r) = app.run("formulas.traceDependents", json!({}))
+         {
+             app.grid.trace = Some(r);
+         }
+-        if small_button(ui, Icon::Close, "Remove Arrows", "Remove Arrows", false).clicked() {
++        if small_button(ui, Icon::Close, crate::i18n::t("Remove Arrows"), crate::i18n::t("Remove Arrows"), false).clicked() {
+             app.grid.trace = None;
+         }
+     });
+     ui.vertical(|ui| {
+-        let __k = small_button(ui, Icon::Fx, "Show Formulas", "Show Formulas (⌃`)", false);
++        let __k = small_button(ui, Icon::Fx, crate::i18n::t("Show Formulas"), crate::i18n::t("Show Formulas (⌃`)"), false);
+         control_keytip(app, ui, &__k, "formulas.showFormulas");
+         if __k.clicked() {
+             act(app, "formulas.showFormulas", json!({}));
+         }
+-        let __k = small_button(ui, Icon::Validation, "Error Checking", "Error Checking", false);
++        let __k = small_button(ui, Icon::Validation, crate::i18n::t("Error Checking"), crate::i18n::t("Error Checking"), false);
+         control_keytip(app, ui, &__k, "dialog:errorChecking");
+         if __k.clicked() {
+             app.open_dialog("errorChecking", json!({}));
+         }
+-        let __k = small_button(ui, Icon::Calc, "Evaluate Formula", "Evaluate Formula", false);
++        let __k = small_button(ui, Icon::Calc, crate::i18n::t("Evaluate Formula"), crate::i18n::t("Evaluate Formula"), false);
+         control_keytip(app, ui, &__k, "dialog:evaluateFormula");
+         if __k.clicked() {
+             app.open_dialog("evaluateFormula", json!({}));
+@@ -1872,12 +1872,12 @@ fn formulas(app: &mut SheetApp, ui: &mut Ui) {
+         );
+     });
+     ui.vertical(|ui| {
+-        let __k = small_button(ui, Icon::Calc, "Calculate Now", "Calculate Now (F9)", false);
++        let __k = small_button(ui, Icon::Calc, crate::i18n::t("Calculate Now"), crate::i18n::t("Calculate Now (F9)"), false);
+         control_keytip(app, ui, &__k, "formulas.calculateNow");
+         if __k.clicked() {
+             act(app, "formulas.calculateNow", json!({}));
+         }
+-        let __k = small_button(ui, Icon::Sheet, "Calculate Sheet", "Calculate Sheet (⇧F9)", false);
++        let __k = small_button(ui, Icon::Sheet, crate::i18n::t("Calculate Sheet"), crate::i18n::t("Calculate Sheet (⇧F9)"), false);
+         control_keytip(app, ui, &__k, "formulas.calculateSheet");
+         if __k.clicked() {
+             act(app, "formulas.calculateSheet", json!({}));
+@@ -1893,12 +1893,12 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
+     }
+     sep(ui);
+     ui.vertical(|ui| {
+-        let __k = small_button(ui, Icon::SortAsc, "", "Sort A to Z", false);
++        let __k = small_button(ui, Icon::SortAsc, "", crate::i18n::t("Sort A to Z"), false);
+         control_keytip(app, ui, &__k, "data.sortAscending");
+         if __k.clicked() {
+             act(app, "data.sortAscending", json!({}));
+         }
+-        let __k = small_button(ui, Icon::SortDesc, "", "Sort Z to A", false);
++        let __k = small_button(ui, Icon::SortDesc, "", crate::i18n::t("Sort Z to A"), false);
+         control_keytip(app, ui, &__k, "data.sortDescending");
+         if __k.clicked() {
+             act(app, "data.sortDescending", json!({}));
+@@ -1915,12 +1915,12 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
+         act(app, "data.filter", json!({}));
+     }
+     ui.vertical(|ui| {
+-        let __k = small_button(ui, Icon::Eraser, "Clear", "Clear Filter", false);
++        let __k = small_button(ui, Icon::Eraser, crate::i18n::t("Clear"), crate::i18n::t("Clear Filter"), false);
+         control_keytip(app, ui, &__k, "data.clearFilter");
+         if __k.clicked() {
+             act(app, "data.clearFilter", json!({}));
+         }
+-        let __k = small_button(ui, Icon::Redo, "Reapply", "Reapply", false);
++        let __k = small_button(ui, Icon::Redo, crate::i18n::t("Reapply"), crate::i18n::t("Reapply"), false);
+         control_keytip(app, ui, &__k, "data.reapply");
+         if __k.clicked() {
+             act(app, "data.reapply", json!({}));
+@@ -1980,27 +1980,27 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
+     }
+     sep(ui);
+     ui.vertical(|ui| {
+-        let __k = small_button(ui, Icon::Group, "Group", "Group", false);
++        let __k = small_button(ui, Icon::Group, crate::i18n::t("Group"), crate::i18n::t("Group"), false);
+         control_keytip(app, ui, &__k, "data.group");
+         if __k.clicked() {
+             act(app, "data.group", json!({}));
+         }
+-        let __k = small_button(ui, Icon::Ungroup, "Ungroup", "Ungroup", false);
++        let __k = small_button(ui, Icon::Ungroup, crate::i18n::t("Ungroup"), crate::i18n::t("Ungroup"), false);
+         control_keytip(app, ui, &__k, "data.ungroup");
+         if __k.clicked() {
+             act(app, "data.ungroup", json!({}));
+         }
+-        let __k = small_button(ui, Icon::Subtotal, "Subtotal", "Subtotal", false);
++        let __k = small_button(ui, Icon::Subtotal, crate::i18n::t("Subtotal"), crate::i18n::t("Subtotal"), false);
+         control_keytip(app, ui, &__k, "dialog:subtotal");
+         if __k.clicked() {
+             app.open_dialog("subtotal", json!({}));
+         }
+     });
+     ui.vertical(|ui| {
+-        if small_button(ui, Icon::Plus, "Show Detail", "Show Detail", false).clicked() {
++        if small_button(ui, Icon::Plus, crate::i18n::t("Show Detail"), crate::i18n::t("Show Detail"), false).clicked() {
+             act(app, "data.showDetail", json!({}));
+         }
+-        if small_button(ui, Icon::Minus, "Hide Detail", "Hide Detail", false).clicked() {
++        if small_button(ui, Icon::Minus, crate::i18n::t("Hide Detail"), crate::i18n::t("Hide Detail"), false).clicked() {
+             act(app, "data.hideDetail", json!({}));
+         }
+     });
+@@ -2274,7 +2274,7 @@ fn table_design(app: &mut SheetApp, ui: &mut Ui) {
+         return;
+     };
+     ui.vertical(|ui| {
+-        ui.label(egui::RichText::new("Table Name:").small());
++        ui.label(egui::RichText::new(crate::i18n::t("Table Name:")).small());
+         let field = egui::Id::new(("gridcraft.table_name", &tname));
+         if let Some(name) = crate::widgets::committed_text(ui, field, &tname, Some(120.0))
+             && name != tname
+diff --git a/crates/ui-egui/src/tabs.rs b/crates/ui-egui/src/tabs.rs
+index b77524b..8470017 100644
+--- a/crates/ui-egui/src/tabs.rs
++++ b/crates/ui-egui/src/tabs.rs
+@@ -168,20 +168,20 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
+                                 }
+                                 resp.context_menu(|ui| {
+                                     ui.set_min_width(180.0);
+-                                    if ui.button("Insert Sheet").clicked() {
++                                    if ui.button(crate::i18n::t("Insert Sheet")).clicked() {
+                                         app.run_or_alert("home.insertSheet", json!({"before": i}));
+                                     }
+-                                    if ui.button("Delete").clicked() {
++                                    if ui.button(crate::i18n::t("Delete")).clicked() {
+                                         app.run_or_alert("home.deleteSheet", json!({"sheet": i}));
+                                     }
+-                                    if ui.button("Rename").clicked() {
++                                    if ui.button(crate::i18n::t("Rename")).clicked() {
+                                         app.grid.renaming_tab = Some(i);
+                                         app.grid.rename_text = name.clone();
+                                     }
+-                                    if ui.button("Move or Copy…").clicked() {
++                                    if ui.button(crate::i18n::t("Move or Copy…")).clicked() {
+                                         app.open_dialog("moveSheet", json!({"sheet": i}));
+                                     }
+-                                    if ui.button("Duplicate").clicked() {
++                                    if ui.button(crate::i18n::t("Duplicate")).clicked() {
+                                         app.run_or_alert("sheet.move", json!({"sheet": i, "to": i + 1, "copy": true}));
+                                     }
+                                     ui.menu_button("Tab Color", |ui| {
+@@ -192,18 +192,18 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
+                                         }
+                                     });
+                                     ui.separator();
+-                                    if ui.button("Hide").clicked() {
++                                    if ui.button(crate::i18n::t("Hide")).clicked() {
+                                         app.run_or_alert("sheet.hide", json!({"sheet": i}));
+                                     }
+-                                    if ui.button("Unhide…").clicked() {
++                                    if ui.button(crate::i18n::t("Unhide…")).clicked() {
+                                         app.run_or_alert("sheet.unhide", json!({}));
+                                     }
+                                     ui.separator();
+                                     let protected = app.session.active().and_then(|d| d.wb.active().map(|s| s.is_protected())).unwrap_or(false);
+-                                    if ui.button(if protected { "Unprotect Sheet…" } else { "Protect Sheet…" }).clicked() {
++                                    if ui.button(if protected { crate::i18n::t("Unprotect Sheet…") } else { crate::i18n::t("Protect Sheet…") }).clicked() {
+                                         app.open_dialog(if protected { "unprotectSheet" } else { "protectSheet" }, json!({}));
+                                     }
+-                                    if ui.button("Select All Sheets").clicked() {
++                                    if ui.button(crate::i18n::t("Select All Sheets")).clicked() {
+                                         ui.close();
+                                     }
+                                 });
+@@ -240,7 +240,7 @@ pub fn status_bar(app: &mut SheetApp, ui: &mut Ui) {
+                 if let Some(d) = app.session.active() {
+                     if d.wb.vba_project.is_some() {
+                         ui.add_space(12.0);
+-                        ui.label(egui::RichText::new("Macros preserved (not executed)").font(theme::ui_font(12.5)).color(t.danger));
++                        ui.label(egui::RichText::new(crate::i18n::t("Macros preserved (not executed)")).font(theme::ui_font(12.5)).color(t.danger));
+                     }
+                     if d.wb.calc.mode == gridcraft_engine::model::CalcMode::Manual {
+                         ui.add_space(12.0);
+diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
+index e24105b..57625e0 100644
+--- a/crates/ui-egui/src/widgets.rs
++++ b/crates/ui-egui/src/widgets.rs
+@@ -225,7 +225,7 @@ pub fn color_palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str) ->
+     if ui.button(none_label).clicked() {
+         picked = Some("none".to_string());
+     }
+-    ui.label(egui::RichText::new("Theme Colors").small());
++    ui.label(egui::RichText::new(crate::i18n::t("Theme Colors")).small());
+     let order = [0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+     let tints = [0.0f64, 0.8, 0.6, 0.4, -0.25, -0.5];
+     egui::Grid::new(ui.id().with("theme_grid")).spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+@@ -248,7 +248,7 @@ pub fn color_palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str) ->
+             ui.end_row();
+         }
+     });
+-    ui.label(egui::RichText::new("Standard Colors").small());
++    ui.label(egui::RichText::new(crate::i18n::t("Standard Colors")).small());
+     ui.horizontal(|ui| {
+         ui.spacing_mut().item_spacing.x = 2.0;
+         for (col, hex) in std_hex.iter().enumerate() {
+@@ -286,7 +286,7 @@ pub fn message_box(app: &mut SheetApp, ctx: &egui::Context) {
+         });
+         ui.add_space(8.0);
+         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+-            if ui.button("  OK  ").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
++            if ui.button(crate::i18n::t("  OK  ")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
+                 close = true;
+             }
+         });

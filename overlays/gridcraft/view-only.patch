@@ -268,7 +268,7 @@ index 0000000..250fca5
 +    }
 +}
 diff --git a/apps/gridcraft-web/src/web.rs b/apps/gridcraft-web/src/web.rs
-index c0fcb22..39558a5 100644
+index c0fcb22..483cc4f 100644
 --- a/apps/gridcraft-web/src/web.rs
 +++ b/apps/gridcraft-web/src/web.rs
 @@ -25,10 +25,17 @@ pub fn start() {
@@ -292,7 +292,7 @@ index c0fcb22..39558a5 100644
          let result = eframe::WebRunner::new()
              .start(
                  canvas,
-@@ -36,14 +43,10 @@ pub fn start() {
+@@ -36,28 +43,18 @@ pub fn start() {
                  Box::new(move |cc| {
                      let inbox: Inbox = Inbox::default();
                      let mut session = Session::new();
@@ -310,7 +310,24 @@ index c0fcb22..39558a5 100644
                      if let Some(bridge) = &app_bridge {
                          bridge.connect(&mut services, inbox.clone(), cc.egui_ctx.clone());
                      }
-@@ -65,13 +68,17 @@ pub fn start() {
+                     let mut app = SheetApp::new(session, services);
+                     app.ui.system_theme = true;
+-                    // Follow the browser's language, except a CJK one: the web build has no system
+-                    // CJK fonts (none are bundled), so that interface would render as tofu.
+-                    let browser = gridcraft_ui_egui::i18n::Language::system();
+-                    if !matches!(
+-                        browser,
+-                        gridcraft_ui_egui::i18n::Language::Zh | gridcraft_ui_egui::i18n::Language::Ja | gridcraft_ui_egui::i18n::Language::Ko
+-                    ) {
+-                        app.ui.language = browser;
+-                    }
++                    // Sketch Docs: Korean, whatever the browser's language, like the Word editor; the
++                    // build bundles a Korean face (korean-font.patch), so it no longer renders as tofu.
++                    app.ui.language = gridcraft_ui_egui::i18n::Language::Ko;
+                     SheetApp::setup_context_for_language(&cc.egui_ctx, false, app.ui.language);
+                     if let Some(bridge) = &app_bridge {
+                         if let Some(author) = query_param("author") {
+@@ -65,13 +62,17 @@ pub fn start() {
                          }
                          bridge.post_ready();
                      }
@@ -329,7 +346,7 @@ index c0fcb22..39558a5 100644
          if let Some(el) = document.get_element_by_id(LOADING_ID) {
              match result {
                  Ok(()) => el.remove(),
-@@ -93,25 +100,17 @@ struct WebShell {
+@@ -93,25 +94,17 @@ struct WebShell {
      app: SheetApp,
      inbox: Inbox,
      bridge: Option<crate::host::Bridge>,
@@ -360,7 +377,7 @@ index c0fcb22..39558a5 100644
          self.app.logic(ctx);
      }
  
-@@ -124,6 +123,7 @@ impl eframe::App for WebShell {
+@@ -124,6 +117,7 @@ impl eframe::App for WebShell {
          if let Some(bridge) = &self.bridge {
              bridge.sync(&mut self.app);
          }
@@ -369,7 +386,7 @@ index c0fcb22..39558a5 100644
  }
  
 diff --git a/crates/engine/src/lib.rs b/crates/engine/src/lib.rs
-index 258a1cb..ef5a8ae 100644
+index 258a1cb..92c6c5b 100644
 --- a/crates/engine/src/lib.rs
 +++ b/crates/engine/src/lib.rs
 @@ -256,6 +256,45 @@ pub struct Session {
@@ -428,7 +445,7 @@ index 258a1cb..ef5a8ae 100644
 +        }
 +        if self.view_only && !permitted && !view_only_allows(spec) {
 +            self.view_only_refused = self.view_only_refused.saturating_add(1);
-+            return Err(EngineError::Disabled(id.to_string(), "This workbook is open view-only in Sketch Docs.".into()));
++            return Err(EngineError::Other("보기 전용으로 연 통합 문서라 바꾸거나 저장할 수 없습니다.".into()));
 +        }
          if let Err(why) = (spec.enabled)(self) {
              return Err(EngineError::Disabled(id.to_string(), why));

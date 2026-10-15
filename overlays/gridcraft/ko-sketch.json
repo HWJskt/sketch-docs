@@ -1,0 +1,1272 @@
+[
+ {
+  "en": "Comment",
+  "ko": "메모",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Comments",
+  "ko": "메모",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "New\nComment",
+  "ko": "새\n메모",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Threaded Comments",
+  "ko": "스레드 메모",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Show\nComments",
+  "ko": "메모\n표시",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Previous Comment",
+  "ko": "이전 메모",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Next Comment",
+  "ko": "다음 메모",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Convert to Comments",
+  "ko": "메모로 변환",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Clear Comments and Notes",
+  "ko": "메모 및 노트 지우기",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "New Note",
+  "ko": "새 노트",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Show/Hide Note",
+  "ko": "노트 표시/숨기기",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Show All Notes",
+  "ko": "모든 노트 표시",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Notes",
+  "ko": "노트",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "New Comment",
+  "ko": "새 메모",
+  "basis": "Word newComment"
+ },
+ {
+  "en": "Delete Comment",
+  "ko": "메모 삭제",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Comments pane",
+  "ko": "메모 창",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "No comments on this sheet yet. Select a cell and choose New Comment.",
+  "ko": "이 시트에 아직 메모가 없습니다. 셀을 선택하고 새 메모를 고르세요.",
+  "basis": "메모/노트"
+ },
+ {
+  "en": "Reply…",
+  "ko": "회신…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Resolve",
+  "ko": "해결",
+  "basis": "Excel"
+ },
+ {
+  "en": "Resolved",
+  "ko": "해결됨",
+  "basis": "Excel"
+ },
+ {
+  "en": "  OK  ",
+  "ko": "  확인  ",
+  "basis": "Word common.ok"
+ },
+ {
+  "en": "OK",
+  "ko": "확인",
+  "basis": "Word common.ok"
+ },
+ {
+  "en": "Cancel",
+  "ko": "취소",
+  "basis": "Word common.cancel"
+ },
+ {
+  "en": " Close ",
+  "ko": "닫기",
+  "basis": "Word common.close"
+ },
+ {
+  "en": "Apply",
+  "ko": "적용",
+  "basis": "Word common.apply"
+ },
+ {
+  "en": "Add",
+  "ko": "추가",
+  "basis": "Word common.add"
+ },
+ {
+  "en": "Remove",
+  "ko": "삭제",
+  "basis": "Word common.remove"
+ },
+ {
+  "en": "  Solve  ",
+  "ko": "  해 찾기  ",
+  "basis": "Excel"
+ },
+ {
+  "en": "Change",
+  "ko": "변경",
+  "basis": "일반"
+ },
+ {
+  "en": "Change All",
+  "ko": "모두 변경",
+  "basis": "Excel"
+ },
+ {
+  "en": "Ignore Once",
+  "ko": "한 번 무시",
+  "basis": "Excel"
+ },
+ {
+  "en": "Add to Dictionary",
+  "ko": "사전에 추가",
+  "basis": "Excel"
+ },
+ {
+  "en": "(No suggestions)",
+  "ko": "(추천 단어 없음)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Suggestions:",
+  "ko": "추천 단어:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Keep",
+  "ko": "유지",
+  "basis": "Word ai.keepChanges"
+ },
+ {
+  "en": "Hide",
+  "ko": "숨기기",
+  "basis": "일반"
+ },
+ {
+  "en": "Show",
+  "ko": "표시",
+  "basis": "Word show"
+ },
+ {
+  "en": "Rename",
+  "ko": "이름 바꾸기",
+  "basis": "Word rename"
+ },
+ {
+  "en": "Duplicate",
+  "ko": "복제",
+  "basis": "일반"
+ },
+ {
+  "en": "Edit…",
+  "ko": "편집…",
+  "basis": "일반"
+ },
+ {
+  "en": "New…",
+  "ko": "새로 만들기…",
+  "basis": "Word newStyle"
+ },
+ {
+  "en": "Open…",
+  "ko": "열기…",
+  "basis": "Word app.open"
+ },
+ {
+  "en": "Reopen",
+  "ko": "다시 열기",
+  "basis": "Word reopen"
+ },
+ {
+  "en": "Send",
+  "ko": "전송",
+  "basis": "Word ai.send"
+ },
+ {
+  "en": "Search",
+  "ko": "검색",
+  "basis": "일반"
+ },
+ {
+  "en": "Search:",
+  "ko": "검색:",
+  "basis": "일반"
+ },
+ {
+  "en": "Preview",
+  "ko": "미리 보기",
+  "basis": "일반"
+ },
+ {
+  "en": "Name",
+  "ko": "이름",
+  "basis": "Word name"
+ },
+ {
+  "en": "Value",
+  "ko": "값",
+  "basis": "Excel"
+ },
+ {
+  "en": "Formula",
+  "ko": "수식",
+  "basis": "Excel"
+ },
+ {
+  "en": "Cell",
+  "ko": "셀",
+  "basis": "Excel"
+ },
+ {
+  "en": "Scope",
+  "ko": "범위",
+  "basis": "Excel"
+ },
+ {
+  "en": "Refers To",
+  "ko": "참조 대상",
+  "basis": "Excel"
+ },
+ {
+  "en": "Statistic",
+  "ko": "통계",
+  "basis": "일반"
+ },
+ {
+  "en": "Show password",
+  "ko": "암호 표시",
+  "basis": "Word show"
+ },
+ {
+  "en": "Don't Save",
+  "ko": "저장 안 함",
+  "basis": "Excel"
+ },
+ {
+  "en": "Can't Undo",
+  "ko": "실행 취소할 수 없음",
+  "basis": "Word undo"
+ },
+ {
+  "en": "Cut",
+  "ko": "잘라내기",
+  "basis": "Word cut"
+ },
+ {
+  "en": "Copy",
+  "ko": "복사",
+  "basis": "Word copy"
+ },
+ {
+  "en": "Paste (⌘V)",
+  "ko": "붙여넣기 (⌘V)",
+  "basis": "Word paste"
+ },
+ {
+  "en": "Undo (⌘Z)",
+  "ko": "실행 취소 (⌘Z)",
+  "basis": "Word undo"
+ },
+ {
+  "en": "Redo (⌘Y)",
+  "ko": "다시 실행 (⌘Y)",
+  "basis": "Word redo"
+ },
+ {
+  "en": "Undo list",
+  "ko": "실행 취소 목록",
+  "basis": "Word undo"
+ },
+ {
+  "en": "Save (⌘S)",
+  "ko": "저장 (⌘S)",
+  "basis": "Word app.save"
+ },
+ {
+  "en": "Insert…",
+  "ko": "삽입…",
+  "basis": "Word common.insert"
+ },
+ {
+  "en": "Delete…",
+  "ko": "삭제…",
+  "basis": "Word delete"
+ },
+ {
+  "en": "Define Name…",
+  "ko": "이름 정의…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Link…",
+  "ko": "링크…",
+  "basis": "Word insertLink"
+ },
+ {
+  "en": "Insert Link (⌘K)",
+  "ko": "링크 삽입 (⌘K)",
+  "basis": "Word insertLink"
+ },
+ {
+  "en": "Pick From Drop-down List…",
+  "ko": "드롭다운 목록에서 선택…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Filter by Selected Cell's Value",
+  "ko": "선택한 셀 값으로 필터",
+  "basis": "Excel"
+ },
+ {
+  "en": "Insert Sheet",
+  "ko": "시트 삽입",
+  "basis": "Excel"
+ },
+ {
+  "en": "Select All Sheets",
+  "ko": "모든 시트 선택",
+  "basis": "Excel"
+ },
+ {
+  "en": "Move or Copy…",
+  "ko": "이동/복사…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Unhide…",
+  "ko": "숨기기 취소…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Unprotect Sheet…",
+  "ko": "시트 보호 해제…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Previous sheet",
+  "ko": "이전 시트",
+  "basis": "Excel"
+ },
+ {
+  "en": "Next sheet",
+  "ko": "다음 시트",
+  "basis": "Excel"
+ },
+ {
+  "en": "New sheet (⇧F11)",
+  "ko": "새 시트 (⇧F11)",
+  "basis": "Excel"
+ },
+ {
+  "en": "All sheets",
+  "ko": "모든 시트",
+  "basis": "Excel"
+ },
+ {
+  "en": "Expand formula bar",
+  "ko": "수식 입력줄 확장",
+  "basis": "Excel"
+ },
+ {
+  "en": "Find and Replace",
+  "ko": "찾기 및 바꾸기",
+  "basis": "Word find/replace"
+ },
+ {
+  "en": "Find what:",
+  "ko": "찾을 내용:",
+  "basis": "Word findPlaceholder"
+ },
+ {
+  "en": "Replace with:",
+  "ko": "바꿀 내용:",
+  "basis": "Word replacePlaceholder"
+ },
+ {
+  "en": "Find All",
+  "ko": "모두 찾기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Find Next",
+  "ko": "다음 찾기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Replace",
+  "ko": "바꾸기",
+  "basis": "Word replace"
+ },
+ {
+  "en": "Replace All",
+  "ko": "모두 바꾸기",
+  "basis": "Word replaceAllTitle"
+ },
+ {
+  "en": "Match case",
+  "ko": "대/소문자 구분",
+  "basis": "Excel"
+ },
+ {
+  "en": "Match entire cell contents",
+  "ko": "전체 셀 내용 일치",
+  "basis": "Excel"
+ },
+ {
+  "en": "Within workbook",
+  "ko": "통합 문서에서",
+  "basis": "Excel"
+ },
+ {
+  "en": "Go To",
+  "ko": "이동",
+  "basis": "Excel"
+ },
+ {
+  "en": "Reference:",
+  "ko": "참조:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Special…",
+  "ko": "옵션…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Find & Select",
+  "ko": "찾기 및 선택",
+  "basis": "Excel"
+ },
+ {
+  "en": "AutoSave",
+  "ko": "자동 저장",
+  "basis": "Word autosave"
+ },
+ {
+  "en": "AutoSave: save after every change (workbooks saved to a file)",
+  "ko": "자동 저장: 바뀔 때마다 저장(파일로 저장한 통합 문서)",
+  "basis": "Word autosave"
+ },
+ {
+  "en": "Slicer",
+  "ko": "슬라이서",
+  "basis": "Excel"
+ },
+ {
+  "en": "Insert a slicer to filter a table",
+  "ko": "표를 필터링할 슬라이서 삽입",
+  "basis": "Excel"
+ },
+ {
+  "en": "Insert a picture",
+  "ko": "그림 삽입",
+  "basis": "Word insertImage"
+ },
+ {
+  "en": "Insert an icon",
+  "ko": "아이콘 삽입",
+  "basis": "Excel"
+ },
+ {
+  "en": "Recommended Charts",
+  "ko": "추천 차트",
+  "basis": "Excel"
+ },
+ {
+  "en": "Column or Bar",
+  "ko": "세로 또는 가로 막대형",
+  "basis": "Excel"
+ },
+ {
+  "en": "Line or Area",
+  "ko": "꺾은선형 또는 영역형",
+  "basis": "Excel"
+ },
+ {
+  "en": "Pie or Doughnut",
+  "ko": "원형 또는 도넛형",
+  "basis": "Excel"
+ },
+ {
+  "en": "Scatter or Bubble",
+  "ko": "분산형 또는 거품형",
+  "basis": "Excel"
+ },
+ {
+  "en": "Hierarchy & more",
+  "ko": "계층 구조형 및 기타",
+  "basis": "Excel"
+ },
+ {
+  "en": "Table (⌘T)",
+  "ko": "표 (⌘T)",
+  "basis": "Word table"
+ },
+ {
+  "en": "Format as Table",
+  "ko": "표 서식",
+  "basis": "Excel"
+ },
+ {
+  "en": "Cell Styles",
+  "ko": "셀 스타일",
+  "basis": "Excel"
+ },
+ {
+  "en": "Pen\nBlack",
+  "ko": "펜\n검정",
+  "basis": "Excel"
+ },
+ {
+  "en": "Pen\nBlue",
+  "ko": "펜\n파랑",
+  "basis": "Excel"
+ },
+ {
+  "en": "Pen\nRed",
+  "ko": "펜\n빨강",
+  "basis": "Excel"
+ },
+ {
+  "en": "Highlighter",
+  "ko": "형광펜",
+  "basis": "Excel"
+ },
+ {
+  "en": "Select and move ink and shapes",
+  "ko": "잉크와 도형 선택 및 이동",
+  "basis": "Excel"
+ },
+ {
+  "en": "Erase ink strokes",
+  "ko": "잉크 지우기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Convert the last ink stroke to a shape",
+  "ko": "마지막 잉크를 도형으로 변환",
+  "basis": "Excel"
+ },
+ {
+  "en": "Paper Size",
+  "ko": "용지 크기",
+  "basis": "Word pageFormat"
+ },
+ {
+  "en": "Print Area",
+  "ko": "인쇄 영역",
+  "basis": "Excel"
+ },
+ {
+  "en": "Print Titles",
+  "ko": "인쇄 제목",
+  "basis": "Excel"
+ },
+ {
+  "en": "Insert Function",
+  "ko": "함수 삽입",
+  "basis": "Excel"
+ },
+ {
+  "en": "Insert Function (⇧F3)",
+  "ko": "함수 삽입 (⇧F3)",
+  "basis": "Excel"
+ },
+ {
+  "en": "More Functions…",
+  "ko": "함수 더 보기…",
+  "basis": "Excel"
+ },
+ {
+  "en": "e.g. lookup, average, date",
+  "ko": "예: lookup, average, date",
+  "basis": "일반"
+ },
+ {
+  "en": "Name Manager",
+  "ko": "이름 관리자",
+  "basis": "Excel"
+ },
+ {
+  "en": "No names defined",
+  "ko": "정의된 이름이 없습니다",
+  "basis": "Excel"
+ },
+ {
+  "en": "Show Formulas (⌃`)",
+  "ko": "수식 표시 (⌃`)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Watch\nWindow",
+  "ko": "조사식\n창",
+  "basis": "Excel"
+ },
+ {
+  "en": "Add Watch (active cell)",
+  "ko": "조사식 추가(활성 셀)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Calculation Options",
+  "ko": "계산 옵션",
+  "basis": "Excel"
+ },
+ {
+  "en": "Calculate Now (F9)",
+  "ko": "지금 계산 (F9)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Calculate Sheet (⇧F9)",
+  "ko": "시트 계산 (⇧F9)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Import a text or CSV file",
+  "ko": "텍스트 또는 CSV 파일 가져오기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Sort & Filter",
+  "ko": "정렬 및 필터",
+  "basis": "Excel"
+ },
+ {
+  "en": "Custom Sort",
+  "ko": "사용자 지정 정렬",
+  "basis": "Excel"
+ },
+ {
+  "en": "Filter (⌘⇧F)",
+  "ko": "필터 (⌘⇧F)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Clear Filter",
+  "ko": "필터 지우기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Text to Columns",
+  "ko": "텍스트 나누기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Flash Fill (⌘E)",
+  "ko": "빠른 채우기 (⌘E)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Remove Duplicates",
+  "ko": "중복된 항목 제거",
+  "basis": "Excel"
+ },
+ {
+  "en": "What-If Analysis",
+  "ko": "가상 분석",
+  "basis": "Excel"
+ },
+ {
+  "en": "Forecast Sheet",
+  "ko": "예측 시트",
+  "basis": "Excel"
+ },
+ {
+  "en": "Analysis Tools",
+  "ko": "분석 도구",
+  "basis": "Excel"
+ },
+ {
+  "en": "Spelling (F7)",
+  "ko": "맞춤법 검사 (F7)",
+  "basis": "Word spell"
+ },
+ {
+  "en": "Workbook\nStatistics",
+  "ko": "통합 문서\n통계",
+  "basis": "Word statistics"
+ },
+ {
+  "en": "Workbook Statistics",
+  "ko": "통합 문서 통계",
+  "basis": "Word statistics"
+ },
+ {
+  "en": "Check Accessibility",
+  "ko": "접근성 검사",
+  "basis": "Word accessibility"
+ },
+ {
+  "en": "Protect\nSheet",
+  "ko": "시트\n보호",
+  "basis": "Excel"
+ },
+ {
+  "en": "Protect Sheet",
+  "ko": "시트 보호",
+  "basis": "Excel"
+ },
+ {
+  "en": "Protect Workbook structure",
+  "ko": "통합 문서 구조 보호",
+  "basis": "Excel"
+ },
+ {
+  "en": "Zoom In",
+  "ko": "확대",
+  "basis": "Word zoomIn"
+ },
+ {
+  "en": "Zoom Out",
+  "ko": "축소",
+  "basis": "Word zoomOut"
+ },
+ {
+  "en": "Zoom to 100%",
+  "ko": "100%로 되돌리기",
+  "basis": "Word resetZoom"
+ },
+ {
+  "en": "Zoom to Selection",
+  "ko": "선택 영역에 맞춤",
+  "basis": "Excel"
+ },
+ {
+  "en": "Zoom…",
+  "ko": "확대/축소…",
+  "basis": "Word zoom"
+ },
+ {
+  "en": "Macros",
+  "ko": "매크로",
+  "basis": "Excel"
+ },
+ {
+  "en": "Macros and scripts in this workbook (Alt+F8)",
+  "ko": "이 통합 문서의 매크로와 스크립트 (Alt+F8)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Macros preserved (not executed)",
+  "ko": "매크로 보존(실행 안 함)",
+  "basis": "Excel"
+ },
+ {
+  "en": "This workbook has no scripts or macros.",
+  "ko": "이 통합 문서에는 스크립트나 매크로가 없습니다.",
+  "basis": "Excel"
+ },
+ {
+  "en": "— VBA project (preserved, not run)",
+  "ko": "— VBA 프로젝트(보존, 실행 안 함)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Automation in this workbook. GridCraft runs its own scripts; a file's VBA project is preserved but not executed.",
+  "ko": "이 통합 문서의 자동화입니다. GridCraft는 자체 스크립트만 실행하며, 파일의 VBA 프로젝트는 보존하지만 실행하지 않습니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "Search and run any command",
+  "ko": "명령 검색 및 실행",
+  "basis": "Word ribbon.search"
+ },
+ {
+  "en": "Search commands (⌘⇧Space)",
+  "ko": "명령 검색 (⌘⇧Space)",
+  "basis": "Word ribbon.search"
+ },
+ {
+  "en": "Type a command, e.g. freeze, chart, bold…",
+  "ko": "명령을 입력하세요. 예: 틀 고정, 차트, 굵게…",
+  "basis": "일반"
+ },
+ {
+  "en": "More commands",
+  "ko": "명령 더 보기",
+  "basis": "일반"
+ },
+ {
+  "en": "Every command run in this session (replayable)",
+  "ko": "이 세션에서 실행한 모든 명령(다시 실행 가능)",
+  "basis": "일반"
+ },
+ {
+  "en": "How agents drive GridCraft (MCP / control channel)",
+  "ko": "에이전트가 GridCraft를 제어하는 방법(MCP·제어 채널)",
+  "basis": "일반"
+ },
+ {
+  "en": "GridCraft is fully drivable by agents. Every menu item, button and gesture is a command:",
+  "ko": "GridCraft는 에이전트로 모든 기능을 제어할 수 있습니다. 메뉴 항목, 단추, 동작이 모두 명령입니다:",
+  "basis": "일반"
+ },
+ {
+  "en": "Share: export or save a copy",
+  "ko": "공유: 내보내기 또는 사본 저장",
+  "basis": "Word export"
+ },
+ {
+  "en": "Export as PDF…",
+  "ko": "PDF로 내보내기…",
+  "basis": "Word export"
+ },
+ {
+  "en": "Print…",
+  "ko": "인쇄…",
+  "basis": "Word print"
+ },
+ {
+  "en": "Version, contributors and the AI models that helped",
+  "ko": "버전, 기여자, 도움을 준 AI 모델",
+  "basis": "일반"
+ },
+ {
+  "en": "Start a new workbook",
+  "ko": "새 통합 문서 시작",
+  "basis": "Excel"
+ },
+ {
+  "en": "GridCraft",
+  "ko": "GridCraft",
+  "basis": "고유명사"
+ },
+ {
+  "en": "GridCraft source code",
+  "ko": "GridCraft 소스 코드",
+  "basis": "일반"
+ },
+ {
+  "en": "Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team.",
+  "ko": "Sketch Docs용 수정판(보기 전용). ArtCraft 팀의 GridCraft를 바탕으로 합니다.",
+  "basis": "일반(브랜드 조건: 평문 출처)"
+ },
+ {
+  "en": "No contributor data was built into this copy.",
+  "ko": "이 빌드에는 기여자 정보가 들어 있지 않습니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "No model credits were built into this copy.",
+  "ko": "이 빌드에는 AI 모델 정보가 들어 있지 않습니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "Grab bag",
+  "ko": "모아 보기",
+  "basis": "일반"
+ },
+ {
+  "en": "Reverse the order",
+  "ko": "순서 뒤집기",
+  "basis": "일반"
+ },
+ {
+  "en": "Sort by",
+  "ko": "정렬 기준",
+  "basis": "Word sortBy"
+ },
+ {
+  "en": "Then by",
+  "ko": "다음 기준",
+  "basis": "Word sortThenBy"
+ },
+ {
+  "en": "Description (optional):",
+  "ko": "설명(선택):",
+  "basis": "일반"
+ },
+ {
+  "en": "Picture file path (PNG or JPEG):",
+  "ko": "그림 파일 경로(PNG 또는 JPEG):",
+  "basis": "일반"
+ },
+ {
+  "en": "Fits inside the selected cell and moves with its content.",
+  "ko": "선택한 셀 안에 맞추고 셀 내용과 함께 이동합니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "+ Add Level",
+  "ko": "+ 기준 추가",
+  "basis": "Excel"
+ },
+ {
+  "en": "My list has headers",
+  "ko": "내 데이터에 머리글 표시",
+  "basis": "Excel"
+ },
+ {
+  "en": "A to Z",
+  "ko": "오름차순",
+  "basis": "Word sortAscending"
+ },
+ {
+  "en": "Z to A",
+  "ko": "내림차순",
+  "basis": "Word sortDescending"
+ },
+ {
+  "en": "↑  Sort Ascending",
+  "ko": "↑  오름차순 정렬",
+  "basis": "Word sortAscending"
+ },
+ {
+  "en": "↓  Sort Descending",
+  "ko": "↓  내림차순 정렬",
+  "basis": "Word sortDescending"
+ },
+ {
+  "en": "Type to filter…",
+  "ko": "입력하여 필터…",
+  "basis": "일반"
+ },
+ {
+  "en": "Cell Values",
+  "ko": "셀 값",
+  "basis": "Excel"
+ },
+ {
+  "en": "Cell Color",
+  "ko": "셀 색",
+  "basis": "Word chooseCellColor"
+ },
+ {
+  "en": "Standard Colors",
+  "ko": "표준 색",
+  "basis": "Excel"
+ },
+ {
+  "en": "Theme Colors",
+  "ko": "테마 색",
+  "basis": "Excel"
+ },
+ {
+  "en": "More Borders…",
+  "ko": "다른 테두리…",
+  "basis": "Word moreColors"
+ },
+ {
+  "en": "Data Labels",
+  "ko": "데이터 레이블",
+  "basis": "Excel"
+ },
+ {
+  "en": "Legend Entries (Series)",
+  "ko": "범례 항목(계열)",
+  "basis": "Excel"
+ },
+ {
+  "en": "Horizontal axis title:",
+  "ko": "가로 축 제목:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Vertical axis title:",
+  "ko": "세로 축 제목:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Select a chart to format it.",
+  "ko": "서식을 지정할 차트를 선택하세요.",
+  "basis": "일반"
+ },
+ {
+  "en": "The chart no longer exists.",
+  "ko": "차트가 더 이상 없습니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "There are no shapes, pictures or charts on this sheet.",
+  "ko": "이 시트에는 도형, 그림, 차트가 없습니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "Bring Forward",
+  "ko": "앞으로 가져오기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Send Backward",
+  "ko": "뒤로 보내기",
+  "basis": "Excel"
+ },
+ {
+  "en": "Table Name:",
+  "ko": "표 이름:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Output options",
+  "ko": "출력 옵션",
+  "basis": "Excel"
+ },
+ {
+  "en": "Reports:",
+  "ko": "보고서:",
+  "basis": "Excel"
+ },
+ {
+  "en": "The output range already holds data. Replace it with the report?",
+  "ko": "출력 범위에 이미 데이터가 있습니다. 보고서로 바꾸시겠습니까?",
+  "basis": "일반"
+ },
+ {
+  "en": "A Date Occurring…",
+  "ko": "발생 날짜…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Duplicate Values…",
+  "ko": "중복 값…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Text that Contains…",
+  "ko": "텍스트 포함…",
+  "basis": "Excel"
+ },
+ {
+  "en": "New Rule…",
+  "ko": "새 규칙…",
+  "basis": "Excel"
+ },
+ {
+  "en": "Manage Rules…",
+  "ko": "규칙 관리…",
+  "basis": "Excel"
+ },
+ {
+  "en": "There are no conditional formatting rules on this sheet.",
+  "ko": "이 시트에는 조건부 서식 규칙이 없습니다.",
+  "basis": "Excel"
+ },
+ {
+  "en": "The spelling check is complete for the entire sheet.",
+  "ko": "전체 시트의 맞춤법 검사를 마쳤습니다.",
+  "basis": "Excel"
+ },
+ {
+  "en": "Set Objective:",
+  "ko": "목표 설정:",
+  "basis": "Excel"
+ },
+ {
+  "en": "To:",
+  "ko": "대상:",
+  "basis": "Excel"
+ },
+ {
+  "en": "To value:",
+  "ko": "찾는 값:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Set cell:",
+  "ko": "수식 셀:",
+  "basis": "Excel"
+ },
+ {
+  "en": "By changing cell:",
+  "ko": "값을 바꿀 셀:",
+  "basis": "Excel"
+ },
+ {
+  "en": "By Changing Variable Cells:",
+  "ko": "변수 셀 변경:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Subject to the Constraints:",
+  "ko": "제한 조건에 종속:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Make Unconstrained Variables Non-Negative",
+  "ko": "제한되지 않는 변수를 음이 아닌 수로 설정",
+  "basis": "Excel"
+ },
+ {
+  "en": "Select a Solving Method:",
+  "ko": "해법 선택:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Keep Solver Solution",
+  "ko": "해 찾기 해 보존",
+  "basis": "Excel"
+ },
+ {
+  "en": "Restore Original Values",
+  "ko": "원래 값 복원",
+  "basis": "Excel"
+ },
+ {
+  "en": "Drag to fill cells. Drag from inside a cell to select a range.",
+  "ko": "끌어서 셀을 채웁니다. 셀 안에서 끌면 범위를 선택합니다.",
+  "basis": "일반"
+ },
+ {
+  "en": "Align Left",
+  "ko": "왼쪽 맞춤",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Align Right",
+  "ko": "오른쪽 맞춤",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Top Align",
+  "ko": "위쪽 맞춤",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Middle Align",
+  "ko": "가운데 맞춤",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Bottom Align",
+  "ko": "아래쪽 맞춤",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Text Box",
+  "ko": "텍스트 상자",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "Page Breaks",
+  "ko": "페이지 나누기",
+  "basis": "Excel (결정 B)"
+ },
+ {
+  "en": "About",
+  "ko": "정보",
+  "basis": "일반"
+ },
+ {
+  "en": "Contributors",
+  "ko": "기여자",
+  "basis": "일반"
+ },
+ {
+  "en": "Models",
+  "ko": "AI 모델",
+  "basis": "일반"
+ },
+ {
+  "en": "Find",
+  "ko": "찾기",
+  "basis": "Word find"
+ },
+ {
+  "en": "All Charts",
+  "ko": "모든 차트",
+  "basis": "Excel"
+ },
+ {
+  "en": "Output Range:",
+  "ko": "출력 범위:",
+  "basis": "Excel"
+ },
+ {
+  "en": "New Worksheet Ply:",
+  "ko": "새 워크시트:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Max",
+  "ko": "최대",
+  "basis": "Excel"
+ },
+ {
+  "en": "Min",
+  "ko": "최소",
+  "basis": "Excel"
+ },
+ {
+  "en": "Value Of:",
+  "ko": "지정값:",
+  "basis": "Excel"
+ },
+ {
+  "en": "Answer",
+  "ko": "해답",
+  "basis": "Excel"
+ },
+ {
+  "en": "Limits",
+  "ko": "한계값",
+  "basis": "Excel"
+ },
+ {
+  "en": "None",
+  "ko": "없음",
+  "basis": "Word noBorder"
+ },
+ {
+  "en": "Bottom",
+  "ko": "아래쪽",
+  "basis": "Excel"
+ },
+ {
+  "en": "Top",
+  "ko": "위쪽",
+  "basis": "Excel"
+ },
+ {
+  "en": "Household Budget",
+  "ko": "가계부",
+  "basis": "일반"
+ },
+ {
+  "en": "Quarterly Sales Dashboard",
+  "ko": "분기별 판매 대시보드",
+  "basis": "일반"
+ },
+ {
+  "en": "Gradebook",
+  "ko": "성적표",
+  "basis": "일반"
+ }
+]
