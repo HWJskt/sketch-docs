@@ -158,7 +158,7 @@ npm run deploy
 3. 그 커밋이 GitHub에 push되어 있다.
 4. 원본 고정 커밋이 보존 fork에 태그로 남아 있다.
 
-배포한 뒤 `npm run test:live`로 실제 URL(`https://docs.sketchps.app`)에서 브라우저 회귀 시험을 돌린다. 서버를 조작해야 하는 시나리오 2개는 건너뛴다.
+배포한 뒤 `npm run test:live`로 실제 URL(`https://docs.sketchps.app`)에서 브라우저 회귀 시험을 돌린다. 서버를 조작해야 하는 시나리오 2개는 건너뛴다. 회귀 시나리오(`tests/regressions.mjs`)가 실패하면 그 순간의 페이지 HTML·스크린샷과, Node에서 새로 요청한 `origin/`의 본문·응답 헤더(`cf-ray`·`age`·`etag` 등 허용 목록만, 쿠키 없음)를 `artifacts/live-failure/<시각>/<시나리오>/`에 남긴다(`tests/failure-evidence.mjs`). 배포 직후 반영 지연인지 진짜 결함인지 가르는 근거다 — 2026-10-15 첫 `test:live` 실패는 이것이 없어 추정으로만 남았다.
 
 이 중 3번은 `origin`이 아니라 `package.json`에 적힌 공개 저장소를 인증 없이 조회해 확인한다.
 

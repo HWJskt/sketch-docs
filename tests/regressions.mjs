@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { chromium } from 'playwright-core';
 import { assertTestLocale, contextLocale, launchArgs } from './browser-locale.mjs';
+import { saveFailureEvidence } from './failure-evidence.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const dist = resolve(root, process.env.TEST_DIST || 'dist');
@@ -76,8 +77,10 @@ const scenario = async (name, run, { needsServer = false, contextOptions = {}, p
     page.setDefaultTimeout(30000);
     page.on('pageerror', error => errors.push(String(error)));
     page.on('dialog', dialog => dialogAnswer === 'dismiss' ? dialog.dismiss() : dialog.accept());
-    await run(page, context);
-    assert.deepEqual(errors, [], name + ': page errors');
+    try {
+      await run(page, context);
+      assert.deepEqual(errors, [], name + ': page errors');
+    } catch (error) { await saveFailureEvidence({ name, page, origin, error }); throw error; }
     console.log('PASS', name);
   } finally {
     await context.close();
