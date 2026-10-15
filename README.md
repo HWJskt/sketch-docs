@@ -126,17 +126,19 @@ npm run verify
 
 ## push 게이트와 GitHub Actions
 
-`npm run hooks:install`(한 번)이 `core.hooksPath`를 `.githooks`로 맞춘다. pre-push 훅(`scripts/push-gate.mjs`)은 밀려는 커밋마다:
+`npm run hooks:install`(한 번)이 `core.hooksPath`를 `.githooks`로 맞춘다. pre-push 훅(`scripts/push-gate.mjs`)은 push하는 각 ref의 끝 커밋(주석 태그는 가리키는 커밋)마다 — 그 사이 커밋은 하나하나 검사하지 않는다:
 
 - `artifacts/verified.json`이 그 커밋·깨끗한 작업 트리·같은 제품 파일에서 만든 통과 보고면 바로 통과한다.
-- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`·`.cache/`, lock이 같으면 `node_modules`를 빌려 씀)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다.
+- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`와 Cargo 빌드 출력, lock이 같으면 `node_modules`를 빌려 쓰고 빌드 작업 폴더는 따로 씀)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다. 저장된 보고로 통과한 커밋은 영어 회차를 거치지 않는다 — 영어 Chrome 확인이 필요하면 `TEST_DIST=dist TEST_LOCALE=en-US node tests/<러너>.mjs`를 직접 돈다.
+- 중단(Ctrl-C)하면 임시 worktree를 지운다. 강제 종료로 남은 것은 다음 실행이 지운다.
+- 훅은 `.githooks/`에 있으므로 048a813 이전 커밋을 체크아웃한 상태에서는 걸리지 않는다.
 - 원격 브랜치 삭제는 검사하지 않는다.
 - `git push --no-verify`는 모든 훅을 건너뛴다. 이것은 막을 수 없다.
 - 설치 확인 `git config --get core.hooksPath`(→ `.githooks`), 되돌리기 `git config --unset core.hooksPath`.
 
 GitHub Actions(Rust·브라우저 없음):
 - push마다 `verify`: `npm run check`, `npm run test:contracts`.
-- 매주(와 수동 실행) `dependency-watch`: `svelte-pdf-mini` 새 판·`npm audit --omit=dev`, 그리고 gridcraft·craft-libs 고정 커밋의 Cargo.lock을 `cargo audit`(판·sha256 고정 바이너리)으로 RustSec과 대조한다. 걸리면 이슈를 연다. 빌드나 upstream 코드 실행은 없고, 쓰기 권한은 이슈를 쓰는 job에만 있다.
+- 매주(와 수동 실행) `dependency-watch`: `svelte-pdf-mini` 새 판·`npm audit --omit=dev`, 그리고 gridcraft·craft-libs 고정 커밋의 Cargo.lock을 `cargo audit`(판·sha256 고정 바이너리)으로 RustSec과 대조한다. 걸리면 이슈를 연다(cargo audit은 취약점만 — unmaintained 등 경고는 실행 기록에만. craft-libs 자체 lock에는 엔진이 쓰지 않는 crate도 있어 그것만 걸리면 제품과 무관할 수 있다). 빌드나 upstream 코드 실행은 없고, 쓰기 권한은 이슈를 쓰는 job에만 있다.
 
 ## 배포 (관리자용)
 

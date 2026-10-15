@@ -65,9 +65,11 @@ jobs:
           else
             gh issue create --title "$title" --body "$body"
           fi
-  # Weekly: the Rust crates compiled into the Excel engine (GridCraft's and craft-libs' Cargo.lock at
-  # their pinned commits) against the RustSec advisory database. Only the lock files are downloaded; the
-  # cargo-audit release binary is pinned by version and sha256.
+  # Weekly: GridCraft's and craft-libs' Cargo.lock at their pinned commits against the RustSec advisory
+  # database. Only the lock files are downloaded; the cargo-audit release binary is pinned by version and
+  # sha256. GridCraft's lock is what the Excel engine builds with; craft-libs' own lock also lists crates
+  # the engine does not use, so an issue from it alone may not affect the product. Only vulnerabilities
+  # fail cargo audit and open an issue; unmaintained/unsound/yanked warnings show in the run log.
   cargo-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10

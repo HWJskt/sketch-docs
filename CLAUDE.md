@@ -20,7 +20,7 @@
 
 - 정책: **명시 요청 때만 배포한다.** push만으로는 배포되지 않는다(Git 연동 자동 배포 없음). 2026-10-12 사용자 결정.
 - 대상: Cloudflare Pages 프로젝트 `sketch-docs` → `docs.sketchps.app`.
-- 절차: `npm run verify` → 커밋을 `origin/main`에 push(pre-push 게이트가 verify 보고를 확인하거나 임시 worktree에서 다시 검사, `npm run hooks:install` 필요) → `gh run list --limit 3`으로 CI verify(가벼운 검사) 확인 → `npm run mirrors:check`(필요하면 `mirrors:pin`) → `npm run deploy`.
+- 절차: `npm run verify` → 커밋을 `origin/main`에 push(pre-push 게이트가 각 ref의 끝 커밋에 대해 verify 보고를 확인하거나 임시 worktree에서 다시 검사 + 영어 Chrome 회차, `npm run hooks:install` 필요. 보고로 통과하면 영어 회차는 없다) → `gh run list --limit 3`으로 CI verify(가벼운 검사) 확인 → `npm run mirrors:check`(필요하면 `mirrors:pin`) → `npm run deploy`.
   - `deploy`는 다음을 모두 확인한 뒤에만 wrangler로 `dist/`를 올린다: 검증 보고와 커밋·코드·`dist` 해시 일치, 깨끗한 작업 트리, push된 커밋, 보존 fork의 고정 커밋 태그.
 - wrangler는 4.149.0(2026-10-14 업그레이드: 4.142의 undici·sharp·miniflare npm audit 권고 해결, `npm audit` 0건). 업그레이드 뒤 `wrangler whoami`·`wrangler pages project list`로 확인했다.
 - 배포 뒤 `npm run test:live`(기본 `https://docs.sketchps.app`, `LIVE_ORIGIN`으로 바꿈)로 실제 URL에서 브라우저 회귀 시험을 돌린다.
