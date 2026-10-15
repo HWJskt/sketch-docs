@@ -1,0 +1,76 @@
+// src/xlsxBridge.ts against a fake engine window.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createXlsxBridge, MAX_XLSX_BYTES, PROTOCOL } from '../src/xlsxBridge.ts';
+
+const origin = 'https://docs.example';
+function setup(options = {}) {
+    const sent = [], events = { ready: [], failed: [], blocked: [], late: [] };
+    const engine = { postMessage: (data, to) => sent.push({ data, to }) };
+    const bridge = createXlsxBridge({ target: () => engine, origin, timeoutMs: 50, onReady: v => events.ready.push(v), onFailed: e => events.failed.push(e), onBlocked: a => events.blocked.push(a), onLate: r => events.late.push(r), ...options });
+    const from = (data, extra = {}) => bridge.handle({ source: engine, origin, data: { protocol: PROTOCOL, ...data }, ...extra });
+    return { bridge, engine, sent, events, from };
+}
+const bytes = new Uint8Array([1, 2, 3]);
+
+test('only the engine frame on this origin, in this protocol, is heard', () => {
+    const { bridge, engine, events, from } = setup();
+    assert.equal(bridge.handle({ source: {}, origin, data: { protocol: PROTOCOL, type: 'sketch-xlsx:ready' } }), false, 'another window');
+    assert.equal(bridge.handle({ source: engine, origin: 'https://evil.example', data: { protocol: PROTOCOL, type: 'sketch-xlsx:ready' } }), false, 'another origin');
+    assert.equal(from({ type: 'sketch-xlsx:ready', protocol: 2 }), false, 'another protocol');
+    assert.equal(bridge.ready, false);
+    assert.equal(from({ type: 'sketch-xlsx:ready', version: '0.7.0' }), true);
+    assert.equal(bridge.ready, true);
+    assert.deepEqual(events.ready, ['0.7.0']);
+});
+
+test('an open waits for its own answer; answers to other requests are ignored', async () => {
+    const { bridge, sent, from } = setup();
+    from({ type: 'sketch-xlsx:ready' });
+    const opening = bridge.open('a.xlsx', bytes);
+    const { data, to } = sent[0];
+    assert.equal(to, origin);
+    assert.deepEqual({ ...data, bytes: [...new Uint8Array(data.bytes)] }, { type: 'sketch-xlsx:open', protocol: PROTOCOL, requestId: 1, epoch: 1, name: 'a.xlsx', bytes: [1, 2, 3] });
+    assert.deepEqual([...bytes], [1, 2, 3], 'the caller keeps its bytes (a copy is transferred)');
+    from({ type: 'sketch-xlsx:opened', requestId: 0, epoch: 1, ok: true, name: 'old.xlsx' });
+    assert.equal(bridge.busy, true);
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx', sheets: ['품목', '메모'], warnings: [] });
+    assert.deepEqual(await opening, { ok: true, name: 'a.xlsx', sheets: ['품목', '메모'], warnings: [] });
+    assert.equal(bridge.busy, false);
+});
+
+test('a newer open supersedes an older one, and the older answer cannot replace it', async () => {
+    const { bridge, from } = setup();
+    from({ type: 'sketch-xlsx:ready' });
+    const first = bridge.open('first.xlsx', bytes);
+    const second = bridge.open('second.xlsx', bytes);
+    assert.equal((await first).code, 'superseded');
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'first.xlsx' });
+    assert.equal(bridge.busy, true, 'the first answer does not settle the second request');
+    from({ type: 'sketch-xlsx:opened', requestId: 2, epoch: 2, ok: false, code: 'password', error: 'needs a password' });
+    assert.deepEqual(await second, { ok: false, code: 'password', error: 'needs a password' });
+});
+
+test('a timeout reports failure, and a late answer to the latest request is reported once', async () => {
+    const { bridge, events, from } = setup();
+    from({ type: 'sketch-xlsx:ready' });
+    assert.equal((await bridge.open('slow.xlsx', bytes)).code, 'timeout');
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'slow.xlsx' });
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'slow.xlsx' });
+    assert.deepEqual(events.late.map(result => result.ok && result.name), ['slow.xlsx']);
+});
+
+test('nothing is sent before the engine is ready or for a file over the limit; failures and refusals are reported', async () => {
+    const { bridge, sent, events, from } = setup();
+    assert.equal((await bridge.open('a.xlsx', bytes)).code, 'not-ready');
+    from({ type: 'sketch-xlsx:ready' });
+    assert.equal((await bridge.open('big.xlsx', { byteLength: MAX_XLSX_BYTES + 1 })).code, 'too-large');
+    assert.equal(sent.length, 0);
+    from({ type: 'sketch-xlsx:blocked', action: 'save', count: 1 });
+    assert.deepEqual(events.blocked, ['save']);
+    const opening = bridge.open('a.xlsx', bytes);
+    from({ type: 'sketch-xlsx:failed', error: 'no WebGL' });
+    assert.equal((await opening).code, 'error');
+    assert.deepEqual(events.failed, ['no WebGL']);
+    assert.equal(bridge.ready, false);
+});

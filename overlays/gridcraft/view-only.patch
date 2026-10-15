@@ -1,0 +1,422 @@
+diff --git a/apps/gridcraft-web/index.html b/apps/gridcraft-web/index.html
+index 5fdd1ea..152825f 100644
+--- a/apps/gridcraft-web/index.html
++++ b/apps/gridcraft-web/index.html
+@@ -5,6 +5,8 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+   <title>GridCraft</title>
+   <link data-trunk rel="icon" href="../../assets/app-icon/gridcraft.ico" />
++  <!-- Sketch Docs: this engine runs inside the product shell only. -->
++  <script>if (window.top === window) location.replace(new URL('../../xlsx.html', location.href).href);</script>
+   <link data-trunk rel="rust" data-bin="gridcraft-web" data-wasm-opt="z" data-weak-refs />
+   <style>
+     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f3f3f3; }
+diff --git a/apps/gridcraft-web/src/main.rs b/apps/gridcraft-web/src/main.rs
+index 2920a87..28a1c6f 100644
+--- a/apps/gridcraft-web/src/main.rs
++++ b/apps/gridcraft-web/src/main.rs
+@@ -17,6 +17,8 @@
+ #[cfg(target_arch = "wasm32")]
+ mod host;
+ #[cfg(target_arch = "wasm32")]
++mod sketch;
++#[cfg(target_arch = "wasm32")]
+ mod web;
+ 
+ #[cfg(target_arch = "wasm32")]
+diff --git a/apps/gridcraft-web/src/sketch.rs b/apps/gridcraft-web/src/sketch.rs
+new file mode 100644
+index 0000000..ac6bfe5
+--- /dev/null
++++ b/apps/gridcraft-web/src/sketch.rs
+@@ -0,0 +1,234 @@
++//! Sketch Docs: the view-only bridge to the product shell that frames this page (`?host=sketch`).
++//!
++//! Messages are plain objects with a `type` and `protocol` ([`PROTOCOL`]); only the same-origin
++//! parent window is heard or answered.
++//!
++//! - `sketch-xlsx:ready` (to the parent): `{ version }`, the app is listening.
++//! - `sketch-xlsx:failed` (to the parent): `{ error }`, the app couldn't start.
++//! - `sketch-xlsx:open` (from the parent): `{ requestId, epoch, name, bytes }`. The workbook replaces
++//!   the one shown; a file that fails to open leaves the shown workbook as it was.
++//! - `sketch-xlsx:opened` (to the parent): `{ requestId, epoch, ok, name, sheets, warnings }` or
++//!   `{ requestId, epoch, ok: false, code, error }` (`code` is `password` or `error`). The parent
++//!   matches `requestId`/`epoch` and ignores late answers.
++//! - `sketch-xlsx:blocked` (to the parent): `{ action, count }` when an edit (a refused command or
++//!   a change put back), save, print or dropped file was refused.
++//!
++//! View-only holds in two layers: the engine refuses every command outside its view-only list
++//! (`Session::view_only`), and after every frame a workbook that differs from the one opened is put
++//! back (a UI path that changes the workbook without a command). Saving, printing, file pickers
++//! and dropped files are switched off here.
++
++use std::cell::{Cell, RefCell};
++use std::rc::Rc;
++
++use gridcraft_ui_egui::{Services, SheetApp};
++use serde_json::{Value as Json, json};
++use wasm_bindgen::JsCast as _;
++use wasm_bindgen::JsValue;
++use wasm_bindgen::closure::Closure;
++
++pub const PROTOCOL: f64 = 1.0;
++/// The largest workbook the parent may send (bytes); the parent checks this first.
++const MAX_BYTES: usize = 100 * 1024 * 1024;
++
++struct OpenRequest {
++    request_id: f64,
++    epoch: f64,
++    name: String,
++    bytes: Vec<u8>,
++}
++
++#[derive(Clone)]
++pub struct Sketch {
++    window: web_sys::Window,
++    parent: web_sys::Window,
++    origin: String,
++    queue: Rc<RefCell<Vec<OpenRequest>>>,
++    blocked: Rc<RefCell<Vec<&'static str>>>,
++    refusals: Rc<Cell<u32>>,
++    /// The engine's refused-command count already reported.
++    refused_seen: Rc<Cell<u32>>,
++}
++
++impl Sketch {
++    /// `None` unless the page runs framed with `?host=sketch`.
++    pub fn new(requested: bool) -> Option<Self> {
++        if !requested {
++            return None;
++        }
++        let window = web_sys::window()?;
++        let parent = window.parent().ok().flatten()?;
++        if js_sys::Object::is(&parent, &window) {
++            return None;
++        }
++        let origin = window.location().origin().ok()?;
++        Some(Self { window, parent, origin, queue: Rc::default(), blocked: Rc::default(), refusals: Rc::default(), refused_seen: Rc::default() })
++    }
++
++    /// Switch off every service that writes a file or reads one outside the parent.
++    pub fn configure(&self, services: &mut Services) {
++        let blocked = self.blocked.clone();
++        services.download = Some(Box::new(move |name: &str, _bytes: &[u8]| {
++            log::warn!("view-only: not saving {name}");
++            blocked.borrow_mut().push("save");
++        }));
++        let blocked = self.blocked.clone();
++        services.print = Some(Box::new(move |_bytes: &[u8]| blocked.borrow_mut().push("print")));
++        services.open_async = None;
++        services.pick_picture_async = None;
++        services.inbox = None;
++    }
++
++    pub fn listen(&self, ctx: egui::Context) {
++        let parent = self.parent.clone();
++        let origin = self.origin.clone();
++        let queue = self.queue.clone();
++        let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
++            if event.origin() != origin || !event.source().is_some_and(|s| js_sys::Object::is(&s, &parent)) {
++                return;
++            }
++            let data = event.data();
++            if string(&data, "type").as_deref() != Some("sketch-xlsx:open") || number(&data, "protocol") != Some(PROTOCOL) {
++                return;
++            }
++            let (Some(request_id), Some(epoch), Some(bytes)) = (number(&data, "requestId"), number(&data, "epoch"), bytes(&data)) else {
++                return;
++            };
++            let name = string(&data, "name").filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "Book.xlsx".to_string());
++            queue.borrow_mut().push(OpenRequest { request_id, epoch, name, bytes });
++            ctx.request_repaint();
++        });
++        if self.window.add_event_listener_with_callback("message", on_message.as_ref().unchecked_ref()).is_ok() {
++            // The listener lives as long as the page.
++            on_message.forget();
++        }
++    }
++
++    pub fn post_ready(&self) {
++        self.send(&[("type", "sketch-xlsx:ready".into()), ("version", env!("CARGO_PKG_VERSION").into())]);
++    }
++
++    pub fn post_failed(&self, error: &str) {
++        self.send(&[("type", "sketch-xlsx:failed".into()), ("error", error.into())]);
++    }
++
++    /// A dropped file is not opened: the parent owns which file is shown.
++    pub fn refuse_drop(&self) {
++        self.blocked.borrow_mut().push("drop");
++    }
++
++    /// Before each frame: open the workbooks the parent sent, in order.
++    pub fn process(&self, app: &mut SheetApp) {
++        let requests = std::mem::take(&mut *self.queue.borrow_mut());
++        for request in requests {
++            let reply = open(app, &request);
++            let mut fields: Vec<(&str, JsValue)> =
++                vec![("type", "sketch-xlsx:opened".into()), ("requestId", request.request_id.into()), ("epoch", request.epoch.into())];
++            match reply {
++                Ok((sheets, warnings)) => {
++                    fields.push(("ok", true.into()));
++                    fields.push(("name", request.name.as_str().into()));
++                    fields.push(("sheets", strings(&sheets)));
++                    fields.push(("warnings", strings(&warnings)));
++                }
++                Err((code, error)) => {
++                    fields.push(("ok", false.into()));
++                    fields.push(("code", code.into()));
++                    fields.push(("error", error.as_str().into()));
++                }
++            }
++            self.send(&fields);
++        }
++    }
++
++    /// After each frame: put back a workbook that changed anyway, and tell the parent what was refused.
++    pub fn guard(&self, app: &mut SheetApp) {
++        let active = app.session.active_index();
++        for i in 0..app.session.documents().len() {
++            app.session.set_active(i);
++            if let Some(d) = app.session.active_mut()
++                && d.is_dirty()
++            {
++                d.wb = d.saved.clone();
++                d.calc.rebuild(&d.wb);
++                d.undo.clear();
++                d.redo.clear();
++                self.blocked.borrow_mut().push("edit");
++            }
++        }
++        app.session.set_active(active);
++        if app.session.view_only_refused != self.refused_seen.get() {
++            self.refused_seen.set(app.session.view_only_refused);
++            self.blocked.borrow_mut().push("edit");
++        }
++        let blocked = std::mem::take(&mut *self.blocked.borrow_mut());
++        for action in blocked {
++            self.refusals.set(self.refusals.get().saturating_add(1));
++            self.send(&[("type", "sketch-xlsx:blocked".into()), ("action", action.into()), ("count", self.refusals.get().into())]);
++        }
++    }
++
++    fn send(&self, fields: &[(&str, JsValue)]) -> bool {
++        let m = js_sys::Object::new();
++        let mut all = vec![("protocol", JsValue::from_f64(PROTOCOL))];
++        all.extend(fields.iter().map(|(k, v)| (*k, v.clone())));
++        for (key, value) in all {
++            if js_sys::Reflect::set(&m, &JsValue::from_str(key), &value).is_err() {
++                return false;
++            }
++        }
++        self.parent.post_message(&m, &self.origin).is_ok()
++    }
++}
++
++/// Opens the workbook as the only one shown; on failure the shown workbook stays.
++fn open(app: &mut SheetApp, request: &OpenRequest) -> Result<(Vec<String>, Vec<String>), (&'static str, String)> {
++    if request.bytes.len() > MAX_BYTES {
++        return Err(("error", format!("The file is larger than {} MB.", MAX_BYTES / 1024 / 1024)));
++    }
++    let b64 = gridcraft_engine::io::base64_encode(&request.bytes);
++    // The view-only gate refuses file.open; this one call comes from the parent.
++    app.session.view_only = false;
++    let result = app.run("file.open", json!({"name": &request.name, "base64": b64}));
++    app.session.view_only = true;
++    let r = match result {
++        Ok(r) => r,
++        Err(e) if e.contains(gridcraft_engine::io::PASSWORD_REQUIRED) => return Err(("password", e)),
++        Err(e) => return Err(("error", e)),
++    };
++    // Keep only the workbook just opened.
++    if let Some(keep) = app.session.active().map(|d| d.uid) {
++        while let Some(i) = app.session.documents().iter().position(|d| d.uid != keep) {
++            app.session.close_document(i);
++        }
++        app.session.set_active(0);
++    }
++    app.backstage = None;
++    app.show_open_warnings(&r);
++    let list = |key: &str| r.get(key).and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
++    Ok((list("sheets"), list("warnings")))
++}
++
++fn strings(items: &[String]) -> JsValue {
++    items.iter().map(|s| JsValue::from_str(s)).collect::<js_sys::Array>().into()
++}
++
++fn string(data: &JsValue, key: &str) -> Option<String> {
++    js_sys::Reflect::get(data, &JsValue::from_str(key)).ok()?.as_string()
++}
++
++fn number(data: &JsValue, key: &str) -> Option<f64> {
++    js_sys::Reflect::get(data, &JsValue::from_str(key)).ok()?.as_f64()
++}
++
++/// `bytes` as an `ArrayBuffer` or `Uint8Array`.
++fn bytes(data: &JsValue) -> Option<Vec<u8>> {
++    let bytes = js_sys::Reflect::get(data, &JsValue::from_str("bytes")).ok()?;
++    if let Some(array) = bytes.dyn_ref::<js_sys::Uint8Array>() {
++        Some(array.to_vec())
++    } else if bytes.is_instance_of::<js_sys::ArrayBuffer>() {
++        Some(js_sys::Uint8Array::new(&bytes).to_vec())
++    } else {
++        None
++    }
++}
+diff --git a/apps/gridcraft-web/src/web.rs b/apps/gridcraft-web/src/web.rs
+index c0fcb22..39558a5 100644
+--- a/apps/gridcraft-web/src/web.rs
++++ b/apps/gridcraft-web/src/web.rs
+@@ -25,10 +25,17 @@ pub fn start() {
+         {
+             create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
+         }
+-        // `?host=parent`: a same-origin page framing GridCraft (such as a Nextcloud app) opens
+-        // workbooks in it and stores what it saves (`host`).
+-        let bridge = if query_param("host").as_deref() == Some("parent") { crate::host::Bridge::new() } else { None };
++        // Sketch Docs: this build runs only framed by the product shell, view-only (`sketch`).
++        // The upstream `?host=parent` bridge and samples are not offered.
++        let Some(sketch) = crate::sketch::Sketch::new(query_param("host").as_deref() == Some("sketch")) else {
++            if let Some(el) = document.get_element_by_id(LOADING_ID) {
++                el.set_inner_html("<p>This page opens inside Sketch Docs.</p>");
++            }
++            return;
++        };
++        let bridge: Option<crate::host::Bridge> = None;
+         let app_bridge = bridge.clone();
++        let app_sketch = sketch.clone();
+         let result = eframe::WebRunner::new()
+             .start(
+                 canvas,
+@@ -36,14 +43,10 @@ pub fn start() {
+                 Box::new(move |cc| {
+                     let inbox: Inbox = Inbox::default();
+                     let mut session = Session::new();
+-                    // In host mode the parent sends the workbook to edit; no sample meanwhile.
+-                    let q = if app_bridge.is_some() { String::new() } else { query() };
+-                    if let Some(name) = q.split(['?', '&']).find_map(|kv| kv.strip_prefix("sample=")) {
+-                        let _ = session.execute("file.new", serde_json::json!({"sample": name}));
+-                    } else if q.contains("sample") {
+-                        let _ = session.execute("file.new", serde_json::json!({"sample": "sales"}));
+-                    }
++                    session.view_only = true;
+                     let mut services = services(inbox.clone(), cc.egui_ctx.clone());
++                    app_sketch.configure(&mut services);
++                    app_sketch.listen(cc.egui_ctx.clone());
+                     if let Some(bridge) = &app_bridge {
+                         bridge.connect(&mut services, inbox.clone(), cc.egui_ctx.clone());
+                     }
+@@ -65,13 +68,17 @@ pub fn start() {
+                         }
+                         bridge.post_ready();
+                     }
+-                    Ok(Box::new(WebShell { app, inbox, bridge: app_bridge }))
++                    app_sketch.post_ready();
++                    Ok(Box::new(WebShell { app, inbox, bridge: app_bridge, sketch: app_sketch }))
+                 }),
+             )
+             .await;
+         if let (Err(e), Some(bridge)) = (&result, &bridge) {
+             bridge.post_failed(&format!("{e:?}"));
+         }
++        if let Err(e) = &result {
++            sketch.post_failed(&format!("{e:?}"));
++        }
+         if let Some(el) = document.get_element_by_id(LOADING_ID) {
+             match result {
+                 Ok(()) => el.remove(),
+@@ -93,25 +100,17 @@ struct WebShell {
+     app: SheetApp,
+     inbox: Inbox,
+     bridge: Option<crate::host::Bridge>,
++    sketch: crate::sketch::Sketch,
+ }
+ 
+ impl eframe::App for WebShell {
+     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
+-        for f in dropped {
+-            let inbox = self.inbox.clone();
+-            let ctx = ctx.clone();
+-            wasm_bindgen_futures::spawn_local(async move {
+-                let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped.xlsx".into());
+-                match f.bytes_async().await {
+-                    Ok(bytes) => {
+-                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
+-                        ctx.request_repaint();
+-                    }
+-                    Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
+-                }
+-            });
++        // Sketch Docs: the shell chooses the workbook; a file dropped on the engine is not opened.
++        if !dropped.is_empty() {
++            self.sketch.refuse_drop();
+         }
++        self.sketch.process(&mut self.app);
+         self.app.logic(ctx);
+     }
+ 
+@@ -124,6 +123,7 @@ impl eframe::App for WebShell {
+         if let Some(bridge) = &self.bridge {
+             bridge.sync(&mut self.app);
+         }
++        self.sketch.guard(&mut self.app);
+     }
+ }
+ 
+diff --git a/crates/engine/src/lib.rs b/crates/engine/src/lib.rs
+index 258a1cb..784e83a 100644
+--- a/crates/engine/src/lib.rs
++++ b/crates/engine/src/lib.rs
+@@ -256,6 +256,39 @@ pub struct Session {
+     /// Review › Notes › Show All Notes: every note is displayed. An application display setting
+     /// (like Excel's comment indicator option), so it's not saved in the file.
+     pub show_all_notes: bool,
++    /// Sketch Docs: a view-only session runs only queries and the navigation in
++    /// [`VIEW_ONLY_COMMANDS`]; every other command is refused before it runs.
++    pub view_only: bool,
++    /// Sketch Docs: commands a view-only session refused so far.
++    pub view_only_refused: u32,
++}
++
++/// Sketch Docs: the commands a view-only session runs besides queries (commands that neither
++/// journal nor record undo). They move the selection or the active sheet, find, or copy out.
++pub const VIEW_ONLY_COMMANDS: &[&str] = &[
++    "selection.set",
++    "selection.move",
++    "selection.next",
++    "selection.currentRegion",
++    "selection.row",
++    "selection.column",
++    "edit.selectAll",
++    "edit.goTo",
++    "edit.goToSpecial",
++    "edit.copy",
++    "edit.clearClipboard",
++    "edit.find",
++    "review.previousComment",
++    "review.nextComment",
++    "sheet.activate",
++    "sheet.next",
++    "sheet.previous",
++    "window.activate",
++];
++
++/// Sketch Docs: whether a view-only session may run this command.
++pub fn view_only_allows(spec: &cmd::CommandSpec) -> bool {
++    (!spec.journal && !spec.undoable) || VIEW_ONLY_COMMANDS.contains(&spec.id)
+ }
+ 
+ impl Session {
+@@ -317,6 +350,10 @@ impl Session {
+     /// Panics inside commands are caught and reported; the workbook is restored.
+     pub fn execute(&mut self, id: &str, params: Json) -> Result<Json> {
+         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
++        if self.view_only && !view_only_allows(spec) {
++            self.view_only_refused = self.view_only_refused.saturating_add(1);
++            return Err(EngineError::Disabled(id.to_string(), "This workbook is open view-only in Sketch Docs.".into()));
++        }
+         if let Err(why) = (spec.enabled)(self) {
+             return Err(EngineError::Disabled(id.to_string(), why));
+         }
