@@ -7,13 +7,16 @@ import { assertTestLocale, launchArgs, testLocale } from './browser-locale.mjs';
 import { resolve } from 'node:path';
 import { brokenWorkbook, koreanWorkbook, otherWorkbook } from './xlsx-fixtures.mjs';
 import { saveFailureEvidence } from './failure-evidence.mjs';
+import { strFromU8, unzipSync } from 'fflate';
 
 const root = resolve(import.meta.dirname, '..');
 const origin = 'http://localhost:4179';
 const harness = `<!doctype html><meta charset="utf-8"><style>body{margin:0}iframe{width:1200px;height:800px;border:0}</style>
-<iframe id="engine" title="Excel" allow="clipboard-read; clipboard-write" src="./engines/gridcraft/index.html?host=sketch"></iframe>
+<iframe id="engine" title="Excel" allow="clipboard-read; clipboard-write"></iframe>
 <script>
   const frame = document.getElementById('engine');
+  // ?mode=edit frames the editing engine; otherwise it is view-only.
+  frame.src = './engines/gridcraft/index.html?host=sketch' + (new URLSearchParams(location.search).get('mode') === 'edit' ? '&mode=edit' : '');
   window.messages = [];
   addEventListener('message', event => { if (event.source === frame.contentWindow) messages.push(event.data); });
   // The engine's snapshot answer, with its bytes as a plain array (an ArrayBuffer does not survive page.evaluate).
@@ -24,9 +27,10 @@ const harness = `<!doctype html><meta charset="utf-8"><style>body{margin:0}ifram
       done({ ...event.data, bytes: event.data.bytes instanceof ArrayBuffer ? [...new Uint8Array(event.data.bytes)] : null });
     };
     addEventListener('message', listen);
-    frame.contentWindow.postMessage({ type: 'sketch-xlsx:snapshot', protocol: 1, requestId, epoch }, location.origin);
+    frame.contentWindow.postMessage({ type: 'sketch-xlsx:snapshot', protocol: 2, requestId, epoch }, location.origin);
   });
-  window.send = (requestId, epoch, name, bytes, protocol = 1) => {
+  window.post = message => frame.contentWindow.postMessage({ protocol: 2, ...message }, location.origin);
+  window.send = (requestId, epoch, name, bytes, protocol = 2) => {
     const buffer = new Uint8Array(bytes).buffer;
     frame.contentWindow.postMessage({ type: 'sketch-xlsx:open', protocol, requestId, epoch, name, bytes: buffer }, location.origin, [buffer]);
   };
@@ -60,7 +64,7 @@ try {
   page.on('pageerror', error => errors.push(String(error)));
   page.on('download', download => downloads.push(download.suggestedFilename()));
   page.on('request', request => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== origin) external.add(request.url()); });
-  await page.route(origin + '/xlsx-harness.html', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: harness }));
+  await page.route(url => url.origin === origin && url.pathname === '/xlsx-harness.html', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: harness }));
 
   const messages = () => page.evaluate(() => window.messages);
   // The first engine message whose fields equal `fields`.
@@ -102,12 +106,13 @@ try {
 
   await page.goto(origin + '/xlsx-harness.html');
   const ready = await waitFor({ type: 'sketch-xlsx:ready' }, 'ready');
-  assert.equal(ready.protocol, 1);
+  assert.equal(ready.protocol, 2);
+  assert.equal(ready.mode, 'view');
 
   // Another protocol version is ignored.
-  await page.evaluate(([b]) => window.send(99, 99, 'wrong.xlsx', b, 2), [[...koreanWorkbook()]]);
+  await page.evaluate(([b]) => window.send(99, 99, 'wrong.xlsx', b, 1), [[...koreanWorkbook()]]);
   const opened = await open(1, 1, '매출.xlsx', koreanWorkbook());
-  assert.deepEqual({ ok: opened.ok, name: opened.name, sheets: opened.sheets, warnings: opened.warnings, epoch: opened.epoch }, { ok: true, name: '매출.xlsx', sheets: ['매출', '메모'], warnings: [], epoch: 1 });
+  assert.deepEqual({ ok: opened.ok, name: opened.name, sheets: opened.sheets, warnings: opened.warnings, epoch: opened.epoch, uid: typeof opened.docUid }, { ok: true, name: '매출.xlsx', sheets: ['매출', '메모'], warnings: [], epoch: 1, uid: 'number' });
   assert.equal((await messages()).filter(m => m.requestId === 99).length, 0, 'a message in another protocol is not answered');
 
   await engine.click({ position: { x: 600, y: 500 } });
@@ -162,7 +167,111 @@ try {
   assert.deepEqual([...external], [], 'no request leaves this origin');
   assert.deepEqual(errors, [], 'page errors');
 
-  // The product: the Excel view in the shell opens a picked file, keeps it across editor switches, and says why edits fail.
+  // Editing (docs/plans/2026-10-15-xlsx-edit.md stage 1a): edits change the workbook and are reported as
+  // state; a snapshot holds what is being typed; only `saved` for a snapshot makes it clean, and an edit
+  // after the snapshot keeps it dirty; file shortcuts become requests to the shell, and nothing downloads.
+  {
+    await page.goto(origin + '/xlsx-harness.html?mode=edit');
+    const editReady = await waitFor({ type: 'sketch-xlsx:ready' }, 'edit ready');
+    assert.equal(editReady.mode, 'edit');
+    const edited = await open(1, 1, '매출.xlsx', koreanWorkbook());
+    assert.equal(edited.ok, true);
+    const lastState = async () => (await messages()).filter(m => m.type === 'sketch-xlsx:state').at(-1);
+    const waitState = async (fields, label) => {
+      await page.waitForFunction(fields => {
+        const state = window.messages.filter(m => m.type === 'sketch-xlsx:state').at(-1);
+        return state && Object.entries(fields).every(([key, value]) => state[key] === value);
+      }, fields, { timeout: 30000 }).catch(async error => { throw new Error(`${label}: ${error.message}\n${JSON.stringify(await lastState())}`); });
+    };
+    // Keys go to the engine only while its canvas has focus (verify's en-US round once lost keystrokes).
+    const focused = async () => {
+      const frame = page.frames().find(f => f.url().includes('/engines/gridcraft/'));
+      const focus = await frame.evaluate(() => ({ tag: document.activeElement?.tagName, has: document.hasFocus() }));
+      assert.deepEqual(focus, { tag: 'CANVAS', has: true }, 'the engine canvas has focus before typing');
+    };
+    const typeInto = async (address, text, commit = true) => {
+      await select(address);
+      await focused();
+      // 50 ms between keys, as a person types: with none, the keys after the first one, which opens the
+      // cell editor, were lost (measured 2026-10-15: "999" -> 9); recorded in the plan as a finding.
+      await page.keyboard.type(text, { delay: 50 });
+      if (commit) await page.keyboard.press('Enter');
+    };
+    const takeSnapshot = id => page.evaluate(id => window.snapshot(id, 1), id);
+    // The first sheet's cells as a save writes them (engine output: values in <v>, strings shared).
+    const cellsOf = bytes => {
+      const files = unzipSync(new Uint8Array(bytes));
+      const strings = [...strFromU8(files['xl/sharedStrings.xml'] ?? new Uint8Array()).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => [...m[1].matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map(t => t[1]).join(''));
+      const cells = {};
+      for (const m of strFromU8(files['xl/worksheets/sheet1.xml']).matchAll(/<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const v = /<v>([^<]*)<\/v>/.exec(m[3] ?? '')?.[1];
+        cells[m[1]] = / t="s"/.test(m[2]) ? strings[Number(v)] : v;
+      }
+      return cells;
+    };
+    // Cells read from a snapshot that is let go at once (a read must not count as a save).
+    let readId = 900;
+    const read = async () => {
+      const shot = await takeSnapshot(++readId);
+      await page.evaluate(id => window.post({ type: 'sketch-xlsx:discard', requestId: id }), readId);
+      return cellsOf(shot.bytes);
+    };
+    await waitState({ dirty: false }, 'clean after opening');
+    await typeInto('B2', '999');
+    await waitState({ dirty: true, editing: false }, 'dirty after an edit');
+    const afterEdit = await read();
+    assert.equal(afterEdit.B2, '999', 'the edit is in the workbook');
+    assert.equal(afterEdit.B4, '3399', 'the formula recalculates');
+    const first = await takeSnapshot(60);
+    assert.equal(first.ok, true);
+    await page.evaluate(([id, uid]) => window.post({ type: 'sketch-xlsx:saved', requestId: id, epoch: 1, docUid: uid }), [60, first.docUid]);
+    await waitState({ dirty: false }, 'clean once the snapshot is saved');
+    // An edit after the snapshot is not covered by its `saved`. (ASCII: Korean typed through the headless
+    // text agent sometimes left the cell editor open after Enter — a finding in the plan, checked by hand.)
+    await typeInto('A2', 'pear');
+    await waitState({ dirty: true, editing: false }, 'dirty again');
+    const second = await takeSnapshot(61);
+    await typeInto('A3', 'kaki');
+    await waitState({ editing: false, rev: second.rev + 1 }, 'the later edit is in the workbook');
+    await page.evaluate(([id, uid]) => window.post({ type: 'sketch-xlsx:saved', requestId: id, epoch: 1, docUid: uid }), [61, second.docUid]);
+    await page.waitForTimeout(500);
+    assert.equal((await lastState()).dirty, true, 'an edit made after the snapshot stays unsaved');
+    // `saved` while a cell is still being typed in: the workbook is clean, the typing is still unsaved.
+    const fourth = await takeSnapshot(64);
+    await typeInto('A4', 'x', false);
+    await waitState({ editing: true }, 'typing before the save lands');
+    await page.evaluate(([id, uid]) => window.post({ type: 'sketch-xlsx:saved', requestId: id, epoch: 1, docUid: uid }), [64, fourth.docUid]);
+    await waitState({ dirty: false, editing: true }, 'clean workbook, typing still pending');
+    await page.keyboard.press('Escape');
+    await waitState({ dirty: false, editing: false }, 'typing cancelled');
+    await typeInto('A3', 'kaki2');
+    await waitState({ dirty: true, editing: false }, 'dirty for the next checks');
+    // A discarded snapshot changes nothing; a wrong document id is ignored.
+    const third = await takeSnapshot(62);
+    await page.evaluate(id => window.post({ type: 'sketch-xlsx:discard', requestId: id }), 62);
+    await page.evaluate(([id, uid]) => window.post({ type: 'sketch-xlsx:saved', requestId: id, epoch: 1, docUid: uid + 1 }), [62, third.docUid]);
+    await page.waitForTimeout(500);
+    assert.equal((await lastState()).dirty, true, 'discard and a wrong document leave it unsaved');
+    // What is being typed goes into the snapshot.
+    await typeInto('C2', '77', false);
+    await waitState({ editing: true }, 'typing in a cell');
+    const typed = await takeSnapshot(63);
+    assert.equal(typed.ok, true);
+    const typedCells = cellsOf(typed.bytes);
+    assert.equal(typedCells.C2, '77', 'the cell being typed in was committed into the snapshot');
+    assert.deepEqual([typedCells.A2, typedCells.A3], ['pear', 'kaki2']);
+    // File shortcuts ask the shell; nothing is downloaded or opened here.
+    await select('A1');
+    await focused();
+    for (const key of ['ControlOrMeta+s', 'ControlOrMeta+Shift+s', 'F12', 'ControlOrMeta+o']) await page.keyboard.press(key);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => window.messages.filter(m => m.type === 'sketch-xlsx:request').length >= 4, null, { timeout: 30000 });
+    assert.deepEqual((await messages()).filter(m => m.type === 'sketch-xlsx:request').map(m => m.action), ['save', 'saveAs', 'saveAs', 'open']);
+    assert.deepEqual(downloads, [], 'nothing was downloaded');
+    assert.deepEqual(errors, [], 'page errors (editing)');
+  }
+
+  // The product: the Excel view in the shell opens a picked file, edits it, and keeps the edit across editor switches.
   const product = await context.newPage();
   product.setDefaultTimeout(60000);
   product.on('pageerror', error => errors.push(String(error)));
@@ -208,16 +317,13 @@ try {
   assert.equal(await productCell('B2'), '1200');
   await product.keyboard.type('5');
   await product.keyboard.press('Enter');
-  await product.getByRole('status').filter({ hasText: '보기 전용입니다' }).waitFor();
-  // The engine also shows its refusal message; close it and the in-cell editor.
-  await product.keyboard.press('Escape');
-  await product.keyboard.press('Escape');
+  await product.locator('.xlsx-viewer .status').filter({ hasText: '저장하지 않은 변경' }).waitFor();
   await product.getByRole('button', { name: 'PDF', exact: true }).click();
   await product.locator('.pdf-editor').waitFor();
   await product.getByRole('button', { name: 'Excel', exact: true }).click();
   await product.locator('.xlsx-viewer[data-sheets="2"]').waitFor();
   assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '매출.xlsx', 'the workbook stays across editor switches');
-  assert.equal(await productCell('B2'), '1200');
+  assert.equal(await productCell('B2'), '5', 'the edit stays across editor switches');
   await product.screenshot({ path: resolve(root, 'artifacts/xlsx-product.png') });
   await pick('notes.txt', new TextEncoder().encode('plain'));
   await product.getByRole('alert').filter({ hasText: 'XLSX 파일만 열 수 있습니다.' }).waitFor();
@@ -228,7 +334,7 @@ try {
   await pick('broken.xlsx', brokenWorkbook());
   await product.getByRole('alert').filter({ hasText: '파일을 열지 못했습니다.' }).waitFor();
   assert.equal(await product.locator('.xlsx-viewer .name').textContent(), '매출.xlsx', 'a refused or failed file keeps the shown workbook');
-  assert.equal(await productCell('B2'), '1200');
+  assert.equal(await productCell('B2'), '5');
   assert.deepEqual([...external], [], 'no request leaves this origin (product)');
   assert.deepEqual(errors, [], 'page errors (product)');
   await product.close();

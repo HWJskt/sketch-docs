@@ -1,8 +1,9 @@
 <script lang="ts">
-    // Excel view-only: GridCraft runs in a frame (overlays/gridcraft/view-only.patch); this component owns
-    // which file is shown and never writes one. The bridge (xlsxBridge.ts) hears only that frame.
+    // Excel: GridCraft runs in a frame, editing (overlays/gridcraft/sketch-bridge.patch); this component owns
+    // which file is shown. Saving is not wired yet (docs/plans/2026-10-15-xlsx-edit.md, stage 1b): the engine's
+    // save and open requests get a notice. The bridge (xlsxBridge.ts) hears only that frame.
     import { onMount } from 'svelte';
-    import { createXlsxBridge, MAX_XLSX_BYTES, type Blocked, type OpenResult } from './xlsxBridge';
+    import { createXlsxBridge, MAX_XLSX_BYTES, type Blocked, type EngineState, type OpenResult } from './xlsxBridge';
     import type { PickerWindow } from './fileAccess';
     import type { EditorStatus } from './editorState';
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
@@ -12,11 +13,14 @@
     let ready = $state(false), opening = $state(false);
     let name = $state(''), sheets = $state<string[]>([]);
     let error = $state(''), notice = $state('');
+    let engine = $state<EngineState>({ dirty: false, editing: false, rev: 0 });
     const bridge = createXlsxBridge({
         target: () => frame?.contentWindow, origin: location.origin,
         onReady: () => { ready = true; },
         onFailed: reason => { ready = false; error = `Excel 보기를 시작하지 못했습니다. WebGPU 또는 WebGL2를 지원하는 브라우저가 필요합니다. (${reason})`; },
-        onBlocked: action => { notice = blockedText[action] ?? blockedText.edit; },
+        onBlocked: action => { notice = blockedText[action] ?? blockedText.refused; },
+        onState: state => { engine = state; },
+        onRequest: () => { notice = '열기·저장은 아직 연결 중입니다. 위쪽 "Excel 열기"를 쓰세요.'; },
         // Every answer the engine gives, even after a timeout, says which workbook it now shows.
         onShown: result => { name = result.name; sheets = result.sheets; },
     });
@@ -25,9 +29,11 @@
         save: '보기 전용입니다. 저장·내보내기는 지원하지 않습니다.',
         print: '보기 전용입니다. 인쇄는 지원하지 않습니다.',
         drop: '파일을 열려면 "Excel 열기"를 누르세요.',
+        refused: '이 명령은 여기서 쓸 수 없습니다. 파일은 위쪽 막대에서 열고 저장하세요.',
     };
-    export function getState(): EditorStatus { return { ready, busy: opening, dirty: false, name }; }
-    $effect(() => { void ready; void opening; void name; onState(getState()); });
+    // A cell being typed in counts as unsaved: leaving now would lose it.
+    export function getState(): EditorStatus { return { ready, busy: opening, dirty: engine.dirty || engine.editing, name }; }
+    $effect(() => { void ready; void opening; void name; void engine; onState(getState()); });
     onMount(() => {
         const listen = (event: MessageEvent) => { bridge.handle(event); };
         addEventListener('message', listen);
@@ -74,13 +80,13 @@
 <section class="xlsx-viewer" aria-label="Excel 보기" data-ready={ready} data-sheets={sheets.length}>
     <header class="toolbar">
         <button type="button" onclick={choose} disabled={!ready || opening}>Excel 열기</button>
-        <span class="badge" title="편집·저장은 아직 지원하지 않습니다.">보기 전용</span>
+        <span class="badge" title="저장은 아직 연결 중입니다.">편집 · 저장 준비 중</span>{#if engine.dirty || engine.editing}<span class="status">저장하지 않은 변경</span>{/if}
         {#if name}<span class="name">{name}</span>{/if}
         {#if opening}<span class="status" role="status">여는 중…</span>{:else if !ready && !error}<span class="status" role="status">Excel 보기를 준비하는 중…</span>{:else if notice}<span class="status" role="status">{notice}</span>{/if}
         <input bind:this={input} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onchange={picked} />
     </header>
     {#if error}<p class="problem" role="alert">{error}</p>{/if}
-    <iframe bind:this={frame} title="Excel 보기" src="./engines/gridcraft/index.html?host=sketch" allow="clipboard-write"></iframe>
+    <iframe bind:this={frame} title="Excel 보기" src="./engines/gridcraft/index.html?host=sketch&mode=edit" allow="clipboard-write"></iframe>
 </section>
 
 <style>

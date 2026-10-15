@@ -17,7 +17,7 @@ test('only the engine frame on this origin, in this protocol, is heard', () => {
     const { bridge, engine, events, from } = setup();
     assert.equal(bridge.handle({ source: {}, origin, data: { protocol: PROTOCOL, type: 'sketch-xlsx:ready' } }), false, 'another window');
     assert.equal(bridge.handle({ source: engine, origin: 'https://evil.example', data: { protocol: PROTOCOL, type: 'sketch-xlsx:ready' } }), false, 'another origin');
-    assert.equal(from({ type: 'sketch-xlsx:ready', protocol: 2 }), false, 'another protocol');
+    assert.equal(from({ type: 'sketch-xlsx:ready', protocol: 1 }), false, 'another protocol (the view-only bridge before editing)');
     assert.equal(bridge.ready, false);
     assert.equal(from({ type: 'sketch-xlsx:ready', version: '0.7.0' }), true);
     assert.equal(bridge.ready, true);
@@ -34,8 +34,8 @@ test('an open waits for its own answer; answers to other requests are ignored', 
     assert.deepEqual([...bytes], [1, 2, 3], 'the caller keeps its bytes (a copy is transferred)');
     from({ type: 'sketch-xlsx:opened', requestId: 0, epoch: 1, ok: true, name: 'old.xlsx' });
     assert.equal(bridge.busy, true);
-    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx', sheets: ['품목', '메모'], warnings: [] });
-    assert.deepEqual(await opening, { ok: true, name: 'a.xlsx', sheets: ['품목', '메모'], warnings: [] });
+    from({ type: 'sketch-xlsx:opened', requestId: 1, epoch: 1, ok: true, name: 'a.xlsx', sheets: ['품목', '메모'], warnings: [], docUid: 4 });
+    assert.deepEqual(await opening, { ok: true, name: 'a.xlsx', sheets: ['품목', '메모'], warnings: [], docUid: 4 });
     assert.equal(bridge.busy, false);
 });
 
@@ -103,11 +103,35 @@ test('a snapshot resolves with its own answer only, and times out without one', 
     assert.deepEqual(asked, { type: 'sketch-xlsx:snapshot', protocol: PROTOCOL, requestId: 2, epoch: 1 });
     from({ type: 'sketch-xlsx:snapshot', requestId: 2, epoch: 0, ok: true, docUid: 9, bytes: new Uint8Array([9]).buffer });
     from({ type: 'sketch-xlsx:snapshot', requestId: 3, epoch: 1, ok: true, docUid: 9, bytes: new Uint8Array([9]).buffer });
-    from({ type: 'sketch-xlsx:snapshot', requestId: 2, epoch: 1, ok: true, docUid: 7, bytes: new Uint8Array([4, 5]).buffer });
+    from({ type: 'sketch-xlsx:snapshot', requestId: 2, epoch: 1, ok: true, docUid: 7, rev: 3, bytes: new Uint8Array([4, 5]).buffer });
     const result = await taking;
-    assert.deepEqual({ ...result, bytes: [...result.bytes] }, { ok: true, docUid: 7, bytes: [4, 5] });
+    assert.deepEqual({ ...result, bytes: [...result.bytes] }, { ok: true, id: 2, docUid: 7, rev: 3, bytes: [4, 5] });
     const failing = bridge.snapshot();
     from({ type: 'sketch-xlsx:snapshot', requestId: 3, epoch: 1, ok: false, error: 'No workbook is open.' });
     assert.deepEqual(await failing, { ok: false, code: 'error', error: 'No workbook is open.' });
     assert.equal((await bridge.snapshot()).code, 'timeout');
+});
+
+test('editing: the engine state and requests reach the shell; saved and discard name a snapshot; exports wait for their answer', async () => {
+    const states = [], requests = [], blocked = [];
+    const { bridge, sent, from } = setup({ onState: s => states.push(s), onRequest: r => requests.push(r), onBlocked: (a, c) => blocked.push([a, c]) });
+    from({ type: 'sketch-xlsx:ready', mode: 'edit' });
+    from({ type: 'sketch-xlsx:state', dirty: true, editing: false, rev: 2 });
+    assert.deepEqual(states, [{ dirty: true, editing: false, rev: 2 }]);
+    from({ type: 'sketch-xlsx:request', action: 'save' });
+    from({ type: 'sketch-xlsx:request', action: 'open', name: 'b.xlsx', bytes: new Uint8Array([7]).buffer });
+    from({ type: 'sketch-xlsx:request', action: 'format-disk' });
+    assert.deepEqual(requests.map(r => r.file ? { ...r, file: { ...r.file, bytes: [...r.file.bytes] } } : r), [{ action: 'save' }, { action: 'open', file: { name: 'b.xlsx', bytes: [7] } }], 'an unknown action is not passed on');
+    from({ type: 'sketch-xlsx:blocked', action: 'refused', command: 'file.new' });
+    assert.deepEqual(blocked, [['refused', 'file.new']]);
+    bridge.saved(5, 7);
+    bridge.discard(6);
+    assert.deepEqual(sent.slice(-2).map(m => m.data), [{ type: 'sketch-xlsx:saved', protocol: PROTOCOL, requestId: 5, epoch: 0, docUid: 7 }, { type: 'sketch-xlsx:discard', protocol: PROTOCOL, requestId: 6 }]);
+    const exporting = bridge.exportFile('csv');
+    const asked = sent.at(-1).data;
+    assert.deepEqual(asked, { type: 'sketch-xlsx:export', protocol: PROTOCOL, requestId: 1, epoch: 0, format: 'csv' });
+    from({ type: 'sketch-xlsx:exported', requestId: 1, epoch: 0, ok: true, bytes: new Uint8Array([65]).buffer });
+    const result = await exporting;
+    assert.deepEqual({ ...result, bytes: [...result.bytes] }, { ok: true, bytes: [65] });
+    assert.equal((await bridge.exportFile('pdf')).code, 'timeout');
 });

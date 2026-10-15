@@ -1,0 +1,822 @@
+diff --git a/apps/gridcraft-web/index.html b/apps/gridcraft-web/index.html
+index 5fdd1ea..152825f 100644
+--- a/apps/gridcraft-web/index.html
++++ b/apps/gridcraft-web/index.html
+@@ -5,6 +5,8 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+   <title>GridCraft</title>
+   <link data-trunk rel="icon" href="../../assets/app-icon/gridcraft.ico" />
++  <!-- Sketch Docs: this engine runs inside the product shell only. -->
++  <script>if (window.top === window) location.replace(new URL('../../xlsx.html', location.href).href);</script>
+   <link data-trunk rel="rust" data-bin="gridcraft-web" data-wasm-opt="z" data-weak-refs />
+   <style>
+     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f3f3f3; }
+diff --git a/apps/gridcraft-web/src/main.rs b/apps/gridcraft-web/src/main.rs
+index 2920a87..28a1c6f 100644
+--- a/apps/gridcraft-web/src/main.rs
++++ b/apps/gridcraft-web/src/main.rs
+@@ -17,6 +17,8 @@
+ #[cfg(target_arch = "wasm32")]
+ mod host;
+ #[cfg(target_arch = "wasm32")]
++mod sketch;
++#[cfg(target_arch = "wasm32")]
+ mod web;
+ 
+ #[cfg(target_arch = "wasm32")]
+diff --git a/apps/gridcraft-web/src/sketch.rs b/apps/gridcraft-web/src/sketch.rs
+new file mode 100644
+index 0000000..351024c
+--- /dev/null
++++ b/apps/gridcraft-web/src/sketch.rs
+@@ -0,0 +1,464 @@
++//! Sketch Docs: the bridge to the product shell that frames this page (`?host=sketch`), which owns the
++//! file: this page never reads or writes one. `&mode=edit` edits the workbook; otherwise it is view-only.
++//!
++//! Messages are plain objects with a `type` and `protocol` ([`PROTOCOL`]); only the same-origin
++//! parent window is heard or answered. Messages from the parent are handled in the order they came.
++//!
++//! - `sketch-xlsx:ready` (to the parent): `{ version, mode }`, the app is listening.
++//! - `sketch-xlsx:failed` (to the parent): `{ error }`, the app couldn't start.
++//! - `sketch-xlsx:open` (from the parent): `{ requestId, epoch, name, bytes }`. The workbook replaces
++//!   the one shown; a file that fails to open leaves the shown workbook as it was.
++//! - `sketch-xlsx:opened` (to the parent): `{ requestId, epoch, ok, name, sheets, warnings, docUid }` or
++//!   `{ requestId, epoch, ok: false, code, error }` (`code` is `password` or `error`). The parent
++//!   matches `requestId`/`epoch` and ignores late answers.
++//! - `sketch-xlsx:snapshot` (from the parent): `{ requestId, epoch }`; (to the parent) `{ requestId,
++//!   epoch, ok: true, docUid, rev, bytes }`: what is being typed is committed first, then the shown
++//!   workbook is encoded as .xlsx exactly as a save writes it (an `ArrayBuffer`, transferred) and kept
++//!   for `saved`; or `{ requestId, epoch, ok: false, error }`.
++//! - `sketch-xlsx:saved` (from the parent): `{ requestId, docUid }`, sent only once the file
++//!   holding that snapshot was written. The snapshot becomes the saved state: the workbook is clean
++//!   unless it changed since. `sketch-xlsx:discard` (from the parent): `{ requestId }` drops a kept
++//!   snapshot that was not written.
++//! - `sketch-xlsx:export` (from the parent): `{ requestId, epoch, format }` (`csv`: the active sheet,
++//!   `pdf`); (to the parent) `sketch-xlsx:exported` `{ requestId, epoch, ok, format, bytes }` or with
++//!   `error`. The saved state does not change.
++//! - `sketch-xlsx:state` (to the parent, editing): `{ dirty, editing, rev }` whenever one changes;
++//!   `editing` is a cell or text box being typed in, not yet in the workbook.
++//! - `sketch-xlsx:request` (to the parent, editing): `{ action }` (`open`, `save`, `saveAs`,
++//!   `exportCsv`, `exportPdf`) when a menu, button or shortcut asks for it, or `{ action: 'open', name,
++//!   bytes }` for a file dropped on the page.
++//! - `sketch-xlsx:blocked` (to the parent): `{ action, count, command? }` when something was refused:
++//!   view-only `edit` (a refused command or a change put back), `save`, `print`, `drop`; editing
++//!   `refused` (a command the shell owns, see `gridcraft_engine::sketch_route`).
++//!
++//! View-only holds in two layers: the engine refuses every command outside its view-only list
++//! (`Session::view_only`), and after every frame a workbook that differs from the one opened is put
++//! back (a UI path that changes the workbook without a command). Editing (`Session::sketch_edit`)
++//! turns file commands into requests and refuses the rest of them; the services that would pick,
++//! download or open a file or link here ask the shell or are switched off.
++
++use std::cell::{Cell, RefCell};
++use std::collections::HashMap;
++use std::rc::Rc;
++use std::sync::Arc;
++
++use gridcraft_engine::model::Workbook;
++use gridcraft_ui_egui::{Services, SheetApp};
++use serde_json::{Value as Json, json};
++use wasm_bindgen::JsCast as _;
++use wasm_bindgen::JsValue;
++use wasm_bindgen::closure::Closure;
++
++pub const PROTOCOL: f64 = 2.0;
++/// The largest workbook the parent may send (bytes); the parent checks this first.
++const MAX_BYTES: usize = 100 * 1024 * 1024;
++
++enum Incoming {
++    Open { request_id: f64, epoch: f64, name: String, bytes: Vec<u8> },
++    Snapshot { request_id: f64, epoch: f64 },
++    Saved { request_id: f64, doc_uid: f64 },
++    Discard { request_id: f64 },
++    Export { request_id: f64, epoch: f64, format: String },
++}
++
++/// What was last told to the parent about the workbook (editing).
++#[derive(Clone, Copy, PartialEq, Default)]
++struct State {
++    dirty: bool,
++    editing: bool,
++    rev: u64,
++}
++
++#[derive(Clone)]
++pub struct Sketch {
++    window: web_sys::Window,
++    parent: web_sys::Window,
++    origin: String,
++    pub edit: bool,
++    incoming: Rc<RefCell<Vec<Incoming>>>,
++    blocked: Rc<RefCell<Vec<&'static str>>>,
++    /// Requests raised outside the engine's commands (pickers the UI opens itself), sent after the frame.
++    requests: Rc<RefCell<Vec<&'static str>>>,
++    refusals: Rc<Cell<u32>>,
++    /// The engine's refused-command count already reported (view-only, then editing).
++    refused_seen: Rc<Cell<u32>>,
++    /// Snapshots sent and not yet saved or discarded: request id → (document, workbook as encoded).
++    held: Rc<RefCell<HashMap<u64, (u64, Arc<Workbook>)>>>,
++    /// The workbook last seen (its address) and its revision count.
++    seen: Rc<Cell<(usize, u64)>>,
++    reported: Rc<Cell<Option<State>>>,
++}
++
++impl Sketch {
++    /// `None` unless the page runs framed with `?host=sketch`.
++    pub fn new(requested: bool, edit: bool) -> Option<Self> {
++        if !requested {
++            return None;
++        }
++        let window = web_sys::window()?;
++        let parent = window.parent().ok().flatten()?;
++        if js_sys::Object::is(&parent, &window) {
++            return None;
++        }
++        let origin = window.location().origin().ok()?;
++        Some(Self {
++            window,
++            parent,
++            origin,
++            edit,
++            incoming: Rc::default(),
++            blocked: Rc::default(),
++            requests: Rc::default(),
++            refusals: Rc::default(),
++            refused_seen: Rc::default(),
++            held: Rc::default(),
++            seen: Rc::default(),
++            reported: Rc::default(),
++        })
++    }
++
++    /// No service here picks, reads or writes a file, or opens a link: those belong to the shell.
++    /// Editing, the pickers ask the shell instead, and printing (no file) is allowed.
++    pub fn configure(&self, services: &mut Services) {
++        let blocked = self.blocked.clone();
++        services.download = Some(Box::new(move |name: &str, _bytes: &[u8]| {
++            log::warn!("not saving {name}: the product saves files");
++            blocked.borrow_mut().push("save");
++        }));
++        services.pick_picture_async = None;
++        services.inbox = None;
++        services.open_url = None;
++        if self.edit {
++            let requests = self.requests.clone();
++            services.open_async = Some(Box::new(move || requests.borrow_mut().push("open")));
++            let requests = self.requests.clone();
++            // Save As on the web asks for a target first; the shell picks it. `None`: nothing to do here.
++            services.pick_save = Some(Box::new(move |_suggested: &str| {
++                requests.borrow_mut().push("saveAs");
++                None
++            }));
++        } else {
++            let blocked = self.blocked.clone();
++            services.print = Some(Box::new(move |_bytes: &[u8]| blocked.borrow_mut().push("print")));
++            services.open_async = None;
++        }
++    }
++
++    pub fn listen(&self, ctx: egui::Context) {
++        let parent = self.parent.clone();
++        let origin = self.origin.clone();
++        let incoming = self.incoming.clone();
++        let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
++            if event.origin() != origin || !event.source().is_some_and(|s| js_sys::Object::is(&s, &parent)) {
++                return;
++            }
++            let data = event.data();
++            if number(&data, "protocol") != Some(PROTOCOL) {
++                return;
++            }
++            let (request_id, epoch) = (number(&data, "requestId"), number(&data, "epoch"));
++            let message = match (string(&data, "type").as_deref(), request_id, epoch) {
++                (Some("sketch-xlsx:open"), Some(request_id), Some(epoch)) => {
++                    let Some(bytes) = bytes(&data) else { return };
++                    let name = string(&data, "name").filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "Book.xlsx".to_string());
++                    Incoming::Open { request_id, epoch, name, bytes }
++                }
++                (Some("sketch-xlsx:snapshot"), Some(request_id), Some(epoch)) => Incoming::Snapshot { request_id, epoch },
++                (Some("sketch-xlsx:saved"), Some(request_id), _) => {
++                    let Some(doc_uid) = number(&data, "docUid") else { return };
++                    Incoming::Saved { request_id, doc_uid }
++                }
++                (Some("sketch-xlsx:discard"), Some(request_id), _) => Incoming::Discard { request_id },
++                (Some("sketch-xlsx:export"), Some(request_id), Some(epoch)) => {
++                    let Some(format) = string(&data, "format") else { return };
++                    Incoming::Export { request_id, epoch, format }
++                }
++                _ => return,
++            };
++            incoming.borrow_mut().push(message);
++            ctx.request_repaint();
++        });
++        if self.window.add_event_listener_with_callback("message", on_message.as_ref().unchecked_ref()).is_ok() {
++            // The listener lives as long as the page.
++            on_message.forget();
++        }
++    }
++
++    pub fn post_ready(&self) {
++        self.send(&[("type", "sketch-xlsx:ready".into()), ("version", env!("CARGO_PKG_VERSION").into()), ("mode", if self.edit { "edit" } else { "view" }.into())]);
++    }
++
++    pub fn post_failed(&self, error: &str) {
++        self.send(&[("type", "sketch-xlsx:failed".into()), ("error", error.into())]);
++    }
++
++    /// View-only: a dropped file is not opened (the parent owns which file is shown).
++    pub fn refuse_drop(&self) {
++        self.blocked.borrow_mut().push("drop");
++    }
++
++    /// Editing: a file dropped on the page goes to the parent, which decides whether to open it
++    /// (the shown workbook may have unsaved changes).
++    pub fn request_open(&self, name: &str, bytes: &[u8]) {
++        let buffer = js_sys::Uint8Array::from(bytes).buffer();
++        self.send_transfer(&[("type", "sketch-xlsx:request".into()), ("action", "open".into()), ("name", name.into()), ("bytes", buffer.clone().into())], &buffer);
++    }
++
++    /// Before each frame: handle what the parent sent, in order.
++    pub fn process(&self, app: &mut SheetApp) {
++        let messages = std::mem::take(&mut *self.incoming.borrow_mut());
++        for message in messages {
++            match message {
++                Incoming::Open { request_id, epoch, name, bytes } => {
++                    let mut fields: Vec<(&str, JsValue)> =
++                        vec![("type", "sketch-xlsx:opened".into()), ("requestId", request_id.into()), ("epoch", epoch.into())];
++                    match open(app, &name, &bytes) {
++                        Ok((sheets, warnings, uid)) => {
++                            // A snapshot of a workbook no longer shown can never be saved.
++                            self.held.borrow_mut().clear();
++                            fields.extend([("ok", true.into()), ("name", name.as_str().into()), ("sheets", strings(&sheets)), ("warnings", strings(&warnings)), ("docUid", (uid as f64).into())]);
++                        }
++                        Err((code, error)) => fields.extend([("ok", false.into()), ("code", code.into()), ("error", error.as_str().into())]),
++                    }
++                    self.send(&fields);
++                }
++                Incoming::Snapshot { request_id, epoch } => {
++                    let base = [("type", JsValue::from("sketch-xlsx:snapshot")), ("requestId", request_id.into()), ("epoch", epoch.into())];
++                    match snapshot(app, self.edit) {
++                        Ok((uid, wb, bytes)) => {
++                            self.held.borrow_mut().insert(request_id.to_bits(), (uid, wb));
++                            let buffer = js_sys::Uint8Array::from(bytes.as_slice()).buffer();
++                            let rev = self.seen.get().1;
++                            let mut fields = base.to_vec();
++                            fields.extend([("ok", true.into()), ("docUid", (uid as f64).into()), ("rev", (rev as f64).into()), ("bytes", buffer.clone().into())]);
++                            if !self.send_transfer(&fields, &buffer) {
++                                log::error!("couldn't send the snapshot to the page");
++                            }
++                        }
++                        Err(error) => {
++                            let mut fields = base.to_vec();
++                            fields.extend([("ok", false.into()), ("error", error.as_str().into())]);
++                            self.send(&fields);
++                        }
++                    }
++                }
++                Incoming::Saved { request_id, doc_uid } => {
++                    let Some((uid, wb)) = self.held.borrow_mut().remove(&request_id.to_bits()) else { continue };
++                    if let Some(doc) = app.session.active_mut()
++                        && doc.uid == uid
++                        && (uid as f64) == doc_uid
++                    {
++                        // Unchanged since the snapshot: clean. Changed since: the saved state is the
++                        // snapshot, so the workbook stays dirty (a view change alone also keeps it
++                        // dirty — the safe side).
++                        doc.saved = if Arc::ptr_eq(&doc.wb, &wb) { doc.wb.clone() } else { wb };
++                    }
++                }
++                Incoming::Discard { request_id } => {
++                    self.held.borrow_mut().remove(&request_id.to_bits());
++                }
++                Incoming::Export { request_id, epoch, format } => {
++                    let base = [("type", JsValue::from("sketch-xlsx:exported")), ("requestId", request_id.into()), ("epoch", epoch.into()), ("format", format.as_str().into())];
++                    match export(app, &format) {
++                        Ok(bytes) => {
++                            let buffer = js_sys::Uint8Array::from(bytes.as_slice()).buffer();
++                            let mut fields = base.to_vec();
++                            fields.extend([("ok", true.into()), ("bytes", buffer.clone().into())]);
++                            self.send_transfer(&fields, &buffer);
++                        }
++                        Err(error) => {
++                            let mut fields = base.to_vec();
++                            fields.extend([("ok", false.into()), ("error", error.as_str().into())]);
++                            self.send(&fields);
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    /// After each frame. View-only: put back a workbook that changed anyway. Editing: tell the parent
++    /// the workbook's state and what it asked for. Both: report what was refused.
++    pub fn after_frame(&self, app: &mut SheetApp) {
++        if self.edit {
++            self.report_state(app);
++            let mut asked = std::mem::take(&mut app.session.sketch_requests);
++            asked.append(&mut self.requests.borrow_mut());
++            for action in asked {
++                self.send(&[("type", "sketch-xlsx:request".into()), ("action", action.into())]);
++            }
++            let (count, command) = app.session.sketch_refused;
++            if count != self.refused_seen.get() {
++                self.refused_seen.set(count);
++                self.report_blocked("refused", Some(command));
++            }
++        } else {
++            self.guard(app);
++        }
++        let blocked = std::mem::take(&mut *self.blocked.borrow_mut());
++        for action in blocked {
++            self.report_blocked(action, None);
++        }
++    }
++
++    fn report_blocked(&self, action: &'static str, command: Option<&str>) {
++        self.refusals.set(self.refusals.get().saturating_add(1));
++        let mut fields: Vec<(&str, JsValue)> = vec![("type", "sketch-xlsx:blocked".into()), ("action", action.into()), ("count", self.refusals.get().into())];
++        if let Some(command) = command {
++            fields.push(("command", command.into()));
++        }
++        self.send(&fields);
++    }
++
++    fn report_state(&self, app: &SheetApp) {
++        let Some(doc) = app.session.active() else { return };
++        let address = Arc::as_ptr(&doc.wb) as usize;
++        let (last, rev) = self.seen.get();
++        let rev = if address == last { rev } else { rev.saturating_add(1) };
++        self.seen.set((address, rev));
++        let state = State { dirty: doc.is_dirty(), editing: app.editor.is_some() || app.text_box_editor.is_some(), rev };
++        if self.reported.get() != Some(state) {
++            self.reported.set(Some(state));
++            self.send(&[("type", "sketch-xlsx:state".into()), ("dirty", state.dirty.into()), ("editing", state.editing.into()), ("rev", (state.rev as f64).into())]);
++        }
++    }
++
++    /// View-only: put back a workbook that changed anyway.
++    fn guard(&self, app: &mut SheetApp) {
++        let active = app.session.active_index();
++        for i in 0..app.session.documents().len() {
++            app.session.set_active(i);
++            if let Some(d) = app.session.active_mut()
++                && d.is_dirty()
++            {
++                d.wb = d.saved.clone();
++                d.calc.rebuild(&d.wb);
++                d.undo.clear();
++                d.redo.clear();
++                self.blocked.borrow_mut().push("edit");
++            }
++        }
++        app.session.set_active(active);
++        if app.session.view_only_refused != self.refused_seen.get() {
++            self.refused_seen.set(app.session.view_only_refused);
++            self.blocked.borrow_mut().push("edit");
++        }
++    }
++
++    fn send(&self, fields: &[(&str, JsValue)]) -> bool {
++        self.message(fields).is_some_and(|m| self.parent.post_message(&m, &self.origin).is_ok())
++    }
++
++    /// Like `send`, handing `buffer` over instead of copying it.
++    fn send_transfer(&self, fields: &[(&str, JsValue)], buffer: &js_sys::ArrayBuffer) -> bool {
++        self.message(fields).is_some_and(|m| self.parent.post_message_with_transfer(&m, &self.origin, &js_sys::Array::of1(buffer)).is_ok())
++    }
++
++    fn message(&self, fields: &[(&str, JsValue)]) -> Option<js_sys::Object> {
++        let m = js_sys::Object::new();
++        let mut all = vec![("protocol", JsValue::from_f64(PROTOCOL))];
++        all.extend(fields.iter().map(|(k, v)| (*k, v.clone())));
++        for (key, value) in all {
++            if js_sys::Reflect::set(&m, &JsValue::from_str(key), &value).is_err() {
++                return None;
++            }
++        }
++        Some(m)
++    }
++}
++
++/// Opens the workbook as the only one shown; on failure the shown workbook stays.
++fn open(app: &mut SheetApp, name: &str, bytes: &[u8]) -> Result<(Vec<String>, Vec<String>, u64), (&'static str, String)> {
++    if bytes.len() > MAX_BYTES {
++        return Err(("error", format!("The file is larger than {} MB.", MAX_BYTES / 1024 / 1024)));
++    }
++    let b64 = gridcraft_engine::io::base64_encode(bytes);
++    // A text box draft cannot be carried into another workbook; drop it, or opening would try to commit it first.
++    app.cancel_text_box_edit();
++    // Both gates refuse file.open; this one call comes from the parent. Only file.open is
++    // permitted, so anything else the UI runs on the way is still refused.
++    app.session.view_only_permit = Some("file.open");
++    let result = app.run("file.open", json!({"name": name, "base64": b64}));
++    app.session.view_only_permit = None;
++    let r = match result {
++        Ok(r) => r,
++        Err(e) if e.contains(gridcraft_engine::io::PASSWORD_REQUIRED) => return Err(("password", e)),
++        Err(e) => return Err(("error", e)),
++    };
++    // Keep only the workbook just opened.
++    let mut uid = 0;
++    if let Some(keep) = app.session.active().map(|d| d.uid) {
++        uid = keep;
++        while let Some(i) = app.session.documents().iter().position(|d| d.uid != keep) {
++            app.session.close_document(i);
++        }
++        app.session.set_active(0);
++    }
++    app.backstage = None;
++    app.show_open_warnings(&r);
++    let list = |key: &str| r.get(key).and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
++    Ok((list("sheets"), list("warnings"), uid))
++}
++
++/// The shown workbook as the .xlsx bytes a save writes, and that very workbook (kept for `saved`).
++/// Editing, what is being typed in a cell or a text box goes in first; if it can't, nothing is
++/// encoded. The view state (scroll position, active cell) is recorded as `file.saveBytes` does.
++fn snapshot(app: &mut SheetApp, edit: bool) -> Result<(u64, Arc<Workbook>, Vec<u8>), String> {
++    if edit {
++        if app.editor.is_some() && !app.commit_edit(0, 0, false, false) {
++            return Err("입력 중인 셀 값을 확정할 수 없어 저장하지 않았습니다. 값을 고친 뒤 다시 저장하세요.".into());
++        }
++        app.commit_text_box_edit().map_err(|e| format!("입력 중인 텍스트 상자를 확정할 수 없어 저장하지 않았습니다. {e}"))?;
++    }
++    app.store_view_state();
++    let doc = app.session.active().ok_or_else(|| "No workbook is open.".to_string())?;
++    let (uid, wb) = (doc.uid, doc.wb.clone());
++    let bytes = gridcraft_engine::io::save_bytes(&wb, "x.xlsx").map_err(|e| e.to_string())?;
++    Ok((uid, wb, bytes))
++}
++
++/// A new file from the shown workbook: CSV (the active sheet) or PDF (as File › Export makes it).
++fn export(app: &mut SheetApp, format: &str) -> Result<Vec<u8>, String> {
++    if app.editor.is_some() && !app.commit_edit(0, 0, false, false) {
++        return Err("입력 중인 셀 값을 확정할 수 없어 내보내지 않았습니다.".into());
++    }
++    app.commit_text_box_edit()?;
++    match format {
++        "csv" => {
++            let doc = app.session.active().ok_or_else(|| "No workbook is open.".to_string())?;
++            gridcraft_engine::io::save_bytes(&doc.wb, "x.csv").map_err(|e| e.to_string())
++        }
++        "pdf" => {
++            app.session.view_only_permit = Some("file.exportPdf");
++            let result = app.session.run("file.exportPdf", json!({}));
++            app.session.view_only_permit = None;
++            let r = result?;
++            r.get("base64").and_then(Json::as_str).and_then(gridcraft_engine::io::base64_decode).ok_or_else(|| "The PDF was not made.".to_string())
++        }
++        other => Err(format!("{other}: not an export format here")),
++    }
++}
++
++fn strings(items: &[String]) -> JsValue {
++    items.iter().map(|s| JsValue::from_str(s)).collect::<js_sys::Array>().into()
++}
++
++fn string(data: &JsValue, key: &str) -> Option<String> {
++    js_sys::Reflect::get(data, &JsValue::from_str(key)).ok()?.as_string()
++}
++
++fn number(data: &JsValue, key: &str) -> Option<f64> {
++    js_sys::Reflect::get(data, &JsValue::from_str(key)).ok()?.as_f64()
++}
++
++/// `bytes` as an `ArrayBuffer` or `Uint8Array`.
++fn bytes(data: &JsValue) -> Option<Vec<u8>> {
++    let bytes = js_sys::Reflect::get(data, &JsValue::from_str("bytes")).ok()?;
++    if let Some(array) = bytes.dyn_ref::<js_sys::Uint8Array>() {
++        Some(array.to_vec())
++    } else if bytes.is_instance_of::<js_sys::ArrayBuffer>() {
++        Some(js_sys::Uint8Array::new(&bytes).to_vec())
++    } else {
++        None
++    }
++}
+diff --git a/apps/gridcraft-web/src/web.rs b/apps/gridcraft-web/src/web.rs
+index c0fcb22..1225597 100644
+--- a/apps/gridcraft-web/src/web.rs
++++ b/apps/gridcraft-web/src/web.rs
+@@ -25,10 +25,17 @@ pub fn start() {
+         {
+             create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
+         }
+-        // `?host=parent`: a same-origin page framing GridCraft (such as a Nextcloud app) opens
+-        // workbooks in it and stores what it saves (`host`).
+-        let bridge = if query_param("host").as_deref() == Some("parent") { crate::host::Bridge::new() } else { None };
++        // Sketch Docs: this build runs only framed by the product shell (`sketch`), editing with
++        // `&mode=edit` and view-only otherwise. The upstream `?host=parent` bridge and samples are not offered.
++        let Some(sketch) = crate::sketch::Sketch::new(query_param("host").as_deref() == Some("sketch"), query_param("mode").as_deref() == Some("edit")) else {
++            if let Some(el) = document.get_element_by_id(LOADING_ID) {
++                el.set_inner_html("<p>This page opens inside Sketch Docs.</p>");
++            }
++            return;
++        };
++        let bridge: Option<crate::host::Bridge> = None;
+         let app_bridge = bridge.clone();
++        let app_sketch = sketch.clone();
+         let result = eframe::WebRunner::new()
+             .start(
+                 canvas,
+@@ -36,28 +43,19 @@ pub fn start() {
+                 Box::new(move |cc| {
+                     let inbox: Inbox = Inbox::default();
+                     let mut session = Session::new();
+-                    // In host mode the parent sends the workbook to edit; no sample meanwhile.
+-                    let q = if app_bridge.is_some() { String::new() } else { query() };
+-                    if let Some(name) = q.split(['?', '&']).find_map(|kv| kv.strip_prefix("sample=")) {
+-                        let _ = session.execute("file.new", serde_json::json!({"sample": name}));
+-                    } else if q.contains("sample") {
+-                        let _ = session.execute("file.new", serde_json::json!({"sample": "sales"}));
+-                    }
++                    session.view_only = !app_sketch.edit;
++                    session.sketch_edit = app_sketch.edit;
+                     let mut services = services(inbox.clone(), cc.egui_ctx.clone());
++                    app_sketch.configure(&mut services);
++                    app_sketch.listen(cc.egui_ctx.clone());
+                     if let Some(bridge) = &app_bridge {
+                         bridge.connect(&mut services, inbox.clone(), cc.egui_ctx.clone());
+                     }
+                     let mut app = SheetApp::new(session, services);
+                     app.ui.system_theme = true;
+-                    // Follow the browser's language, except a CJK one: the web build has no system
+-                    // CJK fonts (none are bundled), so that interface would render as tofu.
+-                    let browser = gridcraft_ui_egui::i18n::Language::system();
+-                    if !matches!(
+-                        browser,
+-                        gridcraft_ui_egui::i18n::Language::Zh | gridcraft_ui_egui::i18n::Language::Ja | gridcraft_ui_egui::i18n::Language::Ko
+-                    ) {
+-                        app.ui.language = browser;
+-                    }
++                    // Sketch Docs: Korean, whatever the browser's language, like the Word editor; the
++                    // build bundles a Korean face (korean-font.patch), so it no longer renders as tofu.
++                    app.ui.language = gridcraft_ui_egui::i18n::Language::Ko;
+                     SheetApp::setup_context_for_language(&cc.egui_ctx, false, app.ui.language);
+                     if let Some(bridge) = &app_bridge {
+                         if let Some(author) = query_param("author") {
+@@ -65,13 +63,17 @@ pub fn start() {
+                         }
+                         bridge.post_ready();
+                     }
+-                    Ok(Box::new(WebShell { app, inbox, bridge: app_bridge }))
++                    app_sketch.post_ready();
++                    Ok(Box::new(WebShell { app, inbox, bridge: app_bridge, sketch: app_sketch }))
+                 }),
+             )
+             .await;
+         if let (Err(e), Some(bridge)) = (&result, &bridge) {
+             bridge.post_failed(&format!("{e:?}"));
+         }
++        if let Err(e) = &result {
++            sketch.post_failed(&format!("{e:?}"));
++        }
+         if let Some(el) = document.get_element_by_id(LOADING_ID) {
+             match result {
+                 Ok(()) => el.remove(),
+@@ -93,25 +95,29 @@ struct WebShell {
+     app: SheetApp,
+     inbox: Inbox,
+     bridge: Option<crate::host::Bridge>,
++    sketch: crate::sketch::Sketch,
+ }
+ 
+ impl eframe::App for WebShell {
+     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
+-        for f in dropped {
+-            let inbox = self.inbox.clone();
+-            let ctx = ctx.clone();
+-            wasm_bindgen_futures::spawn_local(async move {
+-                let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped.xlsx".into());
+-                match f.bytes_async().await {
+-                    Ok(bytes) => {
+-                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
+-                        ctx.request_repaint();
++        // Sketch Docs: the shell chooses the workbook. View-only refuses a dropped file; editing hands it
++        // to the shell, which opens it through its own checks.
++        if !dropped.is_empty() && !self.sketch.edit {
++            self.sketch.refuse_drop();
++        } else {
++            for f in dropped {
++                let sketch = self.sketch.clone();
++                wasm_bindgen_futures::spawn_local(async move {
++                    let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped.xlsx".into());
++                    match f.bytes_async().await {
++                        Ok(bytes) => sketch.request_open(&name, &bytes),
++                        Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
+                     }
+-                    Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
+-                }
+-            });
++                });
++            }
+         }
++        self.sketch.process(&mut self.app);
+         self.app.logic(ctx);
+     }
+ 
+@@ -124,6 +130,7 @@ impl eframe::App for WebShell {
+         if let Some(bridge) = &self.bridge {
+             bridge.sync(&mut self.app);
+         }
++        self.sketch.after_frame(&mut self.app);
+     }
+ }
+ 
+diff --git a/crates/engine/src/lib.rs b/crates/engine/src/lib.rs
+index 258a1cb..2fe5878 100644
+--- a/crates/engine/src/lib.rs
++++ b/crates/engine/src/lib.rs
+@@ -256,6 +256,81 @@ pub struct Session {
+     /// Review › Notes › Show All Notes: every note is displayed. An application display setting
+     /// (like Excel's comment indicator option), so it's not saved in the file.
+     pub show_all_notes: bool,
++    /// Sketch Docs: a view-only session runs only queries and the navigation in
++    /// [`VIEW_ONLY_COMMANDS`]; every other command is refused before it runs.
++    pub view_only: bool,
++    /// Sketch Docs: the one command a view-only session runs next although it is refused otherwise
++    /// (the host's `file.open`). Anything else run meanwhile is still refused.
++    pub view_only_permit: Option<&'static str>,
++    /// Sketch Docs: commands a view-only session refused so far.
++    pub view_only_refused: u32,
++    /// Sketch Docs: an editing session framed by the product shell, which owns the file. Commands that
++    /// open, add, save or export files are turned into requests to the shell or refused
++    /// ([`sketch_route`]); everything else runs.
++    pub sketch_edit: bool,
++    /// Sketch Docs: what the shell is asked to do (`open`, `save`, `saveAs`, `exportCsv`, `exportPdf`),
++    /// in order, taken by the frame that talks to the shell.
++    pub sketch_requests: Vec<&'static str>,
++    /// Sketch Docs: commands an editing session refused so far, with the last one.
++    pub sketch_refused: (u32, &'static str),
++}
++
++/// Sketch Docs: what an editing session does with a command (see [`Session::sketch_edit`]).
++#[derive(Debug, PartialEq)]
++pub enum SketchRoute {
++    Run,
++    /// Ask the shell instead (the action named).
++    Request(&'static str),
++    Refuse,
++}
++
++/// Sketch Docs: the shell owns the file, so a command that would open, add, save or export one is asked
++/// of the shell or refused. Commands given a `path` would read or write the device's files: refused.
++pub fn sketch_route(id: &str, params: &Json) -> SketchRoute {
++    let has = |key: &str| params.get(key).is_some();
++    match id {
++        "file.save" if !has("path") => SketchRoute::Request("save"),
++        "file.saveAs" if !has("path") => SketchRoute::Request("saveAs"),
++        "file.open" if !has("path") && !has("base64") => SketchRoute::Request("open"),
++        "file.exportPdf" if !has("path") => SketchRoute::Request("exportPdf"),
++        "file.saveBytes" if params.get("format").and_then(Json::as_str) == Some("csv") => SketchRoute::Request("exportCsv"),
++        "file.print" if !has("path") => SketchRoute::Run,
++        "file.save" | "file.saveAs" | "file.open" | "file.new" | "file.close" | "file.saveBytes" | "file.export" | "file.exportCsv"
++        | "file.exportHtml" | "file.exportPdf" | "file.print" | "view.newWindow" | "view.hideWindow" | "view.unhideWindow"
++        | "data.getData" | "data.fromTextCsv" | "insert.picture" => SketchRoute::Refuse,
++        _ => SketchRoute::Run,
++    }
++}
++
++/// Sketch Docs: the commands a view-only session runs besides queries (commands that neither
++/// journal nor record undo). They move the selection or the active sheet, find, or copy out.
++pub const VIEW_ONLY_COMMANDS: &[&str] = &[
++    "selection.set",
++    "selection.move",
++    "selection.next",
++    "selection.currentRegion",
++    "selection.row",
++    "selection.column",
++    "edit.selectAll",
++    "edit.goTo",
++    "edit.goToSpecial",
++    "edit.copy",
++    "edit.clearClipboard",
++    "edit.find",
++    "review.previousComment",
++    "review.nextComment",
++    "sheet.activate",
++    "sheet.next",
++    "sheet.previous",
++    "window.activate",
++];
++
++/// Sketch Docs: queries that change the workbook (Watch Window add/remove), so view-only refuses them.
++pub const VIEW_ONLY_REFUSED_QUERIES: &[&str] = &["formulas.watchWindow"];
++
++/// Sketch Docs: whether a view-only session may run this command.
++pub fn view_only_allows(spec: &cmd::CommandSpec) -> bool {
++    ((!spec.journal && !spec.undoable) && !VIEW_ONLY_REFUSED_QUERIES.contains(&spec.id)) || VIEW_ONLY_COMMANDS.contains(&spec.id)
+ }
+ 
+ impl Session {
+@@ -317,6 +392,27 @@ impl Session {
+     /// Panics inside commands are caught and reported; the workbook is restored.
+     pub fn execute(&mut self, id: &str, params: Json) -> Result<Json> {
+         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
++        let permitted = self.view_only_permit == Some(spec.id);
++        if permitted {
++            self.view_only_permit = None;
++        }
++        if self.view_only && !permitted && !view_only_allows(spec) {
++            self.view_only_refused = self.view_only_refused.saturating_add(1);
++            return Err(EngineError::Other("보기 전용으로 연 통합 문서라 바꾸거나 저장할 수 없습니다.".into()));
++        }
++        if self.sketch_edit && !permitted {
++            match sketch_route(spec.id, &params) {
++                SketchRoute::Run => {}
++                SketchRoute::Request(action) => {
++                    self.sketch_requests.push(action);
++                    return Ok(serde_json::json!({ "requested": action }));
++                }
++                SketchRoute::Refuse => {
++                    self.sketch_refused = (self.sketch_refused.0.saturating_add(1), spec.id);
++                    return Err(EngineError::Other("Sketch Docs의 Excel에서는 이 명령을 쓸 수 없습니다. 파일은 위쪽 막대의 열기·저장을 쓰세요.".into()));
++                }
++            }
++        }
+         if let Err(why) = (spec.enabled)(self) {
+             return Err(EngineError::Disabled(id.to_string(), why));
+         }
+diff --git a/crates/engine/src/tests.rs b/crates/engine/src/tests.rs
+index ae499a1..d501fb5 100644
+--- a/crates/engine/src/tests.rs
++++ b/crates/engine/src/tests.rs
+@@ -3282,3 +3282,62 @@ fn paste_special_validation_moves_relative_references() {
+     assert!(!ok(&mut s, "C3", "5"), "the pasted rule checks C3, not A1");
+     assert!(ok(&mut s, "C3", "20"));
+ }
++
++/// Sketch Docs: what an editing session framed by the product does with each file command.
++#[test]
++fn sketch_routes_file_commands_to_the_shell() {
++    use crate::{SketchRoute, sketch_route};
++    let none = json!({});
++    assert_eq!(sketch_route("file.save", &none), SketchRoute::Request("save"));
++    assert_eq!(sketch_route("file.saveAs", &none), SketchRoute::Request("saveAs"));
++    assert_eq!(sketch_route("file.open", &none), SketchRoute::Request("open"));
++    assert_eq!(sketch_route("file.exportPdf", &none), SketchRoute::Request("exportPdf"));
++    assert_eq!(sketch_route("file.saveBytes", &json!({"format": "csv"})), SketchRoute::Request("exportCsv"));
++    assert_eq!(sketch_route("file.print", &none), SketchRoute::Run);
++    for (id, params) in [
++        ("file.save", json!({"path": "a.xlsx"})),
++        ("file.open", json!({"path": "a.xlsx"})),
++        ("file.open", json!({"name": "a.xlsx", "base64": ""})),
++        ("file.print", json!({"path": "a.pdf"})),
++        ("file.exportPdf", json!({"path": ""})),
++        ("file.saveBytes", json!({"format": "xlsx"})),
++        ("file.new", none.clone()),
++        ("file.close", none.clone()),
++        ("file.exportCsv", none.clone()),
++        ("file.exportHtml", none.clone()),
++        ("view.newWindow", none.clone()),
++        ("data.getData", none.clone()),
++        ("data.fromTextCsv", json!({"text": "a,b"})),
++        ("insert.picture", none.clone()),
++    ] {
++        assert_eq!(sketch_route(id, &params), SketchRoute::Refuse, "{id} {params}");
++    }
++    assert_eq!(sketch_route("home.bold", &none), SketchRoute::Run);
++}
++
++/// Sketch Docs: whatever an editing session is asked, with or without a path, it keeps the one
++/// workbook the shell opened and writes no file; what it asks of the shell is one of the known actions.
++#[test]
++fn sketch_editing_session_keeps_one_document_and_writes_no_file() {
++    let dir = std::env::temp_dir().join(format!("sketch-edit-{}", std::process::id()));
++    let _ = std::fs::remove_dir_all(&dir);
++    std::fs::create_dir_all(&dir).unwrap();
++    let target = dir.join("out.xlsx");
++    let path = target.to_str().unwrap();
++    let mut s = Session::new();
++    s.execute("file.new", json!({"sample": "sales"})).unwrap();
++    s.sketch_edit = true;
++    for spec in crate::command_specs() {
++        for params in [json!({}), json!({"path": path}), json!({"path": path, "format": "csv"})] {
++            let _ = s.execute(spec.id, params);
++            assert_eq!(s.documents().len(), 1, "{} changed the documents", spec.id);
++        }
++    }
++    let written: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
++    let _ = std::fs::remove_dir_all(&dir);
++    assert!(written.is_empty(), "files written: {written:?}");
++    assert!(!s.sketch_requests.is_empty());
++    for action in &s.sketch_requests {
++        assert!(["open", "save", "saveAs", "exportCsv", "exportPdf"].contains(action), "{action}");
++    }
++}
+diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
+index a8e8cb5..9de7875 100644
+--- a/crates/ui-egui/src/ribbon.rs
++++ b/crates/ui-egui/src/ribbon.rs
+@@ -1889,7 +1889,9 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
+     let gd = big_button(ui, Icon::Folder, "Get Data\n(Text/CSV)", "Import a text or CSV file", false);
+     control_keytip(app, ui, &gd, "data.getData");
+     if gd.clicked() {
+-        app.open_dialog("open", json!({}));
++        // Sketch Docs: Get Data runs its command (which an editing session refuses) instead of the Open
++        // dialog, which the product turns into opening another workbook.
++        app.run_or_alert("data.getData", json!({}));
+     }
+     sep(ui);
+     ui.vertical(|ui| {
