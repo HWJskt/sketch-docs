@@ -55,6 +55,45 @@
 - **deckcraft·wordcraft는 WASM 한 파일이 Pages 한도를 넘는다.** 분할, 크기 줄이기, 다른 호스팅 중 하나가 필요하다. gridcraft는 한도 안이다.
 - 측정하지 않은 것: 실제 시작 시간(4초 고정 대기로만 봤다), 메모리, Safari·Firefox, 큰 문서, PPTX 표시.
 
+## gridcraft 한국어 글꼴 실증 (2026-10-15)
+
+사용자 결정(2026-10-15): Excel(gridcraft)부터 한다. PowerPoint는 panic 원인을 찾은 뒤, WASM 크기 대응은 그 뒤에 정한다.
+
+웹판의 `crates/ui-egui/src/theme.rs` `load_fallback`은 wasm32에서 빈 목록을 돌려준다(시스템 글꼴을 못 읽으니 대체 글꼴이 없다).
+여기에 한국어 글꼴 하나를 `include_bytes!`로 넣는 패치를 임시 사본에 적용해 다시 빌드했다.
+글꼴은 Pretendard Regular TTF(OFL, 2,725,828바이트, sha256 `6d0af5258997aec7354a6e340fc2325ba321c410ca48b3af858c8c3d6e92a324`)이고, 공용 스킬 `vi-ko-medical-docx`에 출처·해시가 고정된 사본을 썼다.
+egui는 TTF/OTF만 읽으므로 제품의 woff2 글꼴은 그대로 쓸 수 없다.
+
+```diff
+--- crates/ui-egui/src/theme.rs	2026-10-15 10:44:46
++++ crates/ui-egui/src/theme.rs	2026-10-15 10:44:46
+@@ -470,8 +470,12 @@
+ }
+ 
+ #[cfg(target_arch = "wasm32")]
+-fn load_fallback(_fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
+-    Vec::new()
++fn load_fallback(fonts: &mut FontDefinitions, _han: HanOrder) -> Vec<String> {
++    // Sketch Docs: the web build has no system fonts, so bundle one Korean face as the fallback.
++    let key = "web-ko".to_string();
++    let bytes: &'static [u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ko-fallback.ttf"));
++    fonts.font_data.insert(key.clone(), Arc::new(FontData::from_static(bytes)));
++    vec![key]
+ }
+ 
+ /// Every fallback face we look for, in chain order: `(key, candidate files)`. One file per script
+```
+
+| 항목 | 글꼴 없음 | Pretendard 포함 |
+|---|---|---|
+| WASM 원본 | 17.99MB | 20.55MB (Pages 한도 26.2MB 안) |
+| gzip / brotli | 6.76MB / 4.58MB | 7.89MB / 5.44MB |
+| 셀·수식 입력줄·시트 탭 한국어 | 빈 네모 | 표시됨(`품목`·`사과`·`매출`·`메모`) |
+| 외부 요청·페이지 오류 | 0·0 | 0·0 |
+
+남은 것: 메뉴 등 UI 언어는 영어다(`i18n`에 한국어가 없다). 굵은 글씨용 한국어 글꼴은 넣지 않았다(굵은 셀의 한국어는 보통 굵기로 보일 것으로 추정, 미확인).
+제품에 넣을 때는 이 패치를 `overlays/gridcraft/`로 옮기고 글꼴 파일·해시를 lock에 고정한다(계획 §4.2).
+
 ## 구현 계획
 
 Codex(codex-cli 0.162.1, `codex exec -s read-only`)가 위 세 커밋의 로컬 클론과 이 리포를 읽고 쓴 초안이다. 빌드·실행 검증은 하지 않았다.
