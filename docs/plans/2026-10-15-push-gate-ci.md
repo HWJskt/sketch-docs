@@ -40,6 +40,11 @@
 4. 옛 `upstream-watch` 워크플로가 Actions 목록에서 사라지고 예약 실행이 더는 생기지 않는지.
 5. 보존 fork(`HWJskt/gridcraft`·`craft-libs`)는 아직 없다 — `cargo-audit`의 mirror 대체 경로는 원본이 사라졌을 때만 쓰인다. 배포 직전 결정 A대로 만든다.
 
+### 게이트 느린 경로 실측 (2026-10-15, 로컬 bare 리포로 push — GitHub에는 아무것도 가지 않음)
+
+- 첫 실행: 좋은 커밋을 거절했다. worktree가 `node_modules`를 이 클론으로 링크해 Vite가 모듈 경로를 이 클론 기준으로 풀었고, PDF 엔진 목록 검사(`scripts/pdf-manifest.mjs`)가 "PdfEditor가 pdf.js를 import하지 않음"으로 실패했다. 대역 시험으로는 잡히지 않던 것이다. `2ccdc1c`에서 worktree가 `npm ci --prefer-offline`을 하게 고쳤다.
+- 다시 실행(`a791d70`): 431초. worktree에서 `npm run verify` → RELEASE GATE PASSED, 이어서 en-US 브라우저 러너 4개 통과 → `push gate: a791d7028024 passed`, bare 리포에 커밋 도달. 끝난 뒤 worktree 1개(주 클론), 임시 폴더 0, 남은 Chrome·cargo 0.
+
 ### 리뷰 판정 (2026-10-15, 별도 컨텍스트 Claude 리뷰어, 범위 `0f1bc28..d4c69e3`)
 
 | # | 발견 | 판정 | 처리 |
