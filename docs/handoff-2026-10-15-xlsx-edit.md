@@ -8,8 +8,8 @@
 | 항목 | 값 |
 |---|---|
 | 배포판 | `d9f41e7`(보기 전용 Excel). 이후 커밋은 **push·배포하지 않았다**(사용자 지시 때만) |
-| 로컬 `main` | F1 커밋(이 문서를 갱신한 커밋). 깨끗한 트리. push 안 함 |
-| 마지막 `npm run verify` | 통과 — F1 커밋(단위 190, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`) |
+| 로컬 `main` | 리뷰 반영 `255407c` 다음의 판정표·인계 커밋(이 문서). 깨끗한 트리. **push·배포 안 함** |
+| 마지막 `npm run verify` | 통과 — `255407c`(단위 192, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`). 그 뒤 커밋은 문서뿐이지만 보고의 커밋이 HEAD와 다르다 → 배포 전 다시 돌린다 |
 | Excel 엔진 WASM | 24,277,249 B(23.15 MiB). 24 MiB 경고선까지 약 0.85 MiB |
 | 엔진 overlay | `overlays/gridcraft/sketch-bridge.patch`(옛 `view-only.patch`). 고칠 때는 패치를 적용한 사본에서 고쳐 `git diff`로 다시 만든다 — 아래 "작업 방법" |
 
@@ -29,7 +29,18 @@
 | 2a·2b 원본 저장 — 손실 경고(실측 이름)·OPFS 원본 보관·되돌리기·엔진 경고 한국어(변이 3) | `f40e78e` |
 | 4 자동 저장 토글 숨김·"보기 전용" 문구·README·i18n 감사(영어 0) | `2fffcb7` |
 | B2 글꼴 목록·Pretendard 등록(변이 1), 깨진 upstream 시험 2개 | `0a3d2a2`, `6407f68` |
-| F1 원인 조사(upstream 엔진) → 빠른 입력 유실 고침(그리드 우회, 변이 1) | `99ace40`, 이 커밋 |
+| F1 원인 조사(upstream 엔진) → 빠른 입력 유실 고침(그리드 우회, 변이 1) | `99ace40`, `426274d` |
+| 배포 전 리뷰(별도 컨텍스트 Claude 1개, 8건: 받음 6·사실 확인 1·반박 1) → 고침 | `255407c`, 판정표 계획 §9 |
+
+## 지금 바로 할 일 — push·배포 (사용자 지시 "리뷰 후 바로 배포", 2026-10-16)
+
+리뷰와 고침은 끝났다(계획 §9). 새 세션은 조율자 확인 뒤 CLAUDE.md "배포" 절차대로 한다:
+1. `npm run verify` — HEAD에서 다시(보고가 `255407c`라 HEAD와 다르다). 통과해야 다음으로.
+2. `git push origin main` — pre-push 게이트가 끝 커밋의 verify 보고를 확인하거나 임시 worktree에서 다시 검사한다(`npm run hooks:install` 상태, `--no-verify` 금지). 저장소는 공개(`HWJskt/sketch-docs`): 원본 코드·`backups/`·비밀값·실제 사용자 파일이 없는지 — 리뷰가 실제 파일 이름 0건을 확인했다.
+3. `gh run list --limit 3` — CI verify 확인.
+4. `npm run mirrors:check`(필요하면 `mirrors:pin`) — gridcraft·craft-libs 고정 커밋은 배포판 `d9f41e7` 때와 같다(`d9d09f0`).
+5. `npm run deploy` → `npm run test:live`(기본 `https://docs.sketchps.app`).
+6. 배포 뒤 사람 확인 권장: 실제 Chrome에서 원본에 저장(선택기·권한 창), 한글 입력 Enter(F2), 글꼴 드롭다운 화면.
 
 ## 다음 할 일 (순서 — 사용자 결정 1b → 3 → 2)
 
@@ -78,4 +89,4 @@
 
 ## 다음 세션 시작 지시문
 
-"`docs/handoff-2026-10-15-xlsx-edit.md`와 계획 `docs/plans/2026-10-15-xlsx-edit.md`(§4.1 진행, §4.2 F1 남은 일·실패한 방식)를 읽어라. 계획한 단계(3·2a·2b·4·B2)와 F1 빠른 입력 유실은 끝났다. 남은 것: Enter 직후 같은 프레임 단축키(§4.2 — 넘기기 방식 금지), F2 한글 Enter 수동 확인, 행·열 삽입 감지(엔진 명령 보고), 엔진 메뉴 열기 클릭 경로 시험, 각 단계의 '남은 것' 목록. 조율자 지시를 기다린다. 무거운 실행·push·배포는 조율자 허락 뒤에, 실제 사용자 파일 정보는 기록하지 않는다."
+"`docs/handoff-2026-10-15-xlsx-edit.md`의 '지금 바로 할 일 — push·배포'부터 하라(조율자 확인 뒤, verify를 HEAD에서 다시). 리뷰 판정은 계획 §9, 남은 일은 §4.2·각 단계의 '남은 것'. 실제 사용자 파일 정보는 기록하지 않는다."
