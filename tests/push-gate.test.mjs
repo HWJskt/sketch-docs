@@ -47,7 +47,14 @@ async function fixture() {
   const log = join(base, 'log.txt');
   await writeFile(join(repo, 'scripts/verify.mjs'), `import { appendFileSync } from 'node:fs';
 export async function productHash() { return 'stub-product'; }
-if (process.argv[1] === import.meta.filename) { appendFileSync(${JSON.stringify(log)}, 'verify\\n'); process.exit(Number(process.env.STUB_VERIFY ?? 0)); }
+if (process.argv[1] === import.meta.filename) {
+  const { lstatSync } = await import('node:fs');
+  const link = path => { try { return lstatSync(path).isSymbolicLink(); } catch { return 'missing'; } };
+  appendFileSync(${JSON.stringify(log)}, 'verify\\n');
+  appendFileSync(${JSON.stringify(log + '.cache')}, JSON.stringify({ cache: link('.cache'), target: link('.cache/build/gridcraft-target') }) + '\\n');
+  if (process.env.STUB_SLEEP) await new Promise(done => setTimeout(done, Number(process.env.STUB_SLEEP)));
+  process.exit(Number(process.env.STUB_VERIFY ?? 0));
+}
 `);
   for (const name of ['integration', 'regressions', 'pdf.integration', 'xlsx.integration']) {
     await writeFile(join(repo, `tests/${name}.mjs`), `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(log)}, '${name} ' + process.env.TEST_LOCALE + '\\n');\n`);
@@ -103,5 +110,43 @@ test('a failing verify refuses the push and leaves the remote and worktrees as t
     const result2 = push(repo, { STUB_VERIFY: '1' }, ':side');
     assert.equal(result2.status, 0, result2.stderr);
     assert.throws(() => git(remote, 'rev-parse', 'refs/heads/side'), 'the branch was deleted');
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('an annotated tag on a verified commit passes on the saved report, and the worktree keeps its own build cache', async () => {
+  const { base, repo, remote, log } = await fixture();
+  try {
+    const sha = git(repo, 'rev-parse', 'HEAD');
+    await mkdir(join(repo, 'artifacts'));
+    await writeFile(join(repo, 'artifacts/verified.json'), JSON.stringify({ passed: true, productHash: 'stub-product', revision: { commit: sha, dirty: false } }));
+    git(repo, 'tag', '-a', 'v1', '-m', 'release');
+    const result = push(repo, {}, 'v1');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout + result.stderr, /verified \(artifacts\/verified\.json\)/);
+    assert.deepEqual(await logged(log), []);
+    // A commit not covered by the report is verified in a worktree with its own .cache (only Cargo's output is shared).
+    await writeFile(join(repo, 'more.txt'), 'more');
+    git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'more');
+    assert.equal(push(repo, { STUB_VERIFY: '0' }, 'main').status, 0);
+    assert.deepEqual(JSON.parse((await readFile(log + '.cache', 'utf8')).trim()), { cache: false, target: true });
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('an interrupted gate removes its worktree, and a leftover one is removed by the next run', async () => {
+  const { base, repo, log } = await fixture();
+  try {
+    const child = (await import('node:child_process')).spawn('git', ['-C', repo, 'push', '-q', 'origin', 'main'], { env: { ...env, STUB_SLEEP: '20000' }, stdio: 'ignore', detached: true });
+    for (let i = 0; i < 100 && !(await logged(log)).includes('verify'); i++) await new Promise(done => setTimeout(done, 100));
+    assert.equal(git(repo, 'worktree', 'list').split('\n').length, 2, 'the gate is verifying in a worktree');
+    process.kill(-child.pid, 'SIGINT');
+    await new Promise(done => child.on('exit', done));
+    for (let i = 0; i < 50 && git(repo, 'worktree', 'list').split('\n').length > 1; i++) await new Promise(done => setTimeout(done, 100));
+    assert.equal(git(repo, 'worktree', 'list').split('\n').length, 1, 'Ctrl-C cleans up');
+    // A worktree left by a killed run (no chance to clean up) is removed before the next verification.
+    const stale = join(await (await import('node:fs/promises')).realpath(tmpdir()), `sketch-docs-push-stale${process.pid}`, 'tree');
+    git(repo, 'worktree', 'add', '-q', '--detach', stale, 'HEAD');
+    assert.equal(git(repo, 'worktree', 'list').split('\n').length, 2);
+    assert.equal(push(repo, { STUB_VERIFY: '0' }, 'main').status, 0);
+    assert.equal(git(repo, 'worktree', 'list').split('\n').length, 1);
   } finally { await rm(base, { recursive: true, force: true }); }
 });

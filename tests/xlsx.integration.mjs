@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { preview } from 'vite';
 import { chromium } from 'playwright-core';
-import { launchArgs } from './browser-locale.mjs';
+import { assertTestLocale, launchArgs, testLocale } from './browser-locale.mjs';
 import { resolve } from 'node:path';
 import { brokenWorkbook, koreanWorkbook, otherWorkbook } from './xlsx-fixtures.mjs';
 
@@ -26,9 +26,10 @@ try {
   server = await preview({ root, build: { outDir: resolve(root, process.env.TEST_DIST || 'dist') }, preview: { host: 'localhost', port: 4179, strictPort: true } });
   browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
   // Service workers are blocked: once the shell registers one, its fetches bypass page.route (tests/regressions.mjs covers it).
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ko-KR', acceptDownloads: true, serviceWorkers: 'block' });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: testLocale || 'ko-KR', acceptDownloads: true, serviceWorkers: 'block' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
   const page = await context.newPage();
+  await assertTestLocale(page);
   page.setDefaultTimeout(60000);
   const errors = [], external = new Set(), downloads = [];
   page.on('pageerror', error => errors.push(String(error)));
