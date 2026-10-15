@@ -995,3 +995,44 @@ index 3a2ab44..a1236d9 100644
      /// The families [`font_definitions`] always binds, whatever is installed.
      fn always_bound() -> Vec<String> {
          [UI, UI_BOLD, CELL, CELL_BOLD, CELL_ITALIC, CELL_BOLD_ITALIC, SERIF, MONO].iter().map(|s| s.to_string()).collect()
+diff --git a/crates/ui-egui/tests/keytips.rs b/crates/ui-egui/tests/keytips.rs
+index 24be742..29721fd 100644
+--- a/crates/ui-egui/tests/keytips.rs
++++ b/crates/ui-egui/tests/keytips.rs
+@@ -442,7 +442,8 @@ fn control_keytips_open_dropdowns_and_run_handlers() {
+     assert!(h.state().message.is_none() && h.state().toast.is_none(), "HFF must not raise an error box");
+     // "Calibri" appears twice: once on the combo button (the current font) and
+     // once inside the opened dropdown — a single node would mean it stayed closed.
+-    assert!(h.query_all_by_label("Calibri").count() >= 2, "HFF must open the font dropdown");
++    // Sketch Docs: list entries say how the font draws here ("Calibri · …"), so they are found by contents.
++    assert!(h.query_all_by_label_contains("Calibri").count() >= 2, "HFF must open the font dropdown");
+ 
+     // WVF toggles the formula bar: pure UI state, no engine command exists.
+     let mut h = harness(blank());
+@@ -466,14 +467,14 @@ fn editable_combos_filter_by_typing_and_move_by_arrows() {
+     events(&mut h, [Event::Text("arial".into())]);
+     h.run_steps(3);
+     // "arial" matches Arial only — Georgia must be filtered out of the list.
+-    assert_eq!(h.query_all_by_label("Georgia").count(), 0, "typing must narrow the list");
+-    assert!(h.query_all_by_label("Arial").count() >= 1, "the match must stay visible");
++    assert_eq!(h.query_all_by_label_contains("Georgia").count(), 0, "typing must narrow the list");
++    assert!(h.query_all_by_label_contains("Arial").count() >= 1, "the match must stay visible");
+     key(&mut h, Key::Enter);
+     h.run_steps(3);
+     assert!(h.state().message.is_none() && h.state().toast.is_none(), "applying must not raise an error");
+     // The popup closed and the combo button now shows the applied font.
+     assert_eq!(h.query_all_by_label("Arial").count(), 1, "Enter must apply Arial and close the popup");
+-    assert_eq!(h.query_all_by_label("Georgia").count(), 0);
++    assert_eq!(h.query_all_by_label_contains("Georgia").count(), 0);
+ 
+     // Arrows alone move through the full list: Calibri -> Cambria -> Candara -> Consolas.
+     let mut h = harness(blank());
+@@ -507,7 +508,7 @@ fn editable_combos_filter_by_typing_and_move_by_arrows() {
+     h.run_steps(3);
+     sequence(&mut h, &[Key::H, Key::F, Key::F], false);
+     h.run_steps(4);
+-    assert!(h.query_all_by_label("Georgia").count() >= 1, "reopening must show the full, unfiltered list");
++    assert!(h.query_all_by_label_contains("Georgia").count() >= 1, "reopening must show the full, unfiltered list");
+     // Arrows after typing move the highlight, not the text cursor: type a filter,
+     // then Down twice and Enter must apply the second match's neighbour logic.
+     key(&mut h, Key::Escape);
