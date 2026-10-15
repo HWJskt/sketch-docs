@@ -10,6 +10,9 @@ import { addPdfEngine, dropBuildMetadata } from './pdf-manifest.mjs';
 // Cloudflare Pages limits: https://developers.cloudflare.com/pages/platform/limits/
 export const PAGES_MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const PAGES_MAX_FILES = 20000;
+// A file this close to the per-file limit is reported (not failed): the Excel engine's WASM sits near it,
+// and an upstream update or another font could cross the limit silently otherwise.
+export const PAGES_WARN_FILE_BYTES = 24 * 1024 * 1024;
 // Every deployed file with its bytes; deploy compares this against the verified output.
 export async function outputHash(dir) {
   const hash = createHash('sha256');
@@ -23,6 +26,12 @@ export async function outputHash(dir) {
   }
   await walk('');
   return { hash: hash.digest('hex'), files };
+}
+/** Files over PAGES_WARN_FILE_BYTES that still fit, with the bytes left under the limit. */
+export function pagesSizeWarnings(files) {
+  const mib = bytes => (bytes / 1048576).toFixed(2);
+  return files.filter(file => file.size > PAGES_WARN_FILE_BYTES && file.size <= PAGES_MAX_FILE_BYTES)
+    .map(file => `${file.name} is ${file.size} bytes (${mib(file.size)} MiB); ${PAGES_MAX_FILE_BYTES - file.size} bytes (${mib(PAGES_MAX_FILE_BYTES - file.size)} MiB) left under the Cloudflare Pages 25 MiB limit`);
 }
 export function assertPagesLimits(files) {
   const large = files.filter(file => file.size > PAGES_MAX_FILE_BYTES);
@@ -69,6 +78,7 @@ export async function verify({ candidate = false, lockPath = join(root, 'upstrea
   for (const test of ['tests/integration.mjs', 'tests/regressions.mjs', 'tests/pdf.integration.mjs', 'tests/xlsx.integration.mjs']) execFileSync(process.execPath, [join(root, test)], { cwd: root, stdio: 'inherit', env: { ...process.env, TEST_DIST: outDir }, timeout: 240000 });
   const output = await outputHash(outDir);
   assertPagesLimits(output.files);
+  for (const warning of pagesSizeWarnings(output.files)) console.warn('WARNING:', warning);
   if (await productHash() !== before) throw new Error('Product files changed during validation; rerun verification');
   if (await readFile(lockPath, 'utf8') !== lockText) throw new Error('Upstream lock changed during validation');
   await verifySources(JSON.parse(lockText));

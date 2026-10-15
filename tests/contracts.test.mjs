@@ -102,6 +102,15 @@ test('deploy output must fit Cloudflare Pages file limits', async () => {
   assert.throws(() => assertPagesLimits(Array.from({ length: PAGES_MAX_FILES + 1 }, (_, i) => ({ name: `f${i}`, size: 1 }))), /allows 20000/);
 });
 
+test('a file over 24 MiB that still fits is reported with its margin, without failing', async () => {
+  const { pagesSizeWarnings, PAGES_WARN_FILE_BYTES, PAGES_MAX_FILE_BYTES } = await import('../scripts/verify.mjs');
+  assert.equal(PAGES_WARN_FILE_BYTES, 24 * 1024 * 1024);
+  assert.deepEqual(pagesSizeWarnings([{ name: 'a.wasm', size: PAGES_WARN_FILE_BYTES }, { name: 'b.js', size: 10 }]), [], 'exactly 24 MiB is not reported');
+  const [warning, ...rest] = pagesSizeWarnings([{ name: 'engines/gridcraft/assets/g_bg.wasm', size: PAGES_MAX_FILE_BYTES - 1000 }, { name: 'too-big', size: PAGES_MAX_FILE_BYTES + 1 }]);
+  assert.deepEqual(rest, [], 'a file over the limit fails in assertPagesLimits instead');
+  assert.match(warning, /^engines\/gridcraft\/assets\/g_bg\.wasm is 26213400 bytes \(25\.00 MiB\); 1000 bytes \(0\.00 MiB\) left/);
+});
+
 test('backup fork names resolve to GitHub repositories and pin tags name the full commit', async () => {
   const { githubRepo, pinTag } = await import('../scripts/mirrors.mjs');
   assert.equal(githubRepo('https://github.com/HWJskt/edentext.git'), 'HWJskt/edentext');
