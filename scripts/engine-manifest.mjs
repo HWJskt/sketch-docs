@@ -7,6 +7,9 @@ import { dirname, join, posix } from 'node:path';
 export const ENGINES = {
   word: { html: 'engines/word/index.html', warmFonts: ['Liberation Sans', 'Liberation Serif'] },
   hwp: { html: 'rhwp/index.html', warmFonts: [] },
+  // Trunk output (scripts/gridcraft-build.mjs): an inline module imports the glue and passes it the WASM.
+  // Listed for progress only; the start page does not preload it (src/engines.ts).
+  xlsx: { html: 'engines/gridcraft/index.html', warmFonts: [], trunk: true },
 };
 export const MANIFEST = 'engines/manifest.json';
 
@@ -15,6 +18,13 @@ const resolveRef = (from, ref) => posix.normalize(posix.join(posix.dirname(from)
 
 export function entryRefs(html) {
   return [...html.matchAll(/<(?:script|link)\b[^>]*?\b(?:src|href)="([^"]+\.(?:js|css))"/g)].map(match => match[1]).filter(local);
+}
+/** The glue JS and WASM a Trunk page loads: every quoted `./assets/*.js|wasm`, exactly one WASM. */
+export function trunkRefs(html) {
+  const refs = [...new Set([...html.matchAll(/["'](\.\/assets\/[\w.-]+\.(?:js|wasm))["']/g)].map(match => match[1]))];
+  const wasm = refs.filter(ref => ref.endsWith('.wasm')).length;
+  if (wasm !== 1 || refs.length === wasm) throw new Error(`Engine manifest: a Trunk page must load one WASM and its glue JS (found ${refs.join(', ') || 'nothing'})`);
+  return refs;
 }
 // Vite emits `new URL("name-hash.wasm", import.meta.url)` for WASM the entry loads itself.
 export function wasmRefs(js) {
@@ -39,9 +49,17 @@ async function entry(dir, path) {
 
 export async function engineManifest(dir) {
   const engines = {};
-  for (const [name, { html, warmFonts }] of Object.entries(ENGINES)) {
+  for (const [name, { html, warmFonts, trunk }] of Object.entries(ENGINES)) {
     const required = new Set(), warm = new Set();
-    for (const ref of entryRefs(await readFile(join(dir, html), 'utf8'))) {
+    const page = await readFile(join(dir, html), 'utf8');
+    if (trunk) {
+      for (const ref of trunkRefs(page)) required.add(resolveRef(html, ref));
+      const list = async set => Promise.all([...set].sort().map(path => entry(dir, path)));
+      const files = { required: await list(required), warm: [] };
+      engines[name] = { ...files, requiredBytes: files.required.reduce((sum, file) => sum + file.bytes, 0) };
+      continue;
+    }
+    for (const ref of entryRefs(page)) {
       const path = resolveRef(html, ref);
       required.add(path);
       const text = await readFile(join(dir, path), 'utf8');

@@ -67,7 +67,8 @@ async function respond(event) {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  // Not stored: the Hangul engine and pdf.js assets are not offline features, and legal/ must stay current.
-  if (['./rhwp/', './legal/', './pdfjs/'].some(path => url.pathname.startsWith(new URL(path, self.location.href).pathname))) return;
+  // Not stored: the Hangul and Excel engines and pdf.js assets are not offline features (the 21MB Excel
+  // engine would also crowd the cache), and legal/ must stay current.
+  if (['./rhwp/', './engines/gridcraft/', './legal/', './pdfjs/'].some(path => url.pathname.startsWith(new URL(path, self.location.href).pathname))) return;
   event.respondWith(respond(event));
 });

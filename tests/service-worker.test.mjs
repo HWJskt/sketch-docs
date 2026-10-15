@@ -107,9 +107,9 @@ test('activation removes older Sketch Docs caches and leaves unrelated caches', 
   assert.deepEqual([...sw.stores.keys()].sort(), ['other-app', 'sketch-docs-build2']);
 });
 
-test('rhwp, legal and pdf.js asset requests go straight to the network', async () => {
+test('rhwp, Excel engine, legal and pdf.js asset requests go straight to the network', async () => {
   const sw = worker({ network: async () => ok('fresh') });
-  for (const path of ['rhwp/index.html', 'legal/notices.txt', 'pdfjs/6.4.299/cmaps/UniKS-UCS2-H.bcmap']) assert.equal(await sw.dispatch('fetch', get(path)), undefined, path);
+  for (const path of ['rhwp/index.html', 'engines/gridcraft/index.html', 'engines/gridcraft/assets/g_bg.wasm', 'legal/notices.txt', 'pdfjs/6.4.299/cmaps/UniKS-UCS2-H.bcmap']) assert.equal(await sw.dispatch('fetch', get(path)), undefined, path);
   assert.ok(await sw.dispatch('fetch', get('assets/pdf-abc.js')), 'other same-origin files are still answered by the worker');
   await sw.settled();
 });

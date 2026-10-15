@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { cargoNotices, shippedPackages } from './cargo-licenses.mjs';
 
 // GridCraft's web app (Rust → WASM through Trunk), built from a snapshot of the pinned clone with
 // our overlays, and only with the exact tools the lock names (Trunk never downloads its own).
@@ -84,6 +85,12 @@ export async function buildGridcraft({ root, lock, cache, output, snapshot }) {
     await mkdir(join(built, 'assets'));
     for (const name of names) await rename(join(built, name), join(built, 'assets', name));
     await writeFile(join(built, 'index.html'), html);
+    const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--offline', '--format-version', '1', '--filter-platform', 'wasm32-unknown-unknown'], { cwd: work, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
+    const craftLibs = lock['craft-libs'].url.replace(/\.git$/, '');
+    const notices = await cargoNotices(shippedPackages(metadata, 'gridcraft-web'), {
+      covered: pkg => pkg.source === null ? 'GridCraft' : pkg.source?.startsWith(`git+${craftLibs}?`) ? 'craft-libs' : undefined,
+    });
+    await writeFile(join(built, 'licenses.txt'), 'GridCraft web engine: the Rust crates compiled into its WASM (wasm32-unknown-unknown, normal dependencies).\n\n' + notices);
     await writeFile(stamp, inputHash);
   }
   const target = join(output, OUTPUT);
@@ -91,6 +98,9 @@ export async function buildGridcraft({ root, lock, cache, output, snapshot }) {
   await cp(built, target, { recursive: true, filter: path => !path.endsWith('.input-hash') });
   const wasm = (await readdir(join(target, 'assets'))).filter(name => name.endsWith('.wasm'));
   if (wasm.length !== 1) throw new Error(`GridCraft output: expected one .wasm, found ${wasm.length}`);
+  // brand.patch removes the ArtCraft marks a modified version may not carry (docs/brand/LICENSE-brand.txt).
+  const wasmText = (await readFile(join(target, 'assets', wasm[0]))).toString('latin1');
+  for (const mark of ['getartcraft.com', 'discord.gg/artcraft', 'Part of ArtCraft']) if (wasmText.includes(mark)) throw new Error(`GridCraft output still carries the ArtCraft mark "${mark}"`);
   await writeFile(join(target, 'provenance.json'), JSON.stringify({ ...inputs, wasm: wasm[0], wasmSha256: sha256(await readFile(join(target, 'assets', wasm[0]))) }, null, 2) + '\n');
   if (!existsSync(join(target, 'index.html'))) throw new Error('GridCraft output has no index.html');
 }

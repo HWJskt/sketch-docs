@@ -1,0 +1,18 @@
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index fb899c7..a0c7aee 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -1486,9 +1486,10 @@ fn about(ui: &mut egui::Ui, d: &mut Dialog) {
+             ui.heading("GridCraft");
+             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+             ui.add_space(4.0);
+-            ui.label("A clean-room, open-source, Rust-native spreadsheet. Part of ArtCraft.");
+-            ui.hyperlink_to("getartcraft.com/apps/gridcraft", "https://getartcraft.com/apps/gridcraft");
+-            ui.hyperlink_to("Join the ArtCraft Discord", "https://discord.gg/artcraft");
++            // Sketch Docs: a modified version must drop the ArtCraft marks (docs/brand/LICENSE-brand.txt);
++            // a plain-text statement of the origin is allowed.
++            ui.label("Modified for Sketch Docs (view only). Based on GridCraft by the ArtCraft team.");
++            ui.hyperlink_to("GridCraft source code", "https://github.com/storytold/gridcraft");
+         }
+     }
+ }

@@ -31,6 +31,8 @@ async function fixture() {
   }
   await put('node_modules/vite/package.json', JSON.stringify({ name: 'vite', version: '1.0.0' }));
   await put('public/engines/word/licenses.txt', 'Word third-party licenses');
+  for (const path of ['source/gridcraft/LICENSE-MIT', 'source/gridcraft/LICENSE-APACHE', 'source/gridcraft/NOTICE', 'source/craft-libs/LICENSE-MIT', 'source/craft-libs/LICENSE-APACHE', 'source/craft-libs/NOTICE', 'overlays/gridcraft/fonts/OFL-Pretendard.txt']) await put(path, path + ' text');
+  await put('public/engines/gridcraft/licenses.txt', 'GridCraft crate licenses');
   await put('public/legal/source-0123456789abcdef.tar.gz', 'old archive');
   await put('.gitignore', 'source/\nnode_modules/\npublic/\n');
   git(root, 'init', '-q');
@@ -90,6 +92,9 @@ test('legal notices: the exact file set, each copied byte for byte, and notices.
       ['LICENSE', 'LICENSE'], ['LICENSE-edentext', 'source/edentext/LICENSE'], ['LICENSE-hop', 'source/hop/LICENSE'],
       ['LICENSE-rhwp', 'source/hop/third_party/rhwp/LICENSE'], ['THIRD_PARTY_LICENSES-rhwp.md', 'source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md'],
       ['licenses-edentext.txt', 'public/engines/word/licenses.txt'],
+      ['LICENSE-gridcraft-MIT', 'source/gridcraft/LICENSE-MIT'], ['LICENSE-gridcraft-APACHE', 'source/gridcraft/LICENSE-APACHE'], ['NOTICE-gridcraft', 'source/gridcraft/NOTICE'],
+      ['LICENSE-craft-libs-MIT', 'source/craft-libs/LICENSE-MIT'], ['LICENSE-craft-libs-APACHE', 'source/craft-libs/LICENSE-APACHE'], ['NOTICE-craft-libs', 'source/craft-libs/NOTICE'],
+      ['OFL-Pretendard.txt', 'overlays/gridcraft/fonts/OFL-Pretendard.txt'], ['licenses-gridcraft.txt', 'public/engines/gridcraft/licenses.txt'],
       ...Object.entries(npm).map(([name, file]) => [`LICENSE-${name.replaceAll('/', '-')}`, `node_modules/${name}/${file}`]),
     ];
     assert.deepEqual((await readdir(legal)).sort(), [...expected.map(([name]) => name), 'notices.txt', 'release.json'].sort());

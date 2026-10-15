@@ -86,9 +86,17 @@ export async function writeReleaseInfo({ root = projectRoot, output = join(root,
     ['LICENSE-rhwp', join(root, 'source/hop/third_party/rhwp/LICENSE')],
     ['THIRD_PARTY_LICENSES-rhwp.md', join(root, 'source/hop/third_party/rhwp/THIRD_PARTY_LICENSES.md')],
     ['licenses-edentext.txt', join(output, 'engines/word/licenses.txt')],
+    ['LICENSE-gridcraft-MIT', join(root, 'source/gridcraft/LICENSE-MIT')],
+    ['LICENSE-gridcraft-APACHE', join(root, 'source/gridcraft/LICENSE-APACHE')],
+    ['NOTICE-gridcraft', join(root, 'source/gridcraft/NOTICE')],
+    ['LICENSE-craft-libs-MIT', join(root, 'source/craft-libs/LICENSE-MIT')],
+    ['LICENSE-craft-libs-APACHE', join(root, 'source/craft-libs/LICENSE-APACHE')],
+    ['NOTICE-craft-libs', join(root, 'source/craft-libs/NOTICE')],
+    ['OFL-Pretendard.txt', join(root, 'overlays/gridcraft/fonts/OFL-Pretendard.txt')],
+    ['licenses-gridcraft.txt', join(output, 'engines/gridcraft/licenses.txt')],
     ...await npmNotices(root, exceptions),
   ];
-  const sections = ['Sketch Docs — 라이선스 및 타사 고지\n\n제품: AGPL-3.0-only. EdenText: AGPL-3.0-only. HOP/rhwp: MIT.\n대응 소스는 release.json의 GitHub 링크(우리 코드의 빌드 커밋과 각 원본의 고정 커밋)에서 받을 수 있습니다. 이 목록은 법률 검토 인증이 아닙니다.'];
+  const sections = ['Sketch Docs — 라이선스 및 타사 고지\n\n제품: AGPL-3.0-only. EdenText: AGPL-3.0-only. HOP/rhwp: MIT. GridCraft/craft-libs: MIT OR Apache-2.0(두 라이선스 전문을 함께 싣습니다). Excel 보기의 한국어 글꼴 Pretendard: SIL OFL 1.1.\n대응 소스는 release.json의 GitHub 링크(우리 코드의 빌드 커밋과 각 원본의 고정 커밋)에서 받을 수 있습니다. 이 목록은 법률 검토 인증이 아닙니다.'];
   for (const [name, from] of notices) {
     const bytes = typeof from === 'string' ? await readFile(from) : Buffer.from(from.text);
     await writeFile(join(legal, name), bytes);

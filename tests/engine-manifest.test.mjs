@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cssRefs, engineManifest, entryRefs, wasmRefs } from '../scripts/engine-manifest.mjs';
+import { cssRefs, engineManifest, entryRefs, trunkRefs, wasmRefs } from '../scripts/engine-manifest.mjs';
 
 test('entry references keep local scripts and styles only', () => {
   const html = '<script src="./theme.js"></script><link rel="stylesheet" href="./assets/a.css"><link rel="icon" href="./x.png"><a href="https://edentext.app/"></a><script type="module" crossorigin src="./assets/a.js"></script><script src="https://cdn.example/x.js"></script>';
@@ -33,13 +33,24 @@ test('manifest lists required and warm files with sizes, and rejects missing fil
     await put('rhwp/assets/core-AbCdEfGh.wasm', 'wasm!');
     await put('rhwp/assets/r.css', '.i{background:url(../images/icon.svg)}');
     await put('rhwp/images/icon.svg', '<svg/>');
+    await put('engines/gridcraft/index.html', `<script type="module">import init from './assets/g-1.js';\nawait init({ module_or_path: './assets/g-1_bg.wasm' });</script><link rel="modulepreload" href="./assets/g-1.js"><link rel="preload" href="./assets/g-1_bg.wasm">`);
+    await put('engines/gridcraft/assets/g-1.js', 'glue');
+    await put('engines/gridcraft/assets/g-1_bg.wasm', 'wasm!!');
     const { engines } = await engineManifest(dir);
     assert.deepEqual(engines.word.required.map(file => file.path), ['engines/word/assets/w-12345678.js', 'engines/word/assets/w.css']);
     assert.deepEqual(engines.word.warm, [{ path: 'engines/word/assets/Serif.ttf', bytes: 4 }]);
     assert.deepEqual(engines.hwp.required.map(file => file.path), ['rhwp/assets/core-AbCdEfGh.wasm', 'rhwp/assets/r.css', 'rhwp/assets/r.js', 'rhwp/init.js']);
     assert.deepEqual(engines.hwp.warm.map(file => file.path), ['rhwp/images/icon.svg']);
     assert.equal(engines.hwp.requiredBytes, 5 + 39 + 44 + 1);
+    assert.deepEqual(engines.xlsx, { required: [{ path: 'engines/gridcraft/assets/g-1.js', bytes: 4 }, { path: 'engines/gridcraft/assets/g-1_bg.wasm', bytes: 6 }], warm: [], requiredBytes: 10 });
     await rm(join(dir, 'rhwp/assets/core-AbCdEfGh.wasm'));
     await assert.rejects(engineManifest(dir), /core-AbCdEfGh\.wasm is referenced but missing/);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a Trunk page must name exactly one WASM and its glue JS', () => {
+  assert.deepEqual(trunkRefs(`import init from './assets/a.js'; init({ module_or_path: './assets/a_bg.wasm' }); <link href="./assets/a.js">`), ['./assets/a.js', './assets/a_bg.wasm']);
+  assert.throws(() => trunkRefs(`import init from './assets/a.js';`), /one WASM/);
+  assert.throws(() => trunkRefs(`'./assets/a.wasm' './assets/b.wasm' './assets/a.js'`), /one WASM/);
+  assert.throws(() => trunkRefs(`'./assets/a.wasm'`), /glue JS/);
 });
