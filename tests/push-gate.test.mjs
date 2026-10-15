@@ -59,7 +59,9 @@ if (process.argv[1] === import.meta.filename) {
   for (const name of ['integration', 'regressions', 'pdf.integration', 'xlsx.integration']) {
     await writeFile(join(repo, `tests/${name}.mjs`), `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(log)}, '${name} ' + process.env.TEST_LOCALE + '\\n');\n`);
   }
-  await writeFile(join(repo, 'package-lock.json'), '{}\n');
+  // A package without dependencies: the gate runs npm ci in its worktree.
+  await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'gate-fixture', version: '1.0.0', private: true }) + '\n');
+  await writeFile(join(repo, 'package-lock.json'), JSON.stringify({ name: 'gate-fixture', version: '1.0.0', lockfileVersion: 3, requires: true, packages: { '': { name: 'gate-fixture', version: '1.0.0' } } }) + '\n');
   await writeFile(join(repo, '.gitignore'), 'artifacts/\nsource/\n.cache/\nnode_modules/\n');
   git(base, 'init', '-q', '--bare', remote);
   git(base, 'init', '-q', '-b', 'main', repo);

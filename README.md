@@ -129,7 +129,7 @@ npm run verify
 `npm run hooks:install`(한 번)이 `core.hooksPath`를 `.githooks`로 맞춘다. pre-push 훅(`scripts/push-gate.mjs`)은 push하는 각 ref의 끝 커밋(주석 태그는 가리키는 커밋)마다 — 그 사이 커밋은 하나하나 검사하지 않는다:
 
 - `artifacts/verified.json`이 그 커밋·깨끗한 작업 트리·같은 제품 파일에서 만든 통과 보고면 바로 통과한다.
-- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`와 Cargo 빌드 출력, lock이 같으면 `node_modules`를 빌려 쓰고 빌드 작업 폴더는 따로 씀)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다. 저장된 보고로 통과한 커밋은 영어 회차를 거치지 않는다 — 영어 Chrome 확인이 필요하면 `TEST_DIST=dist TEST_LOCALE=en-US node tests/<러너>.mjs`를 직접 돈다.
+- 아니면 그 커밋을 임시 worktree(이 클론의 `source/`와 Cargo 빌드 출력을 빌려 쓰고, `node_modules`(`npm ci --prefer-offline`)와 빌드 작업 폴더는 따로 둠)에서 `npm run verify` 하고, 브라우저 시험을 영어 Chrome(`TEST_LOCALE=en-US`)으로 한 번 더 돈 뒤 통과한다. 실패하면 push를 막는다. 저장된 보고로 통과한 커밋은 영어 회차를 거치지 않는다 — 영어 Chrome 확인이 필요하면 `TEST_DIST=dist TEST_LOCALE=en-US node tests/<러너>.mjs`를 직접 돈다.
 - 중단(Ctrl-C)하면 임시 worktree를 지운다. 강제 종료로 남은 것은 다음 실행이 지운다.
 - 훅은 `.githooks/`에 있으므로 048a813 이전 커밋을 체크아웃한 상태에서는 걸리지 않는다.
 - 원격 브랜치 삭제는 검사하지 않는다.

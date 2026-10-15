@@ -60,7 +60,7 @@ function run(cmd, args, options = {}) {
 
 /** Removes a gate worktree: its links first (so nothing they point to is touched), then the worktree. */
 async function removeWorktree(root, dir) {
-  for (const name of ['source', 'node_modules', '.cache/build/gridcraft-target']) {
+  for (const name of ['source', '.cache/build/gridcraft-target']) {
     const link = join(dir, name);
     if ((await lstat(link).catch(() => null))?.isSymbolicLink()) await unlink(link);
   }
@@ -76,9 +76,10 @@ async function removeStaleWorktrees(root) {
 }
 
 /**
- * Verifies `sha` in a throwaway worktree. It borrows this checkout's upstream clones, Cargo's build output
- * and (when the lockfile matches) node_modules, but has its own build workspaces, so a dev server or
- * verify running in this checkout meanwhile cannot change what is verified.
+ * Verifies `sha` in a throwaway worktree. It borrows this checkout's upstream clones and Cargo's build
+ * output, but has its own build workspaces, so a dev server or verify running in this checkout meanwhile
+ * cannot change what is verified. node_modules is installed, not linked: Vite resolves a linked
+ * node_modules to this checkout, and the build's module paths (scripts/pdf-manifest.mjs) no longer match.
  */
 async function verifyInWorktree(root, sha) {
   await removeStaleWorktrees(root);
@@ -95,8 +96,7 @@ async function verifyInWorktree(root, sha) {
     await mkdir(join(root, '.cache/build/gridcraft-target'), { recursive: true });
     await mkdir(join(dir, '.cache/build'), { recursive: true });
     await symlink(join(root, '.cache/build/gridcraft-target'), join(dir, '.cache/build/gridcraft-target'));
-    const sameLock = out('git', ['-C', root, 'rev-parse', `${sha}:package-lock.json`]) === out('git', ['-C', root, 'hash-object', join(root, 'package-lock.json')]);
-    if (sameLock) await symlink(join(root, 'node_modules'), join(dir, 'node_modules')); else await run('npm', ['ci'], { cwd: dir });
+    await run('npm', ['ci', '--prefer-offline', '--no-audit', '--no-fund'], { cwd: dir });
     await run(process.execPath, [join(dir, 'scripts/verify.mjs')], { cwd: dir });
     for (const test of BROWSER_TESTS) await run(process.execPath, [join(dir, test)], { cwd: dir, env: { ...process.env, TEST_DIST: join(dir, 'dist'), TEST_LOCALE: 'en-US' }, timeout: 240000 });
   } finally {
