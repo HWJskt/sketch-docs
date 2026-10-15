@@ -7,9 +7,9 @@
 
 | 항목 | 값 |
 |---|---|
-| 배포판 | `d9f41e7`(보기 전용 Excel). 이후 커밋은 **push·배포하지 않았다**(사용자 지시 때만) |
-| 로컬 `main` | 리뷰 반영 `255407c` 뒤로 문서 커밋만(판정표·변이 결과·인계). 깨끗한 트리. **push·배포 안 함** |
-| 마지막 `npm run verify` | 통과 — `255407c`(단위 192, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`). 그 뒤 커밋은 문서뿐이지만 보고의 커밋이 HEAD와 다르다 → 배포 전 다시 돌린다 |
+| 배포판 | **`4230e0d`(Excel 편집)** — 2026-10-16 배포, `https://docs.sketchps.app`(배포 미리보기 `https://3094b805.sketch-docs.pages.dev`). 실사이트 `legal/release.json` = `4230e0d…`·`dirty=false` |
+| 로컬 `main` | `4230e0d`까지 push(`509736e..4230e0d`, 27커밋), 그 뒤 이 배포 기록 커밋 |
+| 마지막 `npm run verify` | 통과 — `4230e0d`(단위 192, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`, `RELEASE GATE PASSED`) |
 | Excel 엔진 WASM | 24,277,249 B(23.15 MiB). 24 MiB 경고선까지 약 0.85 MiB |
 | 엔진 overlay | `overlays/gridcraft/sketch-bridge.patch`(옛 `view-only.patch`). 고칠 때는 패치를 적용한 사본에서 고쳐 `git diff`로 다시 만든다 — 아래 "작업 방법" |
 
@@ -32,15 +32,47 @@
 | F1 원인 조사(upstream 엔진) → 빠른 입력 유실 고침(그리드 우회, 변이 1) | `99ace40`, `426274d` |
 | 배포 전 리뷰(별도 컨텍스트 Claude 1개, 8건: 받음 6·사실 확인 1·반박 1) → 고침 | `255407c`, 판정표 계획 §9 |
 
-## 지금 바로 할 일 — push·배포 (사용자 지시 "리뷰 후 바로 배포", 2026-10-16)
+## push·배포 결과 (2026-10-16, 사용자 지시 "리뷰 후 바로 배포")
 
-리뷰와 고침은 끝났다(계획 §9, High 1·2·3 고침마다 브라우저 변이가 잡힘). 새 세션은 조율자 확인 뒤 CLAUDE.md "배포" 절차대로 한다:
-1. `npm run verify` — HEAD에서 다시(보고가 `255407c`라 HEAD와 다르다). 통과해야 다음으로.
-2. `git push origin main` — pre-push 게이트가 끝 커밋의 verify 보고를 확인하거나 임시 worktree에서 다시 검사한다(`npm run hooks:install` 상태, `--no-verify` 금지). 저장소는 공개(`HWJskt/sketch-docs`): 원본 코드·`backups/`·비밀값·실제 사용자 파일이 없는지 — 리뷰가 실제 파일 이름 0건을 확인했다.
-3. `gh run list --limit 3` — CI verify 확인.
-4. `npm run mirrors:check`(필요하면 `mirrors:pin`) — gridcraft·craft-libs 고정 커밋은 배포판 `d9f41e7` 때와 같다(`d9d09f0`).
-5. `npm run deploy` → `npm run test:live`(기본 `https://docs.sketchps.app`).
-6. 배포 뒤 사람 확인 권장: 실제 Chrome에서 원본에 저장(선택기·권한 창), 한글 입력 Enter(F2), 글꼴 드롭다운 화면.
+| 단계 | 결과 |
+|---|---|
+| push 전 스캔(`origin/main..4230e0d`, 27커밋·59파일) | 추가 줄의 로컬 절대경로 0건. 비밀값 패턴에 걸린 줄은 문서의 "password" 설명, 합성 fixture 보호 암호 `"1234"`, 시험용 가짜 `secret-token`뿐. 실제 샘플 파일 3개 이름은 diff·fixture xlsx 13개 내부 모두 0건, fixture에 작성자·경로 메타데이터 없음. `backups/`·`source/` 0건. 조율자 독립 스캔도 0건 |
+| `npm run verify`(`4230e0d`) | exit 0. 단위 192/192, 브라우저 PASS 105·FAIL 0, 두 언어 `XLSX VIEW CHECKS PASSED`, `RELEASE GATE PASSED`. 로그의 `error:`·`fatal:` 줄은 upstream git 시험이 일부러 만드는 실패 출력(해당 시험 모두 ✔) |
+| `git push origin main` | 게이트 `Push gate: 4230e0d54fc5 → refs/heads/main: verified (artifacts/verified.json)`, `509736e..4230e0d` |
+| GitHub `verify` | 실행 38768034901, `4230e0d` success(29초) |
+| `npm run mirrors:check` | `Backup forks hold every pinned commit.` 다섯 upstream 고정(edentext `4c4c94c`·hop `80888af`·rhwp `1a76570` v0.8.7·gridcraft `d9d09f0`·craft-libs `d27646a`). `d9f41e7` 이후 `upstreams.lock.json` 변화 없음 → `mirrors:pin` 안 함 |
+| `npm run deploy` | 22파일 새로 올림(520개는 이미 있음), `https://3094b805.sketch-docs.pages.dev` |
+| `npm run test:live` | 1회에 통과 — PASS 18·FAIL 0(`https://docs.sketchps.app`). 재실행 없음 |
+
+## 배포 뒤 사람이 확인할 것 (사용자용 절차)
+
+자동 시험이 대신할 수 없는 네 가지다. **데스크톱 Chrome**에서 `https://docs.sketchps.app`을 열고 시작 화면의 Excel로 들어간다. 연습 파일은 중요하지 않은 xlsx의 **사본**을 쓴다(아래 2는 그 파일을 덮어쓴다). 문제가 보이면 몇 번째 단계에서 무엇이 보였는지만 알려 주면 된다.
+
+1. **한글 입력 뒤 Enter**(헤드리스 시험에서 확정되지 않았던 F2 — 계획 §4.2)
+   1. "Excel 열기"로 사본을 연다. 빈 칸(예: H2)을 한 번 누른다.
+   2. macOS 한국어(두벌식) 입력기로 `감`을 치고 **Enter를 한 번** 누른다.
+   3. 확인: (a) H2에 `감`이 보인다 (b) 선택이 H3으로 내려갔다 (c) H2를 다시 고르면 위쪽 수식 입력줄에 `감` (d) 왼쪽 아래 상태가 "입력"으로 남아 있지 않다.
+   4. `가나다`로 한 번, 마지막 글자에 밑줄(조합 중)이 있을 때 바로 Enter로 한 번 더 해 본다.
+   5. 한 번이라도 Enter 뒤에 편집 상자가 남거나 아래 칸으로 안 내려가면 실제 문제다.
+2. **원본에 저장 — 실제 권한 창·경고 창**
+   1. 사본을 열고 아무 칸이나 고친다(위쪽에 "저장하지 않은 변경"이 보인다).
+   2. "저장"(또는 Ctrl+S)을 누른다. Chrome이 **파일 수정 권한**을 묻는다 → 허용.
+   3. "원본 파일에 저장" 경고 창이 뜬다: 이 파일에서 잃을 수 있는 요소 목록이 있는지 본다. 먼저 "취소" → 파일이 그대로인지(아직 "저장하지 않은 변경"), 다시 저장 → "그래도 저장".
+   4. 확인: "저장하지 않은 변경"이 사라진다. Excel(또는 Numbers)로 그 파일을 열면 고친 값이 있다.
+   5. "보관한 원본"을 누르면 덮어쓰기 전 원본이 목록에 있다. 하나를 고르고 새 이름으로 저장하면 원래 내용의 파일이 생긴다.
+   6. 같은 파일에 다시 저장하면 경고 창 없이 저장된다(처음 덮어쓸 때만 묻는다).
+   7. "다른 이름으로 저장"으로 새 파일을 만들어 Excel에서 열리는지도 한 번 본다.
+3. **복구 제안**
+   1. 사본을 열고 칸 하나를 고친 뒤 **저장하지 않고** 30초 넘게 기다리거나 다른 탭으로 옮겼다 돌아온다(이때 복구 사본이 만들어진다).
+   2. 탭을 닫는다(떠날지 묻는 창이 뜨면 떠나기).
+   3. 새 탭에서 다시 Excel로 같은 파일을 연다.
+   4. 확인: "이 파일에서 저장하지 않은 편집 내용의 복구 사본이 있습니다(시각)…"와 "복구"·"버리기"가 보인다. "복구" → 고친 값이 돌아오고 "저장하지 않은 변경" 상태다(원본 파일은 바뀌지 않았다).
+   5. 한 번 더 같은 과정으로 제안을 띄우고 "버리기" → 지울지 묻는다 → 확인하면 제안이 사라지고, 다시 열어도 제안이 없다.
+   6. 같은 파일을 두 탭에서 열면 "이 파일이 다른 탭에서도 열려 있습니다."가 보인다.
+4. **글꼴 드롭다운**
+   1. 아무 칸이나 고르고 위쪽 리본의 글꼴 상자를 연다.
+   2. 확인: 순서가 Pretendard → 맑은 고딕·굴림·돋움·바탕 → 영어 글꼴이고, Pretendard에는 "웹 글꼴 · 다른 PC에 없을 수 있음", 이 Mac에 없는 글꼴에는 "이 브라우저에 없음 — 대체 글꼴로 표시"가 붙는다. 글자가 잘리거나 겹치지 않는다.
+   3. 칸에 영문을 쓰고 Pretendard와 Arial을 번갈아 고르면 화면 글자 모양이 달라진다. 셀 서식 창의 글꼴 목록도 같은 순서다.
 
 ## 다음 할 일 (순서 — 사용자 결정 1b → 3 → 2)
 
