@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, degrees } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, degrees, type PDFObject } from '@cantoo/pdf-lib';
 import { EMBEDDED_FILE_NAME, PRIVATE_KEY, exportPdf } from 'svelte-pdf-mini/pdf-codec';
 import type { Annotation } from 'svelte-pdf-mini';
 import { saveBlockReason } from './protection';
@@ -45,18 +45,47 @@ export async function inspectLosses(bytes: Uint8Array): Promise<string[]> {
             const names = doc.catalog.lookupMaybe(entry, PDFDict);
             for (const tree of names?.keys() ?? []) {
                 if (tree.decodeText() === 'EmbeddedFiles') {
-                    if (doc.getAttachments().some(a => a.name !== EMBEDDED_FILE_NAME)) risks.add('첨부 파일');
+                    const visited = new Set<PDFObject>();
+                    const inspectFiles = (value: PDFObject) => {
+                        const node = doc.context.lookup(value);
+                        if (!(node instanceof PDFDict) || visited.has(node)) throw new Error('첨부 파일 이름 트리를 읽지 못했습니다.');
+                        visited.add(node);
+                        const entries = node.lookupMaybe(key('Names'), PDFArray);
+                        if (entries) {
+                            if (entries.size() % 2) throw new Error('첨부 파일 이름 목록이 올바르지 않습니다.');
+                            for (let i = 0; i < entries.size(); i += 2) {
+                                const label = doc.context.lookup(entries.get(i));
+                                if (!(label instanceof PDFString || label instanceof PDFHexString)) throw new Error('첨부 파일 이름을 읽지 못했습니다.');
+                                if (label.decodeText() !== EMBEDDED_FILE_NAME) risks.add('첨부 파일');
+                            }
+                        }
+                        const kids = node.lookupMaybe(key('Kids'), PDFArray);
+                        kids?.asArray().forEach(inspectFiles);
+                    };
+                    inspectFiles(names!.get(tree)!);
                 } else risks.add(tree.decodeText() === 'Dests' ? '페이지 목적지' : `문서 이름 정보 (${tree.decodeText()})`);
             }
         } else if (name === 'AF') {
-            if (doc.getAttachments().some(a => a.name !== EMBEDDED_FILE_NAME)) risks.add('연결 첨부 파일');
+            const associated = doc.catalog.lookup(entry);
+            if (!(associated instanceof PDFArray)) throw new Error('연결 첨부 파일 정보를 읽지 못했습니다.');
+            for (const item of associated.asArray()) {
+                const spec = doc.context.lookup(item);
+                const label = spec instanceof PDFDict ? doc.context.lookup(spec.get(key('UF')) ?? spec.get(key('F'))) : undefined;
+                if (!(label instanceof PDFString || label instanceof PDFHexString) || label.decodeText() !== EMBEDDED_FILE_NAME) risks.add('연결 첨부 파일');
+            }
         } else risks.add(labels[name] ?? `문서 정보 (${name})`);
     }
     // Internal page references can appear in links, actions and annotations outside the catalog.
-    for (const [, object] of doc.context.enumerateIndirectObjects()) {
-        if (!(object instanceof PDFDict)) continue;
-        if (object.has(key('Dest')) || object.get(key('S')) === key('GoTo')) risks.add('페이지를 가리키는 링크·목적지');
-    }
+    const seen = new Set<PDFObject>();
+    const visit = (object: PDFObject) => {
+        if (seen.has(object)) return;
+        seen.add(object);
+        if (object instanceof PDFArray) object.asArray().forEach(visit);
+        if (!(object instanceof PDFDict)) return;
+        if (object.has(key('Dest')) || doc.context.lookup(object.get(key('S'))) === key('GoTo')) risks.add('페이지를 가리키는 링크·목적지');
+        for (const [, value] of object.entries()) visit(value);
+    };
+    for (const [, object] of doc.context.enumerateIndirectObjects()) visit(object);
     if (doc.getTitle() || doc.getAuthor() || doc.getSubject() || doc.getKeywords()) risks.add('제목·작성자 등 문서 속성');
     return [...risks].sort();
 }

@@ -76,3 +76,20 @@ test('reconstructed page base passes the existing annotation preservation gate a
     const result = await checkPreservation(bytes, await exportPdf(bytes.slice(), snapshot), snapshot);
     assert.deepEqual(result, { ok: true });
 });
+test('direct GoTo actions and associated files outside the name tree still trigger actual-loss warnings', async () => {
+    const doc = await PDFDocument.create(); const page = doc.addPage();
+    page.node.set(PDFName.of('Annots'), doc.context.obj([{ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 20, 20], A: { S: 'GoTo', D: [page.ref, 'Fit'] } }]));
+    doc.catalog.set(PDFName.of('AF'), doc.context.obj([{ Type: 'Filespec', F: PDFName.of('report') }]));
+    const losses = await pages.inspectLosses(await doc.save());
+    assert.ok(losses.some(x => x.includes('링크')));
+    assert.ok(losses.some(x => x.includes('첨부')));
+});
+test('attachments in a branched EmbeddedFiles name tree are reported before reconstruction', async () => {
+    const doc = await PDFDocument.create(); doc.addPage(); await doc.attach(new Uint8Array([1, 2, 3]), 'keep.txt');
+    const saved = await PDFDocument.load(await doc.save());
+    saved.catalog.delete(PDFName.of('AF'));
+    const names = saved.catalog.lookup(PDFName.of('Names'), PDFDict);
+    const files = names.lookup(PDFName.of('EmbeddedFiles'), PDFDict);
+    names.set(PDFName.of('EmbeddedFiles'), saved.context.obj({ Kids: [saved.context.register(files)] }));
+    assert.ok((await pages.inspectLosses(await saved.save())).some(x => x.includes('첨부')));
+});

@@ -35,3 +35,13 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - `node --import ./tests/ts-resolve.mjs --test tests/pdf-save.test.mjs`: 14 passed / 0 failed / 0 skipped. 새 overwrite 금지 및 손실 확인 취소 시험 각각 RED → GREEN.
 - 손실 확인은 내보내기·검증 뒤, 대상 선택 전에 실행. 거절하면 대상 선택·쓰기 모두 0회.
 - 파일 대상 UI 결정은 대기 중이며 4b에서 연결한다.
+
+## 독립 리뷰와 경계값 수정
+
+별도 컨텍스트의 읽기 전용 리뷰에서 2건(P1 문서 epoch 경합, P2 분기형 첨부 이름 트리)을 받음.
+
+- 문서 경합: A에서 시작한 삽입의 파일 읽기를 붙잡은 동안 이미 대기 중이던 B 열기를 완료하고, B 주석 import까지 기다린 뒤 삽입을 해제. 수정 전 B에 이전 작업의 오류가 표시됨(문제 표시 1, 기대 0). 이 실행에서는 조립 중 원본 소스가 없어 거절되었으므로 실제 잘못된 바이트 저장까지는 관측하지 않음. 모든 준비/조립/반영 단계에 epoch·open request·history identity 검사를 추가. 같은 브라우저 시험 GREEN, B는 1쪽·dirty 없음·오류 없음.
+- 첨부 이름 트리: `/AF`가 없는 `/EmbeddedFiles/Kids` 합성 입력에서 손실 경고가 빠지는 것을 단위 시험으로 재현. Kids/Names 재귀 순회 및 읽을 수 없는 트리 거절로 수정.
+- 직접 `/A << /S /GoTo >>`와 이름 트리 외 `/AF`도 재현 시험 RED → GREEN. 페이지 단위 12 passed / 0 failed / 0 skipped.
+- 삽입 진행 중 복원 버튼이 활성인 경합: disabled 단언 RED → paging 동안 복원 동작 차단 → GREEN.
+- 1280×900 UI 캡처 `artifacts/pdf-page-edit/desktop.png`: 선택 표시·삽입 메뉴·이동/삭제 버튼 확인. OS 선택기·실제 손 조작 시험은 아님.
