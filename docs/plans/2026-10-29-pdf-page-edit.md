@@ -54,7 +54,7 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 
 ## 단계
 
-- [ ] **0. 라이브러리 실행 확인**: 공개 API의 copyPages 주석/Popup/모델 첨부 및 페이지 번호, controlled annotations·src 재로딩을 probe로 실측. 기록과 probe만 커밋. `node --import ./tests/ts-resolve.mjs --test tests/pdf-page-probe.test.mjs` 및 Chrome probe. 결과가 설계와 다르면 근거를 남기고 조정.
+- [x] **0. 라이브러리 실행 확인**: 공개 API의 copyPages 주석/Popup/모델 첨부 및 페이지 번호, controlled annotations·src 재로딩을 probe로 실측. 기록과 probe만 커밋. `node --import ./tests/ts-resolve.mjs --test tests/pdf-page-probe.test.mjs` 및 Chrome probe. 결과가 설계와 다르면 근거를 남기고 조정.
 - [ ] **1. 페이지 모델·재구성**: `src/pdf/pages.ts`, `tests/pdf-pages.test.mjs`. 실패 시험 → 목록 연산·빈 페이지·보호·손실 탐지·foreign 보존 → 통과 후 커밋. 새 단위 시험을 package 및 verify 목록에 등록.
 - [ ] **2. 통합 이력**: `src/pdf/pageHistory.ts`, `tests/pdf-page-history.test.mjs` 및 UI 연결. 기존 주석 시험을 먼저 실행하고, 혼합 이력 실패 시험 → 구현 → 기존 PDF 브라우저 회귀 후 커밋. 이력 연결과 페이지 UI 동작 커밋을 분리.
 - [ ] **3. 썸네일 페이지 조작**: `PdfEditor.svelte`·필요한 별도 썸네일 컴포넌트. 실패 브라우저 시험 → 다중 선택·드래그·이동·삭제·삽입·busy·에러 처리 → 관련 시험 후 커밋.
