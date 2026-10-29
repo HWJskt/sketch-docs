@@ -1,15 +1,16 @@
 // PDFs this editor opens and annotates but never saves (docs/plans/2026-10-13-pdf-viewer.md, "거절하는 문서"):
 // encrypted ones, and signed ones (a signature value in a signature field, or document permissions /Perms),
 // because an added annotation can invalidate the signature. Empty signature fields are fine.
-import { PDFArray, PDFDict, PDFDocument, PDFName, type PDFObject, PDFRef } from '@cantoo/pdf-lib';
+import type { PDFDocument, PDFObject } from '@cantoo/pdf-lib';
 import { saveSupport } from 'svelte-pdf-mini/pdf-codec';
 
 export const ENCRYPTED = '암호로 보호된 PDF는 저장하지 않습니다. 다른 이름으로도 저장할 수 없습니다.';
 export const SIGNED = '서명된 PDF는 저장하지 않습니다. 주석을 더하면 서명이 무효가 될 수 있습니다.';
-const name = (key: string) => PDFName.of(key);
 
 /** Why this PDF must not be saved, or null. */
 export async function saveBlockReason(bytes: Uint8Array): Promise<string | null> {
+    const { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef } = await import('@cantoo/pdf-lib');
+    const name = (key: string) => PDFName.of(key);
     if ((await saveSupport(bytes.slice())).encrypted) return ENCRYPTED;
     let doc: PDFDocument;
     try { doc = await PDFDocument.load(bytes.slice(), { updateMetadata: false }); }

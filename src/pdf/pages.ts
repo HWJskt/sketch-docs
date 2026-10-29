@@ -1,11 +1,12 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, degrees, type PDFObject } from '@cantoo/pdf-lib';
+import type { PDFDocument, PDFObject } from '@cantoo/pdf-lib';
 import { EMBEDDED_FILE_NAME, PRIVATE_KEY, exportPdf } from 'svelte-pdf-mini/pdf-codec';
 import type { Annotation } from 'svelte-pdf-mini';
 import { saveBlockReason } from './protection';
 
+// Keep pdf-lib behind its existing dynamic entry so the PDF engine manifest and lazy loading stay intact.
+
 export interface PageItem { id: string; source?: string; index?: number; blank?: { x: number; y: number; width: number; height: number; rotation: number } }
 export interface PageSource { id: string; bytes: Uint8Array; count: number; losses: string[] }
-const key = PDFName.of;
 
 /** Boundary is measured before removing the selected pages. */
 export function movePages(list: PageItem[], selected: string[], boundary: number): PageItem[] {
@@ -35,6 +36,8 @@ export function remapAnnotations(list: Annotation[], before: PageItem[], after: 
 
 /** Only report features actually present. These catalog structures are not copied by copyPages. */
 export async function inspectLosses(bytes: Uint8Array): Promise<string[]> {
+    const { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } = await import('@cantoo/pdf-lib');
+    const key = PDFName.of;
     const doc = await PDFDocument.load(bytes.slice(), { updateMetadata: false });
     const risks = new Set<string>();
     const labels: Record<string, string> = { Outlines: '목차·북마크', Dests: '페이지 목적지', AcroForm: '양식 필드', PageLabels: '페이지 번호 이름', StructTreeRoot: '구조 태그', MarkInfo: '접근성 태그 정보', Metadata: '문서 메타데이터', OpenAction: '문서 열기 동작', AA: '문서 동작' };
@@ -92,6 +95,8 @@ export async function inspectLosses(bytes: Uint8Array): Promise<string[]> {
 
 /** A source is immutable and prepared once, before any page edit can replace the viewer. */
 export async function prepareSource(id: string, bytes: Uint8Array, inserted: boolean): Promise<PageSource> {
+    const { PDFDict, PDFDocument, PDFName, PDFString } = await import('@cantoo/pdf-lib');
+    const key = PDFName.of;
     const blocked = await saveBlockReason(bytes);
     if (blocked) throw new Error(inserted ? `이 PDF는 삽입할 수 없습니다. ${blocked}` : blocked);
     const losses = await inspectLosses(bytes);
@@ -115,6 +120,7 @@ export async function prepareSource(id: string, bytes: Uint8Array, inserted: boo
 }
 
 export async function blankPage(sources: PageSource[], neighbor: PageItem, id: string): Promise<PageItem> {
+    const { PDFDocument } = await import('@cantoo/pdf-lib');
     if (neighbor.blank) return { id, blank: { ...neighbor.blank } };
     const source = sources.find(s => s.id === neighbor.source);
     if (!source) throw new Error('기준 페이지를 찾지 못했습니다.');
@@ -124,6 +130,8 @@ export async function blankPage(sources: PageSource[], neighbor: PageItem, id: s
 }
 
 export async function assemblePages(sources: PageSource[], list: PageItem[]): Promise<Uint8Array> {
+    const { PDFDict, PDFDocument, PDFName, degrees } = await import('@cantoo/pdf-lib');
+    const key = PDFName.of;
     if (!list.length) throw new Error('문서에는 한 쪽 이상 있어야 합니다.');
     const out = await PDFDocument.create();
     const copied = new Map<string, Awaited<ReturnType<PDFDocument['copyPages']>>>();

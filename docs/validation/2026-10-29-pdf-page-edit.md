@@ -58,3 +58,10 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - OS 수준의 원자적 create-exclusive·no-clobber API는 제공되지 않는다([표준](https://fs.spec.whatwg.org/#api-filesystemdirectoryhandle-getfilehandle)). 외부 프로그램의 조회~생성 사이 동일 빈 파일 생성과 마지막 검사~close 사이 변경은 완전히 차단하지 못한다. 실패 후 생성된 빈 파일은 다른 프로세스 소유일 수 있어 자동 삭제하지 않는다. 실제 OS 선택기·외부 프로그램 동시 수정은 미시험.
 
 - 추가 리뷰 P1: 위 epoch 취소를 기존 주석 전용 save picker에도 적용하면 이미 비워진 파일의 쓰기를 취소할 수 있음. 취소 게이트를 directory 대상에만 한정. 기존 Save As 경로는 선택기 이후 기존 트랜잭션을 유지. 단위 RED(21 pass/1 fail) → GREEN, Chrome에서 picker가 비운 파일의 길이 0을 확인한 뒤 다른 문서를 완료하고 picker 반환을 해제해 기존 대상의 쓰기 1회·유효 1쪽 PDF 복원 확인. 브라우저 계수기 초기 실패는 같은 entry의 다른 handle과 복구 사본 쓰기를 함께 세는 문제였으며, 대상 파일 이름으로 한정한 prototype 계수기로 수정(쓰기 1회 단언 유지).
+
+## 전체 검증에서 발견한 번들 경계 문제
+
+- 첫 `gtimeout 1800 npm run verify`: exit 1. 단위 218 passed / 0 failed / 0 skipped 후 `addPdfEngine`에서 중단. `pages.ts`와 그 보호 검사 의존성이 pdf-lib를 정적으로 끌어들여 라이브러리가 PdfEditor 청크에 합쳐지고, 기존 manifest의 직접 동적 pdf-lib import 조건을 위반했다. 전체 브라우저 단계는 이 실행에서 시작되지 않았다. 로그 `/private/tmp/pdf-page-verify.log`.
+- `pages.ts`와 `protection.ts`의 PDF 처리를 기존 동적 pdf-lib 진입점을 통해 실행하도록 변경. manifest 생성기·시험 단언은 바꾸지 않았다. 수정 중 protection만 별도 동적 청크로 만들면 preload 목록에 빠질 수 있어 보호 함수 자체는 정적으로 연결하고 그 내부 pdf-lib만 지연 로드한다.
+- 수정 후 `npm run check`: 오류 0·경고 0. PDF 단위 113/0/0, `npx vite build` exit 0, 실제 `addPdfEngine('dist')` exit 0, `node tests/bundle-boundary.mjs dist`: shell 청크 7개에 PDF 라이브러리 코드 없음. `PDF_TEST_FILTER='page editing:' gtimeout 150 node tests/pdf.integration.mjs`: 5/0/0.
+- 실패 뒤 수정본의 전체 검증을 위해 재실행한다. 따라서 전체 verify는 최초 1회 계획에서 실패 1회 + 수정 후 최종 1회로 늘어난다. 시험 조건 완화 없음.
