@@ -21,6 +21,10 @@ export interface SaveJob {
     /** The file's bytes as opened or last saved: what the export starts from. */
     original: Uint8Array;
     annotations: Annotation[];
+    /** Page reconstruction can only write a new target. */
+    allowOverwrite?: boolean;
+    /** Confirm actual reconstruction losses after validation, before opening any picker. */
+    confirm?: () => Promise<boolean>;
     /**
      * Where to write, asked only after the export passed its checks: a save picker empties an existing file
      * as soon as it is chosen, so nothing may be refused after that. Null means the user cancelled.
@@ -52,10 +56,14 @@ export function createSaver({ exporter, lock = webLock, recovery }: { exporter: 
         catch (error) { return refused(`PDF를 만들지 못했습니다. ${message(error)}`); }
         if (!result.ok) return refused(result.reason);
         let target: SaveTarget | null;
-        try { target = await job.target(); }
+        try {
+            if (job.confirm && !await job.confirm()) return { ok: false, epoch: job.epoch, revision: job.revision, reason: '', cancelled: true };
+            target = await job.target();
+        }
         catch (error) { return refused(message(error)); }
         if (!target) return { ok: false, epoch: job.epoch, revision: job.revision, reason: '', cancelled: true };
         const { handle, hash, overwrite } = target;
+        if (overwrite && job.allowOverwrite === false) return refused('페이지를 편집한 문서는 다른 이름으로 저장해야 합니다.');
         try {
             await lock(async () => {
                 // A file changed elsewhere is refused before the recovery store is touched.

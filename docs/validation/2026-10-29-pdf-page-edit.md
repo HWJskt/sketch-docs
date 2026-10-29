@@ -29,3 +29,9 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - 첫 전체 실행은 fallback 파일 입력이 2개가 되어 기존 시험 locator가 모호해짐. 원본 열기·삽입 입력에 각각 접근성 이름을 주고 기존 시험이 원본 열기 입력을 지목하도록 수정. 동작 단언 유지.
 - 재구성 기준과 주석 출력의 기존 보존 검사 시험 추가: 페이지 단위 10 passed / 0 failed / 0 skipped.
 - PagePanel Svelte autofixer: issues 0, suggestions 0. 타입 검사 오류·경고 0.
+
+## 4a. 저장 조정자
+
+- `node --import ./tests/ts-resolve.mjs --test tests/pdf-save.test.mjs`: 14 passed / 0 failed / 0 skipped. 새 overwrite 금지 및 손실 확인 취소 시험 각각 RED → GREEN.
+- 손실 확인은 내보내기·검증 뒤, 대상 선택 전에 실행. 거절하면 대상 선택·쓰기 모두 0회.
+- 파일 대상 UI 결정은 대기 중이며 4b에서 연결한다.

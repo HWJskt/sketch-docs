@@ -182,3 +182,23 @@ test('choosing the opened file in Save As keeps the original in memory for recov
     assert.deepEqual(kept.map(item => item.data), ['orig']);
     assert.equal(kept[0].hash, await hashOf(bytes('orig')));
 });
+
+test('page reconstruction never permits an overwrite target', async () => {
+    const { saver, kept } = setup();
+    const file = handle('orig');
+    const outcome = await saver.save(await job(file, { allowOverwrite: false }));
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.reason, /다른 이름/);
+    assert.deepEqual(file.log, []);
+    assert.deepEqual(kept, []);
+});
+test('loss confirmation happens after successful export and before target selection; rejection writes nothing', async () => {
+    const { saver, events } = setup();
+    const file = handle('');
+    let picked = 0;
+    const request = await job(file, { overwrite: false, confirm: async () => { events.push('confirm'); return false; }, target: async () => { picked++; return null; } });
+    const result = await saver.save(request);
+    assert.equal(result.cancelled, true);
+    assert.equal(picked, 0);
+    assert.deepEqual(events, ['export 1', 'confirm']);
+});
