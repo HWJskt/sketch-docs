@@ -202,3 +202,94 @@ test('loss confirmation happens after successful export and before target select
     assert.equal(picked, 0);
     assert.deepEqual(events, ['export 1', 'confirm']);
 });
+
+function newDirectory({ existing, atCreate, atOpen, atWrite, replaceAfterCreate, deny } = {}) {
+    let entry = existing;
+    const made = handle(''); made.isSameEntry = async other => other === made;
+    const open = made.createWritable;
+    made.createWritable = async options => {
+        assert.equal(options.mode, 'exclusive');
+        atOpen?.(made);
+        const stream = await open();
+        const write = stream.write;
+        stream.write = async data => { await write(data); atWrite?.(made); };
+        return stream;
+    };
+    const directory = { async getFileHandle(name, options) {
+        assert.equal(name, 'new.pdf');
+        if (deny) throw new DOMException('denied', 'NotAllowedError');
+        if (options?.create) { entry = atCreate?.(made) ?? made; return entry; }
+        if (!entry) throw new DOMException('missing', 'NotFoundError');
+        return replaceAfterCreate ?? entry;
+    } };
+    return { directory, made };
+}
+const newJob = directory => ({ epoch: 1, revision: 3, name: 'a.pdf', original: bytes('orig'), annotations: [], allowOverwrite: false, target: async () => ({ directory, name: 'new.pdf' }) });
+
+test('new-name saving rejects existing files, including empty files, with unchanged hash and zero writes', async () => {
+    for (const contents of ['valuable original', '']) {
+        const existing = handle(contents), before = await hashOf(bytes(contents));
+        const { directory } = newDirectory({ existing });
+        const { saver } = setup();
+        const outcome = await saver.save(newJob(directory));
+        assert.equal(outcome.ok, false); assert.match(outcome.reason, /이미/);
+        assert.equal(await fingerprint(await existing.getFile()), before);
+        assert.deepEqual(existing.log, []);
+    }
+});
+test('new-name saving creates and writes inside the shared lock without recovery', async () => {
+    const { directory, made } = newDirectory();
+    let locked = false;
+    const get = directory.getFileHandle;
+    directory.getFileHandle = (...args) => { assert.equal(locked, true); return get(...args); };
+    const saver = createSaver({ exporter: { run: async () => ({ ok: true, bytes: bytes('export') }) }, lock: async work => { locked = true; try { return await work(); } finally { locked = false; } }, recovery: { keep() { assert.fail('new file has no recovery copy'); } } });
+    assert.equal((await saver.save(newJob(directory))).ok, true);
+    assert.equal(made.contents(), 'export');
+});
+test('a same-name file appearing between absence check and creation is refused without writing', async () => {
+    const raced = handle('external data');
+    const { directory } = newDirectory({ atCreate: () => raced });
+    const outcome = await setup().saver.save(newJob(directory));
+    assert.equal(outcome.ok, false);
+    assert.equal(raced.contents(), 'external data'); assert.deepEqual(raced.log, []);
+});
+test('changes between creation and write or before close abort without replacing the other data', async () => {
+    for (const phase of ['atOpen', 'atWrite']) {
+        const { directory, made } = newDirectory({ [phase]: file => file.set('external data') });
+        const outcome = await setup().saver.save(newJob(directory));
+        assert.equal(outcome.ok, false); assert.equal(made.contents(), 'external data');
+        assert.ok(made.log.includes('abort')); assert.ok(!made.log.includes('close'));
+        if (phase === 'atOpen') assert.ok(!made.log.includes('write'));
+    }
+});
+test('new-name directory permission denial does not open a writable', async () => {
+    const { directory, made } = newDirectory({ deny: true });
+    assert.equal((await setup().saver.save(newJob(directory))).ok, false);
+    assert.deepEqual(made.log, []);
+});
+
+test('replacement of the newly created directory entry is refused before opening a stream', async () => {
+    const other = handle('replacement');
+    const { directory, made } = newDirectory({ replaceAfterCreate: other });
+    const result = await setup().saver.save(newJob(directory));
+    assert.equal(result.ok, false); assert.match(result.reason, /외부에서 변경/);
+    assert.deepEqual(made.log, []); assert.deepEqual(other.log, []);
+    assert.equal(other.contents(), 'replacement');
+});
+
+test('a document replaced while waiting for the save lock creates no file', async () => {
+    let current = true, creates = 0;
+    const saver = createSaver({ exporter: { run: async () => ({ ok: true, bytes: bytes('export') }) }, lock: async work => { current = false; return work(); }, recovery: { keep() { assert.fail(); } } });
+    const directory = { getFileHandle() { creates++; throw new Error('must not touch directory'); } };
+    const result = await saver.save({ ...newJob(directory), isCurrent: () => current });
+    assert.equal(result.cancelled, true); assert.equal(creates, 0);
+});
+
+test('legacy Save As completes after its destructive picker even when the document changes', async () => {
+    const target = handle(''); // The existing save picker already emptied the chosen opened file.
+    const { saver, kept } = setup();
+    const result = await saver.save(await job(target, { isCurrent: () => false }));
+    assert.equal(result.ok, true);
+    assert.equal(target.contents(), 'orig+n1');
+    assert.deepEqual(kept.map(item => item.data), ['orig']);
+});

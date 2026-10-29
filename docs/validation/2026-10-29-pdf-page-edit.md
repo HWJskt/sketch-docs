@@ -34,7 +34,7 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 
 - `node --import ./tests/ts-resolve.mjs --test tests/pdf-save.test.mjs`: 14 passed / 0 failed / 0 skipped. 새 overwrite 금지 및 손실 확인 취소 시험 각각 RED → GREEN.
 - 손실 확인은 내보내기·검증 뒤, 대상 선택 전에 실행. 거절하면 대상 선택·쓰기 모두 0회.
-- 파일 대상 UI 결정은 대기 중이며 4b에서 연결한다.
+- 당시 파일 대상 UI 결정 대기. 후속 사용자 승인으로 아래 4b의 폴더+새 이름 경로를 구현했다.
 
 ## 독립 리뷰와 경계값 수정
 
@@ -45,3 +45,16 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - 직접 `/A << /S /GoTo >>`와 이름 트리 외 `/AF`도 재현 시험 RED → GREEN. 페이지 단위 12 passed / 0 failed / 0 skipped.
 - 삽입 진행 중 복원 버튼이 활성인 경합: disabled 단언 RED → paging 동안 복원 동작 차단 → GREEN.
 - 1280×900 UI 캡처 `artifacts/pdf-page-edit/desktop.png`: 선택 표시·삽입 메뉴·이동/삭제 버튼 확인. OS 선택기·실제 손 조작 시험은 아님.
+
+## 4b. 폴더 + 새 파일 이름 저장
+
+- 사용자 승인(2026-10-29)을 계획 사용자 결정에 기록. 페이지 편집에만 새 이름 폼과 `showDirectoryPicker({mode:'readwrite'})`를 사용. 주석 전용 저장 선택기 경로 유지.
+- 신규 저장 단위 시험 RED: 16 passed / 3 failed / 0 skipped. 구현 후 저장 단위 22 passed / 0 failed / 0 skipped; PDF 전체 단위 `node --import ./tests/ts-resolve.mjs --test tests/pdf-*.test.mjs`: 113 passed / 0 failed / 0 skipped.
+- `PDF_TEST_FILTER='page saving:' gtimeout 150 node tests/pdf.integration.mjs`: 5 passed / 0 failed / 0 skipped. 첫 UI RED는 이전 빌드에 새 파일 이름 입력이 없어 timeout. 구현 빌드 후 기존 이름(내용 있음/빈 파일) 해시 불변·writable 0·write 0, 생성과 쓰기 사이 외부 내용 변경 시 write 0 및 내용 보존, 권한 거절·폴더 취소·폼 취소 후 dirty·undo·redo 유지 확인.
+- 부재 검사~생성 사이 같은 이름의 내용 있는 파일, 생성 후 entry 교체, writable 열기 도중 변경, write 후 close 전 변경은 단위 시험에서 거절/abort 및 외부 내용 보존 확인. 이름 검사~쓰기 전체를 공통 Web Lock 안에서 실행.
+- 추가 읽기 전용 리뷰 P2: 대기 중인 다른 문서 열기가 완료되어도 이전 문서의 새 이름 폼이 남음. 브라우저 RED(폼 count 1, 기대 0), 저장 lock 대기 중 교체 단위 RED(20 pass/1 fail). load 시 폼 취소, 선택 완료 후 epoch 및 lock 안/생성 직전/쓰기 전후 현재 문서 검사를 추가해 GREEN.
+- `npm run check`: 오류 0, 경고 0. Svelte autofixer issues 0, 기존 effect/bind:this 권고만 있음. `npx vite build`: exit 0.
+- `gtimeout 60 node artifacts/pdf-page-edit/visual.mjs`: exit 0. `desktop.png`, `new-file.png`에서 1280×900 선택/삽입 UI 및 새 이름 폼을 시각 확인.
+- OS 수준의 원자적 create-exclusive·no-clobber API는 제공되지 않는다([표준](https://fs.spec.whatwg.org/#api-filesystemdirectoryhandle-getfilehandle)). 외부 프로그램의 조회~생성 사이 동일 빈 파일 생성과 마지막 검사~close 사이 변경은 완전히 차단하지 못한다. 실패 후 생성된 빈 파일은 다른 프로세스 소유일 수 있어 자동 삭제하지 않는다. 실제 OS 선택기·외부 프로그램 동시 수정은 미시험.
+
+- 추가 리뷰 P1: 위 epoch 취소를 기존 주석 전용 save picker에도 적용하면 이미 비워진 파일의 쓰기를 취소할 수 있음. 취소 게이트를 directory 대상에만 한정. 기존 Save As 경로는 선택기 이후 기존 트랜잭션을 유지. 단위 RED(21 pass/1 fail) → GREEN, Chrome에서 picker가 비운 파일의 길이 0을 확인한 뒤 다른 문서를 완료하고 picker 반환을 해제해 기존 대상의 쓰기 1회·유효 1쪽 PDF 복원 확인. 브라우저 계수기 초기 실패는 같은 entry의 다른 handle과 복구 사본 쓰기를 함께 세는 문제였으며, 대상 파일 이름으로 한정한 prototype 계수기로 수정(쓰기 1회 단언 유지).

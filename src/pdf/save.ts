@@ -6,6 +6,7 @@
 import type { Annotation } from 'svelte-pdf-mini';
 import { fingerprint, writeIfUnchanged } from '../fileAccess';
 import type { ExportResult } from './exporter';
+import { writeNewFile, type NewFileTarget } from './newFile';
 
 export interface SaveTarget {
     handle: FileSystemFileHandle;
@@ -25,11 +26,13 @@ export interface SaveJob {
     allowOverwrite?: boolean;
     /** Confirm actual reconstruction losses after validation, before opening any picker. */
     confirm?: () => Promise<boolean>;
+    /** For new directory targets only: the document can change while selection or the lock is pending. */
+    isCurrent?: () => boolean;
     /**
-     * Where to write, asked only after the export passed its checks: a save picker empties an existing file
-     * as soon as it is chosen, so nothing may be refused after that. Null means the user cancelled.
+     * Asked after validation. Annotation-only saves retain the existing save picker; reconstructed pages
+     * choose a directory and unused name, resolved inside the lock. Null means the user cancelled.
      */
-    target: () => Promise<SaveTarget | null>;
+    target: () => Promise<SaveTarget | NewFileTarget | null>;
 }
 export type SaveOutcome =
     | { ok: true; epoch: number; revision: number; bytes: Uint8Array; hash: string; handle: FileSystemFileHandle }
@@ -55,17 +58,23 @@ export function createSaver({ exporter, lock = webLock, recovery }: { exporter: 
         try { result = await exporter.run(job.original, job.annotations); }
         catch (error) { return refused(`PDF를 만들지 못했습니다. ${message(error)}`); }
         if (!result.ok) return refused(result.reason);
-        let target: SaveTarget | null;
+        let target: SaveTarget | NewFileTarget | null;
         try {
             if (job.confirm && !await job.confirm()) return { ok: false, epoch: job.epoch, revision: job.revision, reason: '', cancelled: true };
             target = await job.target();
         }
         catch (error) { return refused(message(error)); }
         if (!target) return { ok: false, epoch: job.epoch, revision: job.revision, reason: '', cancelled: true };
-        const { handle, hash, overwrite } = target;
-        if (overwrite && job.allowOverwrite === false) return refused('페이지를 편집한 문서는 다른 이름으로 저장해야 합니다.');
+        if ('overwrite' in target && target.overwrite && job.allowOverwrite === false) return refused('페이지를 편집한 문서는 다른 이름으로 저장해야 합니다.');
+        const chosen = target;
+        let handle: FileSystemFileHandle | null;
         try {
-            await lock(async () => {
+            handle = await lock(async () => {
+                if ('directory' in chosen) {
+                    if (job.isCurrent && !job.isCurrent()) return null;
+                    return writeNewFile(chosen, new Uint8Array(result.bytes), job.isCurrent);
+                }
+                const { handle, hash, overwrite } = chosen;
                 // A file changed elsewhere is refused before the recovery store is touched.
                 if (await fingerprint(await handle.getFile()) !== hash) throw new Error('파일이 외부에서 변경되었습니다. 다른 이름으로 저장하세요.');
                 if (overwrite && !backedUp.has(handle)) {
@@ -74,10 +83,12 @@ export function createSaver({ exporter, lock = webLock, recovery }: { exporter: 
                     backedUp.add(handle);
                 }
                 await writeIfUnchanged(handle, new Uint8Array(result.bytes), hash);
+                return handle;
             });
         } catch (error) {
             return refused(message(error));
         }
+        if (!handle) return { ok: false, epoch: job.epoch, revision: job.revision, reason: '', cancelled: true };
         return { ok: true, epoch: job.epoch, revision: job.revision, bytes: result.bytes, hash: await fingerprint(new Blob([new Uint8Array(result.bytes)])), handle };
     }
 
