@@ -14,3 +14,9 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - `node --import ./tests/ts-resolve.mjs --test tests/pdf-pages.test.mjs`: passed 9, failed 0, skipped 0.
 - `node --import ./tests/ts-resolve.mjs --test tests/pdf-page-history.test.mjs`: passed 2, failed 0, skipped 0.
 - 실행 순서: 신규 모듈 없음으로 실패 관측 후 구현. 다중 이동/삭제/선택, 실제 손실 탐지, foreign+Popup 보존, 비영점 MediaBox+90도, 서명/암호 거절, 통합 이력과 저장 snapshot dirty 확인.
+
+## 2. 통합 이력 UI 연결
+
+- 변경 전/후 `gtimeout 300 node tests/pdf.integration.mjs`: 각각 passed 32, failed 0, skipped 0. 주석 6종·undo/redo·전환·저장·복구 기존 시나리오 유지.
+- 이력 단위 3 passed / 0 failed / 0 skipped. 연속 주석 입력을 한 이력 단계로 묶는 시험 RED(2 pass/1 fail) → GREEN.
+- `npm run build`: exit 0. `npm run check`: 오류 0·경고 0. Svelte autofixer issues 0; 기존 onState effect 및 bind:this 제안만 있음.

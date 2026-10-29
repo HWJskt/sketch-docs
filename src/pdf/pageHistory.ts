@@ -8,17 +8,20 @@ const contentKey = (s: PageSnapshot) => JSON.stringify(s.pages) + annotationKey(
 export function createPageHistory(initial: PageSnapshot) {
     let past: PageSnapshot[] = [], future: PageSnapshot[] = [], current = initial;
     let saved = contentKey(initial);
+    let lastGroup: string | undefined, lastTime = 0;
     return {
         get current() { return current; },
         get canUndo() { return past.length > 0; },
         get canRedo() { return future.length > 0; },
         get dirty() { return contentKey(current) !== saved; },
         markSaved(snapshot: PageSnapshot) { saved = contentKey(snapshot); },
-        push(next: PageSnapshot) {
+        push(next: PageSnapshot, group?: string) {
             if (contentKey(next) === contentKey(current)) { current = next; return; }
-            past = [...past, current]; future = []; current = next;
+            const now = Date.now();
+            if (!group || group !== lastGroup || now - lastTime > 1000) past = [...past, current];
+            lastGroup = group; lastTime = now; future = []; current = next;
         },
-        undo() { if (past.length) { future = [current, ...future]; current = past[past.length - 1]; past = past.slice(0, -1); } return current; },
-        redo() { if (future.length) { past = [...past, current]; current = future[0]; future = future.slice(1); } return current; },
+        undo() { lastGroup = undefined; if (past.length) { future = [current, ...future]; current = past[past.length - 1]; past = past.slice(0, -1); } return current; },
+        redo() { lastGroup = undefined; if (future.length) { past = [...past, current]; current = future[0]; future = future.slice(1); } return current; },
     };
 }

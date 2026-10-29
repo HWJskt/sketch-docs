@@ -25,3 +25,10 @@ test('saved snapshot remains dirty after subsequent edit, undo to saved is clean
     h.undo(); assert.equal(h.dirty, false);
     h.undo(); assert.equal(h.dirty, true);
 });
+test('typing updates form one undo step, separated edits remain chronological', () => {
+    const h = createPageHistory(initial);
+    h.push({ ...h.current, annotations: [{ id: 'n', page: 1, contents: '' }] }, 'n');
+    h.push({ ...h.current, annotations: [{ id: 'n', page: 1, contents: 'abc' }] }, 'n');
+    assert.deepEqual(h.undo().annotations, []);
+    assert.equal(h.redo().annotations[0].contents, 'abc');
+});

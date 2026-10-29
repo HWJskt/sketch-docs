@@ -1,7 +1,7 @@
 <script lang="ts">
     import { Annotations, Document, Find, Outline, PageNav, Thumbnails, Viewer, Zoom } from 'svelte-pdf-mini';
-    import type { Annotation, ZoomMode } from 'svelte-pdf-mini';
-    import { createDirtyTracker } from './annotationState';
+    import type { Annotation, AnnotationOp, AnnotationStore, ZoomMode } from 'svelte-pdf-mini';
+    import { createPageHistory, type PageSnapshot } from './pageHistory';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
     import { messages, palette } from './messages';
@@ -29,9 +29,35 @@
     const src = $derived(opened ? opened.bytes.slice() : null);
     // The annotations shown; the tracker knows which of them the file on disk already has.
     let annotations = $state.raw<Annotation[]>([]);
-    const tracker = createDirtyTracker();
+    let history = $state.raw<ReturnType<typeof createPageHistory> | null>(null);
+    let annotationStore = $state<AnnotationStore>();
     let baseline = $state(0);
-    const dirty = $derived.by(() => { void baseline; return tracker.isDirty(annotations); });
+    let replaying = false;
+    const dirty = $derived.by(() => { void baseline; return history?.dirty ?? false; });
+    const canUndo = $derived.by(() => { void baseline; return history?.canUndo ?? false; });
+    const canRedo = $derived.by(() => { void baseline; return history?.canRedo ?? false; });
+    function importedAnnotations(list: Annotation[]) {
+        annotations = list;
+        history = createPageHistory({ bytes: opened!.bytes, pages: Array.from({ length: pages }, (_, index) => ({ id: `original-${index}`, source: 'original', index })), annotations: list, edited: false, losses: [] });
+        baseline++; imported = true;
+    }
+    function changedAnnotations(list: Annotation[], ops: AnnotationOp[]) {
+        annotations = list;
+        if (!imported || replaying || !history) return;
+        const op = ops.length === 1 ? ops[0] : undefined;
+        const group = op && op.type !== 'remove' ? ('after' in op ? op.after?.id : undefined) : undefined;
+        history.push({ ...history.current, annotations: list }, group);
+        baseline++; revision++;
+    }
+    function travel(redo = false) {
+        if (!history || !imported) return;
+        const snapshot = redo ? history.redo() : history.undo();
+        replaying = true;
+        annotationStore?.load(snapshot.annotations);
+        annotations = snapshot.annotations;
+        replaying = false;
+        baseline++; revision++;
+    }
     // What the next save starts from and writes to: the file as opened or as last saved. Separate from
     // `opened`, which feeds the viewer, so saving does not reload the document.
     interface Base { bytes: Uint8Array; hash: string; handle: FileSystemFileHandle | null; name: string }
@@ -62,7 +88,7 @@
             const hash = await fingerprint(new Blob([bytes]));
             if (mine !== request) return;
             error = ''; notice = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
-            annotations = []; tracker.reset([]); baseline++; epoch++; revision = 0; imported = false;
+            annotations = []; history = null; baseline++; epoch++; revision = 0; imported = false;
             base = { bytes, hash, handle, name: chosen.name };
             opened = { bytes, name: chosen.name, handle };
         } catch (reason) {
@@ -83,12 +109,12 @@
         await load(handle.getFile(), handle);
     }
     // A save applies only to the document it was started for; edits made meanwhile stay unsaved.
-    function finish(outcome: SaveOutcome, saved: Annotation[]) {
+    function finish(outcome: SaveOutcome, saved: PageSnapshot) {
         if (outcome.epoch !== epoch) return;
         if (!outcome.ok) { if (!outcome.cancelled) error = outcome.reason; return; }
         const name = outcome.handle.name;
         base = { bytes: outcome.bytes, hash: outcome.hash, handle: outcome.handle, name };
-        tracker.reset(saved); baseline++;
+        history?.markSaved(saved); baseline++;
         notice = `${name}에 저장했습니다.`;
     }
 
@@ -117,7 +143,7 @@
      * meantime, nothing is written.
      */
     async function run(pick: (start: Base) => Promise<{ handle: FileSystemFileHandle; overwrite: boolean; hash: string } | null>) {
-        const snapshot = annotations, mine = { epoch, revision }, start = base!;
+        const snapshot = annotations, saved = { ...history!.current, annotations: snapshot }, mine = { epoch, revision }, start = base!;
         error = ''; notice = ''; saving = true;
         try {
             const current = () => (epoch === mine.epoch && base ? base : start);
@@ -128,7 +154,7 @@
                     return pick(current());
                 },
             }));
-            finish(outcome, snapshot);
+            finish(outcome, saved);
         } finally { saving = false; }
     }
     /** Ctrl+S: back into the opened file; a file opened without a handle needs a new target. */
@@ -143,11 +169,16 @@
         await run(async current => ({ handle, overwrite: true, hash: current.hash }));
     }
     function shortcut(event: KeyboardEvent) {
-        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
-        // Only while the PDF editor is the one shown (the shell hides the others).
+        if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
         if (!section || section.closest('[hidden]') || !section.isConnected) return;
-        event.preventDefault();
-        void save();
+        const key = event.key.toLowerCase();
+        if (key === 's') { event.preventDefault(); void save(); }
+        if (key === 'z' || key === 'y') {
+            const target = event.target as HTMLElement;
+            // Native text-field undo belongs to that field. Annotation note text is part of our history.
+            if (target.matches('input, textarea, [contenteditable=true]') && !target.closest('[data-pdf-annotation-popover]')) return;
+            event.preventDefault(); event.stopImmediatePropagation(); travel(event.shiftKey || key === 'y');
+        }
     }
     /** The target is chosen only after the export passed its checks: the picker empties an existing file. */
     async function saveAs() {
@@ -238,7 +269,7 @@
                 </Document.Password>
                 <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
-                    <Annotations.Root foreign="readonly" importFromPdf {tools} {palette} onImport={result => { tracker.reset(result.annotations); baseline++; annotations = result.annotations; imported = true; }} onAnnotationsChange={list => { annotations = list; revision++; }}>
+                    <Annotations.Root {annotations} bind:store={annotationStore} foreign="readonly" importFromPdf {tools} {palette} keymap={{ undo: [], redo: [] }} onImport={result => importedAnnotations(result.annotations)} onAnnotationsChange={changedAnnotations}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
                         <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>
@@ -252,8 +283,8 @@
                         <PageNav.Input class="page-input" />
                         <span class="count">/ {pages}</span>
                         <PageNav.Next>›</PageNav.Next>
-                        <Annotations.Undo>↶</Annotations.Undo>
-                        <Annotations.Redo>↷</Annotations.Redo>
+                        <button type="button" aria-label="실행 취소" disabled={!canUndo || !imported} onclick={() => travel()}>↶</button>
+                        <button type="button" aria-label="다시 실행" disabled={!canRedo || !imported} onclick={() => travel(true)}>↷</button>
                         <button type="button" disabled={status !== 'ready'} onclick={() => { document.print().catch(reason => { error = failure('인쇄하지 못했습니다.', reason); }); }}>인쇄</button>
                         <span class="find">
                             <Find.Input class="find-input" placeholder="찾기" />
