@@ -1,7 +1,9 @@
 <script lang="ts">
-    import { Annotations, Document, Find, Outline, PageNav, Thumbnails, Viewer, Zoom } from 'svelte-pdf-mini';
+    import { Annotations, Document, Find, Outline, PageNav, Viewer, Zoom } from 'svelte-pdf-mini';
     import type { Annotation, AnnotationOp, AnnotationStore, ZoomMode } from 'svelte-pdf-mini';
     import { createPageHistory, type PageSnapshot } from './pageHistory';
+    import { assemblePages, blankPage, deletePages, movePages, prepareSource, remapAnnotations, type PageItem, type PageSource } from './pages';
+    import PagePanel from './PagePanel.svelte';
     import 'svelte-pdf-mini/styles.css';
     import { setupPdf } from './setup';
     import { messages, palette } from './messages';
@@ -22,6 +24,13 @@
     let zoom = $state(1);
     let current = $state(1);
     let panel = $state<'outline' | 'thumbnails' | null>(null);
+    let paging = $state(false);
+    let selectedPages = $state<string[]>([]);
+    let selectionAnchor = $state<string | null>(null);
+    let sources: PageSource[] = [];
+    let pendingRender: PageSnapshot | null = null;
+    let insertInput = $state<HTMLInputElement>();
+    let insertBoundary = 0;
     let zoomMode = $state<ZoomMode>('page-width');
     let error = $state('');
     let input = $state<HTMLInputElement>();
@@ -36,22 +45,38 @@
     const dirty = $derived.by(() => { void baseline; return history?.dirty ?? false; });
     const canUndo = $derived.by(() => { void baseline; return history?.canUndo ?? false; });
     const canRedo = $derived.by(() => { void baseline; return history?.canRedo ?? false; });
+    const pageItems = $derived.by(() => { void baseline; return history?.current.pages ?? []; });
+    const pageEdited = $derived.by(() => { void baseline; return history?.current.edited ?? false; });
     function importedAnnotations(list: Annotation[]) {
+        if (pendingRender && history) {
+            const snapshot = pendingRender; pendingRender = null;
+            const merged = [...list.filter(a => a.origin === 'foreign'), ...snapshot.annotations.filter(a => a.origin !== 'foreign')];
+            replaying = true; annotationStore?.load(merged); replaying = false;
+            annotations = merged;
+            history.push({ ...snapshot, annotations: merged });
+            baseline++; imported = true; paging = false;
+            return;
+        }
         annotations = list;
         history = createPageHistory({ bytes: opened!.bytes, pages: Array.from({ length: pages }, (_, index) => ({ id: `original-${index}`, source: 'original', index })), annotations: list, edited: false, losses: [] });
         baseline++; imported = true;
     }
     function changedAnnotations(list: Annotation[], ops: AnnotationOp[]) {
         annotations = list;
-        if (!imported || replaying || !history) return;
+        if (!imported || replaying || paging || !history) return;
         const op = ops.length === 1 ? ops[0] : undefined;
         const group = op && op.type !== 'remove' ? ('after' in op ? op.after?.id : undefined) : undefined;
         history.push({ ...history.current, annotations: list }, group);
         baseline++; revision++;
     }
     function travel(redo = false) {
-        if (!history || !imported) return;
+        if (!history || !imported || paging) return;
         const snapshot = redo ? history.redo() : history.undo();
+        if (snapshot.bytes !== opened?.bytes) {
+            pendingRender = snapshot; imported = false; paging = true;
+            current = Math.min(current, snapshot.pages.length);
+            opened = { ...opened!, bytes: snapshot.bytes };
+        }
         replaying = true;
         annotationStore?.load(snapshot.annotations);
         annotations = snapshot.annotations;
@@ -72,8 +97,8 @@
     const recovery = createRecoveryStore();
     const saver = createSaver({ exporter: createExporter(), recovery });
     let section = $state<HTMLElement>();
-    export function getState(): EditorStatus { return { ready: true, busy: saving, dirty, name: base?.name ?? '' }; }
-    $effect(() => { void base; void dirty; void saving; onState(getState()); });
+    export function getState(): EditorStatus { return { ready: true, busy: saving || paging, dirty, name: base?.name ?? '' }; }
+    $effect(() => { void base; void dirty; void saving; void paging; onState(getState()); });
 
     const failure = (what: string, reason: unknown) => `${what} ${reason instanceof Error ? reason.message : String(reason)}`;
     let request = 0;
@@ -87,7 +112,7 @@
             if (mine !== request) return;
             const hash = await fingerprint(new Blob([bytes]));
             if (mine !== request) return;
-            error = ''; notice = ''; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
+            error = ''; notice = ''; sources = []; selectedPages = []; selectionAnchor = null; pendingRender = null; paging = false; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
             annotations = []; history = null; baseline++; epoch++; revision = 0; imported = false;
             base = { bytes, hash, handle, name: chosen.name };
             opened = { bytes, name: chosen.name, handle };
@@ -96,7 +121,7 @@
         }
     }
     async function choose() {
-        if (dirty && !confirm('저장하지 않은 주석이 있습니다. 다른 PDF를 열까요?')) return;
+        if (dirty && !confirm('저장하지 않은 변경이 있습니다. 다른 PDF를 열까요?')) return;
         // Without the File System Access API the file has no handle; saving then needs a new target.
         if (!pickers.showOpenFilePicker) { input?.click(); return; }
         let handle: FileSystemFileHandle;
@@ -159,7 +184,8 @@
     }
     /** Ctrl+S: back into the opened file; a file opened without a handle needs a new target. */
     async function save() {
-        if (!base || saving || !imported) return;
+        if (!base || saving || paging || !imported) return;
+        if (pageEdited) { error = '페이지를 편집한 문서는 다른 이름으로 저장만 가능합니다. 열린 파일에는 덮어쓰지 않습니다.'; return; }
         if (!base.handle || !canSave) return saveAs();
         const handle = base.handle;
         // Write permission is asked while the click still counts as a user action, before the long export.
@@ -220,6 +246,53 @@
             error = failure('원본을 복원하지 못했습니다.', reason);
         } finally { saving = false; }
     }
+    async function ensureSource() {
+        if (!sources.some(source => source.id === 'original')) sources = [await prepareSource('original', opened!.bytes, false), ...sources];
+    }
+    async function changePages(next: PageItem[]) {
+        if (!history || !opened) return;
+        const before = history.current;
+        if (next.map(p => p.id).join() === before.pages.map(p => p.id).join()) return;
+        const bytes = await assemblePages(sources, next);
+        const used = new Set(['original', ...next.map(p => p.source)]);
+        const losses = [...new Set(sources.filter(s => used.has(s.id)).flatMap(s => s.losses))];
+        const snapshot = { pages: next, bytes, annotations: remapAnnotations(annotations, before.pages, next), edited: true, losses };
+        history.push(snapshot); pendingRender = snapshot;
+        annotations = snapshot.annotations; imported = false; baseline++; revision++;
+        current = Math.min(current, next.length);
+        opened = { ...opened, bytes };
+    }
+    async function pageAction(work: () => Promise<void>) {
+        if (paging || saving || !imported) return;
+        paging = true; error = ''; notice = '';
+        try { await ensureSource(); await work(); }
+        catch (reason) { if ((reason as DOMException)?.name !== 'AbortError') error = failure('페이지를 편집하지 못했습니다.', reason); }
+        finally { if (imported) paging = false; }
+    }
+    function moveSelection(ids: string[], boundary: number) { void pageAction(() => changePages(movePages(pageItems, ids, boundary))); }
+    function deleteSelection(ids: string[]) { void pageAction(() => changePages(deletePages(pageItems, ids))); }
+    function insertBlank(boundary: number) {
+        void pageAction(async () => {
+            const item = await blankPage(sources, pageItems[Math.max(0, boundary - 1)], crypto.randomUUID());
+            await changePages([...pageItems.slice(0, boundary), item, ...pageItems.slice(boundary)]);
+        });
+    }
+    async function insertFile(file: File, boundary: number) {
+        const source = await prepareSource(crypto.randomUUID(), new Uint8Array(await file.arrayBuffer()), true);
+        const added = Array.from({ length: source.count }, (_, index) => ({ id: `${source.id}-${index}`, source: source.id, index }));
+        sources = [...sources, source];
+        await changePages([...pageItems.slice(0, boundary), ...added, ...pageItems.slice(boundary)]);
+    }
+    function insertPdf(boundary: number) {
+        if (!pickers.showOpenFilePicker) { insertBoundary = boundary; insertInput?.click(); return; }
+        // Open the picker in the click's activation, before reading or rebuilding any PDF.
+        const choice = pickers.showOpenFilePicker({ multiple: false, types: pdfTypes }).then(handles => ({ handles, reason: null }), reason => ({ handles: null, reason }));
+        void pageAction(async () => { const result = await choice; if (!result.handles) throw result.reason; await insertFile(await result.handles[0].getFile(), boundary); });
+    }
+    function pickedInsert(event: Event) {
+        const field = event.currentTarget as HTMLInputElement, file = field.files?.[0]; field.value = '';
+        if (file) void pageAction(() => insertFile(file, insertBoundary));
+    }
     const when = (time: number) => new Date(time).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     function picked(event: Event) {
         const field = event.currentTarget as HTMLInputElement;
@@ -232,16 +305,17 @@
 
 <!-- Capture: the annotation layer handles keys of a new annotation's note itself and stops them. -->
 <svelte:window onkeydowncapture={shortcut} />
-<section bind:this={section} class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current} data-opens={epoch}>
+<section bind:this={section} class="pdf-editor" aria-label="PDF 편집기" data-pages={pages} data-zoom={zoom} data-zoom-mode={zoomMode} data-page={current} data-opens={epoch} data-order={pageItems.map(p => p.id).join()} aria-busy={paging}>
     <header class="toolbar">
-        <button type="button" onclick={choose} disabled={saving}>PDF 열기</button>
-        <button type="button" onclick={save} disabled={!base || saving || !canSave || !imported} title={canSave ? 'Ctrl+S' : undefined}>저장</button>
-        <button type="button" onclick={saveAs} disabled={!base || saving || !canSave || !imported} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
+        <button type="button" onclick={choose} disabled={saving || paging}>PDF 열기</button>
+        <button type="button" onclick={save} disabled={!base || saving || paging || !canSave || !imported} title={canSave ? 'Ctrl+S' : undefined}>저장</button>
+        <button type="button" onclick={saveAs} disabled={!base || saving || paging || !canSave || !imported} title={canSave ? undefined : '이 브라우저는 파일 저장을 지원하지 않습니다. 데스크톱 Chrome·Edge를 사용하세요.'}>다른 이름으로 저장</button>
         <button type="button" onclick={showCopies} disabled={!canSave || saving} aria-expanded={copies !== null}>저장 전 원본 복원</button>
         {#if pickPrompt}<span class="pick" role="status">파일을 만드는 데 시간이 걸렸습니다. <button type="button" onclick={pickPrompt.go}>저장할 위치 고르기</button> <button type="button" onclick={pickPrompt.cancel}>취소</button></span>{/if}
         {#if opened}<span class="name">{base?.name ?? opened.name}</span>{/if}
         {#if saving}<span class="saving" role="status">저장하는 중…</span>{:else if notice}<span class="saved" role="status">{notice}</span>{/if}
-        <input bind:this={input} type="file" accept="application/pdf,.pdf" hidden onchange={picked} />
+        <input bind:this={insertInput} aria-label="삽입할 PDF 파일" type="file" accept="application/pdf,.pdf" hidden onchange={pickedInsert} />
+        <input bind:this={input} aria-label="열 PDF 파일" type="file" accept="application/pdf,.pdf" hidden onchange={picked} />
     </header>
     {#if copies}
         <div class="copies" role="region" aria-label="보관한 원본">
@@ -253,6 +327,7 @@
             {/if}
         </div>
     {/if}
+    {#if paging}<p class="working" role="status">페이지를 준비하는 중…</p>{/if}
     {#if error}<p class="problem" role="alert">{error}</p>{/if}
     {#if src}
         {#key src}
@@ -267,9 +342,9 @@
                         <button type="submit">열기</button>
                     {/snippet}
                 </Document.Password>
-                <Viewer.Root class="viewer" {messages} {zoomMode} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
+                <Viewer.Root class="viewer" {messages} {zoomMode} {zoom} page={current} onZoomModeChange={mode => { zoomMode = mode; }} onZoomChange={value => { zoom = value; }} onPageChange={value => { current = value; }}>
                     <Find.Root>
-                    <Annotations.Root {annotations} bind:store={annotationStore} foreign="readonly" importFromPdf {tools} {palette} keymap={{ undo: [], redo: [] }} onImport={result => importedAnnotations(result.annotations)} onAnnotationsChange={changedAnnotations}>
+                    <Annotations.Root {annotations} bind:store={annotationStore} foreign="readonly" readonly={paging || !imported} importFromPdf {tools} {palette} keymap={{ undo: [], redo: [] }} onImport={result => importedAnnotations(result.annotations)} onAnnotationsChange={changedAnnotations}>
                     <div class="view-tools" role="toolbar" aria-label="보기">
                         <button type="button" aria-pressed={panel === 'outline'} onclick={() => { panel = panel === 'outline' ? null : 'outline'; }}>목차</button>
                         <button type="button" aria-pressed={panel === 'thumbnails'} onclick={() => { panel = panel === 'thumbnails' ? null : 'thumbnails'; }}>썸네일</button>
@@ -283,8 +358,8 @@
                         <PageNav.Input class="page-input" />
                         <span class="count">/ {pages}</span>
                         <PageNav.Next>›</PageNav.Next>
-                        <button type="button" aria-label="실행 취소" disabled={!canUndo || !imported} onclick={() => travel()}>↶</button>
-                        <button type="button" aria-label="다시 실행" disabled={!canRedo || !imported} onclick={() => travel(true)}>↷</button>
+                        <button type="button" aria-label="실행 취소" disabled={!canUndo || !imported || paging} onclick={() => travel()}>↶</button>
+                        <button type="button" aria-label="다시 실행" disabled={!canRedo || !imported || paging} onclick={() => travel(true)}>↷</button>
                         <button type="button" disabled={status !== 'ready'} onclick={() => { document.print().catch(reason => { error = failure('인쇄하지 못했습니다.', reason); }); }}>인쇄</button>
                         <span class="find">
                             <Find.Input class="find-input" placeholder="찾기" />
@@ -305,9 +380,7 @@
                         </aside>
                     {:else if panel === 'thumbnails'}
                         <aside class="panel" aria-label="썸네일">
-                            <Thumbnails.Root width={110}>
-                                {#each { length: pages }, index (index)}<Thumbnails.Item pageNumber={index + 1} />{/each}
-                            </Thumbnails.Root>
+                            <PagePanel pages={pageItems} bind:selected={selectedPages} bind:anchor={selectionAnchor} disabled={paging || saving || !imported} onmove={moveSelection} ondelete={deleteSelection} onblank={insertBlank} oninsert={insertPdf} />
                         </aside>
                     {/if}
                     <Viewer.Viewport class="viewport">
@@ -347,7 +420,7 @@
     .pdf-editor :global(.viewport) {flex:1;min-width:0;height:100%}
     .body {flex:1;min-height:0;display:flex}
     .panel {width:180px;flex:none;overflow:auto;border-right:1px solid #dce1e8;background:#f8f9fb;padding:8px;box-sizing:border-box;font-size:13px}
-    .panel :global([data-pdf-thumbnail]), .panel :global(button) {display:block;margin:0 auto 8px;border:1px solid transparent;background:none;cursor:pointer;font:inherit;color:#243047;text-align:left}
+    .panel :global([data-pdf-outline] button) {display:block;margin:0 auto 8px;border:1px solid transparent;background:none;cursor:pointer;font:inherit;color:#243047;text-align:left}
     .view-tools button[aria-pressed='true'] {border-color:#2563eb;color:#1d4ed8}
     .none {color:#5b6980}
     .pdf-editor :global(.password) {margin:40px auto;display:flex;gap:8px;align-items:end;font-size:14px}

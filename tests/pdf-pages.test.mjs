@@ -66,3 +66,13 @@ test('blank page copies the adjacent nonzero MediaBox and rotation at the front 
 for (const name of ['c1-signed.pdf', 'd-encrypted.pdf']) test(`insertion refuses ${name}`, async () => {
     await assert.rejects(pages.prepareSource('insert', await fixture(name), true), /서명|암호/);
 });
+test('reconstructed page base passes the existing annotation preservation gate after export', async () => {
+    const { checkPreservation } = await import('../src/pdf/preserve.ts');
+    const source = await pages.prepareSource('original', await fixture('a-basic.pdf'), false);
+    const original = { id: 'p', source: 'original', index: 0 };
+    const blank = await pages.blankPage([source], original, 'blank');
+    const bytes = await pages.assemblePages([source], [blank, original]);
+    const snapshot = [{ id: 'new', kind: 'rect', page: 1, rect: [20, 20, 40, 40], color: [1, 0, 0], opacity: 1, width: 1, origin: 'local' }];
+    const result = await checkPreservation(bytes, await exportPdf(bytes.slice(), snapshot), snapshot);
+    assert.deepEqual(result, { ok: true });
+});

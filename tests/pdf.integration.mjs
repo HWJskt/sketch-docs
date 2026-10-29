@@ -118,6 +118,88 @@ async function open(browser, path, { answerDialogs = true } = {}) {
 }
 
 const scenarios = [
+    ['page editing: inserted foreign annotations and existing edits follow pages through undo', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf');
+        const canvas = page.locator('.viewport canvas').first(); await canvas.waitFor();
+        const box = await canvas.boundingBox();
+        await page.getByRole('button', { name: '사각형', exact: true }).click();
+        await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();
+        await page.mouse.move(box.x + 160, box.y + 140, { steps: 8 }); await page.mouse.up();
+        await page.keyboard.press('Enter');
+        const bytes = [...await fixture('a-basic.pdf')];
+        await page.evaluate(bytes => { window.showOpenFilePicker = async () => [{ getFile: async () => new File([new Uint8Array(bytes)], 'insert.pdf') }]; }, bytes);
+        await page.getByRole('button', { name: '썸네일', exact: true }).click();
+        await page.getByRole('button', { name: '1쪽 앞에 삽입' }).click();
+        await page.getByRole('button', { name: 'PDF 페이지 넣기' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '4');
+        await page.getByRole('option', { name: '4쪽', exact: true }).click();
+        await page.locator('[data-pdf-page="4"] [data-pdf-annotation][data-kind=rect]').waitFor({ state: 'attached' });
+        await page.getByRole('button', { name: '선택한 페이지 삭제' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
+        assert.deepEqual(await kinds(page), []);
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '4');
+        await page.getByRole('option', { name: '4쪽', exact: true }).click();
+        await page.locator('[data-pdf-page="4"] [data-pdf-annotation][data-kind=rect]').waitFor({ state: 'attached' });
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '1');
+        await page.locator('[data-pdf-page="1"] [data-pdf-annotation][data-kind=rect]').waitFor({ state: 'attached' });
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        assert.deepEqual(await kinds(page), []);
+        assert.equal(await page.locator('.product-document-dirty').count(), 0);
+        assert.deepEqual(errors, []); await page.close();
+    }],
+    ['page editing: dragging, individual selection, protected insertion and last-page refusal', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '썸네일', exact: true }).click();
+        await page.getByRole('option', { name: '1쪽', exact: true }).click();
+        await page.getByRole('option', { name: '3쪽', exact: true }).click({ modifiers: ['ControlOrMeta'] });
+        await page.getByRole('option', { name: '1쪽', exact: true }).dragTo(page.getByRole('button', { name: '마지막 쪽 뒤에 삽입' }));
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.order === 'original-1,original-0,original-2');
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.order === 'original-0,original-1,original-2');
+        for (const name of ['c1-signed.pdf', 'd-encrypted.pdf']) {
+            const bytes = [...await fixture(name)];
+            await page.evaluate(({ name, bytes }) => { window.showOpenFilePicker = async () => [{ getFile: async () => new File([new Uint8Array(bytes)], name) }]; }, { name, bytes });
+            await page.getByRole('button', { name: '마지막 쪽 뒤에 삽입' }).click();
+            await page.getByRole('button', { name: 'PDF 페이지 넣기' }).click();
+            await page.getByRole('alert').filter({ hasText: '삽입할 수 없습니다' }).waitFor();
+            assert.equal(await page.locator('.pdf-editor').getAttribute('data-pages'), '3');
+        }
+        await page.getByRole('option', { name: '1쪽', exact: true }).click();
+        await page.getByRole('option', { name: '3쪽', exact: true }).click({ modifiers: ['Shift'] });
+        await page.getByRole('button', { name: '선택한 페이지 삭제' }).click();
+        await page.getByRole('alert').filter({ hasText: '마지막 한 쪽' }).waitFor();
+        assert.equal(await page.locator('.pdf-editor').getAttribute('data-pages'), '3');
+        assert.deepEqual(errors, []); await page.close();
+    }],
+    ['page editing: multi-selection, move, delete, blank insertion and chronological undo', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'a-basic.pdf');
+        await page.getByRole('button', { name: '썸네일', exact: true }).click();
+        await page.getByRole('option', { name: '2쪽', exact: true }).click();
+        await page.getByRole('option', { name: '3쪽', exact: true }).click({ modifiers: ['Shift'] });
+        await page.getByRole('button', { name: '선택한 페이지 앞으로' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.order === 'original-1,original-2,original-0');
+        await page.getByRole('button', { name: '선택한 페이지 삭제' }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '1');
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
+        await page.keyboard.press('ControlOrMeta+Z');
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.order === 'original-0,original-1,original-2');
+        await page.getByRole('button', { name: '1쪽 앞에 삽입' }).click();
+        await page.getByRole('button', { name: '빈 페이지 넣기', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '4');
+        await page.keyboard.press('ControlOrMeta+S');
+        await page.getByRole('alert').filter({ hasText: '다른 이름으로 저장' }).waitFor();
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '3');
+        assert.equal(await page.locator('.product-document-dirty').count(), 0);
+        assert.deepEqual(errors, []);
+        await page.close();
+    }],
     ['the PDF editor opens in the shell without requests to other origins', async browser => {
         const { page, errors, external } = await open(browser, '/pdf.html');
         await page.getByRole('region', { name: 'PDF 편집기' }).waitFor();
@@ -380,7 +462,7 @@ const scenarios = [
         await page.getByRole('button', { name: 'PDF 열기' }).click();
         await (await chooser).setFiles(resolve(root, 'tests/fixtures/pdf/a-basic.pdf'));
         await page.waitForFunction(() => document.querySelector('.pdf-editor').dataset.pages === '3');
-        assert.equal(await page.locator('.pdf-editor input[type=file]').inputValue(), '', 'cleared so the same file can be chosen again');
+        assert.equal(await page.getByLabel('열 PDF 파일').inputValue(), '', 'cleared so the same file can be chosen again');
         assert.deepEqual(errors, []);
         await page.close();
     }],
@@ -750,7 +832,7 @@ let server, browser;
 try {
     server = await preview({ root, logLevel: 'warn', build: { outDir }, preview: { host: 'localhost', port, strictPort: true } });
     browser = await chromium.launch({ channel: 'chrome', headless: true, ...launchArgs });
-    for (const [name, run] of scenarios) {
+    for (const [name, run] of scenarios.filter(([name]) => !process.env.PDF_TEST_FILTER || name.includes(process.env.PDF_TEST_FILTER))) {
         await run(browser);
         console.log(`PASS pdf: ${name}`);
     }
