@@ -62,7 +62,7 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 - [x] **2. 통합 이력**: `src/pdf/pageHistory.ts`, `tests/pdf-page-history.test.mjs` 및 UI 연결. 기존 주석 시험을 먼저 실행하고, 혼합 이력 실패 시험 → 구현 → 기존 PDF 브라우저 회귀 후 커밋. 이력 연결과 페이지 UI 동작 커밋을 분리.
 - [x] **3. 썸네일 페이지 조작**: `PdfEditor.svelte`·필요한 별도 썸네일 컴포넌트. 실패 브라우저 시험 → 다중 선택·드래그·이동·삭제·삽입·busy·에러 처리 → 관련 시험 후 커밋.
 - [x] **4. 페이지 저장**: 기존 주석 전용 경로 유지, 재구성 출력 검사·손실 확인·새 이름 정책·saved snapshot. 단위/브라우저 실패 시험 → 구현 → 시험 후 커밋.
-- [ ] **5. 회귀·문서·보고**: `npm run verify` 전체 한 번, 독립 리뷰, 발견 사항 수정과 관련 시험, README/검증 기록. 보고서를 지정 scratchpad에 쓰고 `herdr agent prompt claude-main`으로 알린다. push/배포 없음.
+- [x] **5. 회귀·문서·보고**: `npm run verify` 전체 한 번, 독립 리뷰, 발견 사항 수정과 관련 시험, README/검증 기록. 보고서를 지정 scratchpad에 쓰고 `herdr agent prompt claude-main`으로 알린다. push/배포 없음.
 
 ## 위험과 확인 기록
 
@@ -70,3 +70,10 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 - 기본 PATH의 Node는 22.14.0. 설치된 `/Users/hwjung/.volta/tools/image/node/24.21.0/bin/node`는 실행 결과 24.21.0. 시험/빌드에는 해당 bin을 PATH 선두로 사용한다.
 - src 교체는 PDF 뷰를 재생성하므로 확대/스크롤·선택 포커스는 브라우저 시험에서 확인한다.
 - 대형 PDF는 재구성 시간·snapshot 메모리가 늘 수 있다. 실행하지 않은 성능 확인은 보고서에 남긴다.
+
+
+## 최종 결과
+
+- 코드 커밋 `24697d0`에서 최종 `npm run verify` exit 0, `RELEASE GATE PASSED`. 단위 218/0/0, 기본·en-US 각각 PDF 42/0/0·공통 회귀 20/0/0, Word/한글 및 Excel 통합 runner 각 exit 0.
+- 첫 verify는 단위 통과 뒤 정적 pdf-lib 의존성으로 인한 manifest 경계 위반에서 실패했다. 기존 동적 import를 유지하도록 수정하고 최종 전체 검증을 재실행했다. 검사 규칙은 변경하지 않음. 상세: `docs/validation/2026-10-29-pdf-page-edit.md`.
+- 종료 후 시험/서버 Node와 Playwright Chrome의 pgrep 일치 0개. push·배포 없음.

@@ -65,3 +65,13 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - `pages.ts`와 `protection.ts`의 PDF 처리를 기존 동적 pdf-lib 진입점을 통해 실행하도록 변경. manifest 생성기·시험 단언은 바꾸지 않았다. 수정 중 protection만 별도 동적 청크로 만들면 preload 목록에 빠질 수 있어 보호 함수 자체는 정적으로 연결하고 그 내부 pdf-lib만 지연 로드한다.
 - 수정 후 `npm run check`: 오류 0·경고 0. PDF 단위 113/0/0, `npx vite build` exit 0, 실제 `addPdfEngine('dist')` exit 0, `node tests/bundle-boundary.mjs dist`: shell 청크 7개에 PDF 라이브러리 코드 없음. `PDF_TEST_FILTER='page editing:' gtimeout 150 node tests/pdf.integration.mjs`: 5/0/0.
 - 실패 뒤 수정본의 전체 검증을 위해 재실행한다. 따라서 전체 verify는 최초 1회 계획에서 실패 1회 + 수정 후 최종 1회로 늘어난다. 시험 조건 완화 없음.
+
+
+## 최종 전체 검증 결과
+
+- `gtimeout 1800 npm run verify`: **exit 0**, `RELEASE GATE PASSED`. 로그 `/private/tmp/pdf-page-verify-final.log`. `artifacts/verified.json`은 `passed: true`, 코드 커밋 `24697d0cecc71cdfff4ec7f4c001fc236cea7e99`, dirty false, `testedAt: 2026-10-29T11:04:38.115Z`, 배포 출력 파일 543개를 기록.
+- 전체 단위: 218 passed / 0 failed / 0 skipped. root 및 Word 타입 검사 오류 0·경고 0. 번들 경계: shell 청크 7개에 PDF 라이브러리 없음.
+- 기본 Chrome 환경과 `TEST_LOCALE=en-US` **각각**: `tests/pdf.integration.mjs` 42 passed / 0 failed / 0 skipped, `tests/regressions.mjs` 20 passed / 0 failed / 0 skipped, `tests/integration.mjs` Word/한글 통합 runner 1 passed / 0 failed / 0 skipped, `tests/xlsx.integration.mjs` 통합 runner 1 passed / 0 failed / 0 skipped. runner 수와 내부 개별 assertion 수는 구별한다.
+- 전체 실행은 최초 실패 1회와 수정 후 통과 1회. 첫 로그 및 실패 원인은 위에 보존. 재실행 중 제품·시험 파일을 변경하지 않았음.
+- 종료 후 `pgrep -af '[n]ode.*(tests/(integration|regressions|pdf|xlsx)|artifacts/pdf-page-edit|scripts/verify)'`: 출력 없음(0개). `pgrep -af '[p]laywright_chromiumdev_profile'`: 출력 없음(0개).
+- 로컬 커밋만 생성. push·배포하지 않음.
