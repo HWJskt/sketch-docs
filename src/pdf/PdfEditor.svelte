@@ -12,14 +12,13 @@
     import type { EditorStatus } from '../editorState';
     import { fingerprint, type PickerWindow } from '../fileAccess';
     import { createExporter } from './exporter';
-    import { createSaver, webLock, type SaveOutcome, type SaveTarget } from './save';
-    import { newPdfName, type NewFileTarget } from './newFile';
+    import { createSaver, webLock, type SaveOutcome, type SaveTarget, type PickedTarget } from './save';
     import { createRecoveryStore, type RecoveryCopy } from './recovery';
     setupPdf();
     let { onState = () => {} }: { onState?: (state: EditorStatus) => void } = $props();
 
     interface Opened { bytes: Uint8Array; name: string; handle: FileSystemFileHandle | null }
-    const pickers = window as PickerWindow & { showDirectoryPicker?: (options: { mode: 'readwrite' }) => Promise<FileSystemDirectoryHandle> };
+    const pickers = window as PickerWindow;
     let opened = $state.raw<Opened | null>(null);
     let pages = $state(0);
     let zoom = $state(1);
@@ -96,7 +95,7 @@
     let imported = $state(false);
     let notice = $state('');
     const canSave = !!pickers.showSaveFilePicker;
-    const canSaveAs = $derived(pageEdited || pageSaved ? !!pickers.showDirectoryPicker : canSave);
+    const canSaveAs = canSave;
     const recovery = createRecoveryStore();
     const saver = createSaver({ exporter: createExporter(), recovery });
     let section = $state<HTMLElement>();
@@ -115,7 +114,7 @@
             if (mine !== request) return;
             const hash = await fingerprint(new Blob([bytes]));
             if (mine !== request) return;
-            newFilePrompt?.cancel();
+            pickPrompt?.cancel();
             error = ''; notice = ''; pageSaved = false; sources = []; selectedPages = []; selectionAnchor = null; pendingRender = null; paging = false; pages = 0; current = 1; zoom = 1; zoomMode = 'page-width';
             annotations = []; history = null; baseline++; epoch++; revision = 0; imported = false;
             base = { bytes, hash, handle, name: chosen.name };
@@ -150,29 +149,8 @@
     // A save picker needs a recent click. When the export took longer than that, one more click is asked for.
     const pdfTypes = [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }];
     let pickPrompt = $state.raw<{ go: () => void; cancel: () => void } | null>(null);
-    let newFilePrompt = $state.raw<{ go: () => void; cancel: () => void } | null>(null);
-    let newName = $state('');
-    function chooseNewFile(suggestedName: string): Promise<NewFileTarget | null> {
-        newName = suggestedName.replace(/\.pdf$/i, '') + ' (페이지 편집).pdf';
-        return new Promise((resolve, reject) => {
-            newFilePrompt = {
-                go: () => {
-                    let name: string;
-                    try { name = newPdfName(newName); }
-                    catch (reason) { error = failure('저장하지 못했습니다.', reason); return; }
-                    error = ''; newFilePrompt = null;
-                    // Called directly by the form submit, keeping the picker within user activation.
-                    pickers.showDirectoryPicker!({ mode: 'readwrite' }).then(directory => resolve({ directory, name }), reason => {
-                        if ((reason as DOMException)?.name === 'AbortError') resolve(null);
-                        else reject(new Error(failure('폴더에 쓸 권한을 얻지 못해 저장하지 않았습니다.', reason)));
-                    });
-                },
-                cancel: () => { newFilePrompt = null; resolve(null); },
-            };
-        });
-    }
-    async function chooseSaveFile(suggestedName: string): Promise<FileSystemFileHandle | null> {
-        const open = () => pickers.showSaveFilePicker!({ suggestedName, types: pdfTypes });
+    async function chooseSaveFile(suggestedName: string, startIn?: FileSystemFileHandle | null): Promise<FileSystemFileHandle | null> {
+        const open = () => pickers.showSaveFilePicker!({ suggestedName, types: pdfTypes, ...(startIn ? { startIn } : {}) });
         try { return await open(); }
         catch (reason) {
             const kind = (reason as DOMException)?.name;
@@ -192,7 +170,7 @@
      * (a save queued behind another starts from what that one wrote). If another document was opened in the
      * meantime, nothing is written.
      */
-    async function run(pick: (start: Base) => Promise<SaveTarget | NewFileTarget | null>) {
+    async function run(pick: (start: Base) => Promise<SaveTarget | PickedTarget | null>) {
         const snapshot = annotations, saved = { ...history!.current, annotations: snapshot }, mine = { epoch, revision }, start = base!;
         const reconstructed = saved.edited || pageSaved;
         error = ''; notice = ''; saving = true;
@@ -200,15 +178,13 @@
             const current = () => (epoch === mine.epoch && base ? base : start);
             const outcome = await saver.save(() => ({
                 ...mine, name: current().name, original: reconstructed ? saved.bytes : current().bytes, annotations: snapshot,
-                allowOverwrite: !reconstructed,
-                isCurrent: reconstructed ? () => epoch === mine.epoch : undefined,
+                pickerOriginal: reconstructed ? current().bytes : undefined,
                 confirm: async () => !reconstructed || !saved.losses.length || confirm(`페이지를 재구성하면 다음 정보가 빠지거나 작동하지 않을 수 있습니다.\n\n${saved.losses.map(item => `• ${item}`).join('\n')}\n\n새 PDF로 저장할까요?`),
                 target: async () => {
                     if (epoch !== mine.epoch) return null;
-                    const target = await pick(current());
-                    // The legacy save picker has already emptied its chosen file: complete that
-                    // transaction even after a document change. Directory selection touches no file.
-                    return !reconstructed || epoch === mine.epoch ? target : null;
+                    // Both save pickers can empty the chosen file: finish writing even if another
+                    // document opens while the OS dialog is pending. finish() guards the UI epoch.
+                    return pick(current());
                 },
             }));
             finish(outcome, saved);
@@ -217,7 +193,7 @@
     /** Ctrl+S: back into the opened file; a file opened without a handle needs a new target. */
     async function save() {
         if (!base || saving || paging || !imported) return;
-        if (pageEdited || pageSaved) { error = '페이지를 편집한 문서는 다른 이름으로 저장만 가능합니다. 열린 파일에는 덮어쓰지 않습니다.'; return; }
+        if (pageEdited || pageSaved) { error = '페이지를 편집한 문서는 다른 이름으로 저장에서 저장 위치를 선택하세요.'; return; }
         if (!base.handle || !canSave) return saveAs();
         const handle = base.handle;
         // Write permission is asked while the click still counts as a user action, before the long export.
@@ -241,7 +217,15 @@
     /** The target is chosen only after the export passed its checks: the picker empties an existing file. */
     async function saveAs() {
         if (!base || saving || paging || !imported || !canSaveAs) return;
-        if (pageEdited || pageSaved) { await run(current => chooseNewFile(current.name)); return; }
+        if (pageEdited || pageSaved) {
+            const source = opened!;
+            const suggestedName = source.name.replace(/\.pdf$/i, '') + '-편집.pdf';
+            await run(async () => {
+                const handle = await chooseSaveFile(suggestedName, source.handle);
+                return handle ? { handle, picked: true } : null;
+            });
+            return;
+        }
         await run(async current => {
             const handle = await chooseSaveFile(current.name);
             if (!handle) return null;
@@ -362,14 +346,6 @@
         <input bind:this={insertInput} aria-label="삽입할 PDF 파일" type="file" accept="application/pdf,.pdf" hidden onchange={pickedInsert} />
         <input bind:this={input} aria-label="열 PDF 파일" type="file" accept="application/pdf,.pdf" hidden onchange={picked} />
     </header>
-    {#if newFilePrompt}
-        <form class="new-file" aria-label="새 PDF 저장" onsubmit={event => { event.preventDefault(); newFilePrompt?.go(); }}>
-            <label>새 파일 이름 <input bind:value={newName} required /></label>
-            <button type="submit">저장할 폴더 고르기</button>
-            <button type="button" onclick={newFilePrompt.cancel}>취소</button>
-            <span>이미 있는 이름은 덮어쓰지 않습니다.</span>
-        </form>
-    {/if}
     {#if copies}
         <div class="copies" role="region" aria-label="보관한 원본">
             {#if copies.length}
@@ -462,9 +438,6 @@
     .toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid #dce1e8;background:#fff}
     .toolbar button {font:inherit;font-size:13px;padding:5px 12px;border:1px solid #c8d1dd;border-radius:6px;background:#fff;color:#243047;cursor:pointer}
     .name {font-size:13px;color:#5b6980}
-    .new-file {display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;background:#fffdf5;font-size:13px}
-    .new-file input, .new-file button {font:inherit;padding:5px 8px;border:1px solid #c8d1dd;border-radius:5px;background:#fff}
-    .new-file input {width:240px;max-width:70vw}
     .saving, .saved {font-size:12px;color:#5b6980}
     .copies {margin:0;padding:8px 12px;border-bottom:1px solid #dce1e8;background:#fffdf5;font-size:13px}
     .copies p {margin:0 0 6px}

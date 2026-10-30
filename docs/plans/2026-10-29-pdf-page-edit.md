@@ -87,7 +87,7 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 
 - 페이지 편집의 다른 이름으로 저장은 `showSaveFilePicker`. 편집기 이름 입력/폴더 선택/추가 확인 줄은 제거한다. OS 대치 확인 후 선택 대상에 바로 쓴다. Ctrl/Cmd+S는 계속 거절한다. 주석 전용 저장 동작은 유지한다.
 - 제안 이름은 마지막으로 연 파일 이름의 끝 `.pdf`를 대소문자 구별 없이 제거한 뒤 `-편집.pdf`를 붙인다. `report.pdf`·`report.PDF`·`report` → `report-편집.pdf`; 다른 확장자는 보존한다.
-- `startIn`은 마지막으로 연 파일 핸들이다(저장 후 바뀌는 base 핸들과 구별). 핸들이 없으면 해당 옵션을 생략한다. 별도 `id`는 지정하지 않는다: 기존 PDF 열기 선택기가 id 없이 Chrome 기본 기억을 사용하므로 별도 기억 공간을 만들지 않는다.
+- `startIn`은 마지막으로 연 파일 핸들이다(저장 후 바뀌는 base 핸들과 구별). 핸들이 없으면 해당 옵션을 생략한다. 별도 `id`는 지정하지 않는다: 기존 PDF 열기 선택기가 id 없이 Chrome 기본 기억을 사용하므로 별도 기억 공간을 만들지 않는다. 근거: [File System Access §3.2.2](https://wicg.github.io/file-system-access/#api-filepickeroptions-startin).
 - 재구성 바이트(export 입력)와 디스크 원본 바이트(복구 입력)를 분리한다. export·보존 검사·손실 확인·OPFS keep 및 readback 해시 검증을 모두 선택기 전에 끝낸다. 복구 대상은 현재 base의 이름·바이트이며 매 페이지 저장 시 사본을 검증한다.
 - 새 페이지 저장 경로는 공통 Web Lock 안에서 복구·선택·쓰기까지 실행한다. 선택 뒤 해시 검사나 동일 파일 판정/epoch 거절을 하지 않는다. 실패하면 같은 선택 대상에 메모리 원본 바이트를 다시 쓰고 복원 성공/실패를 오류로 표시한다. 새 파일을 선택한 경우에도 실패 시 원본 PDF로 되쓴다. 다른 기존 파일의 이전 내용은 읽을 수 없으며 OS 대치 확인이 보호한다.
 - 선택기 전 문서 변경은 취소한다. 선택기 반환 뒤 문서 변경은 이미 비워졌을 수 있는 대상의 쓰기를 끝내되 새 문서 상태에는 반영하지 않는다. snapshot dirty/undo/redo 및 직렬화는 유지한다.
@@ -109,7 +109,7 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 ### 변경 단계
 
 - [x] 1. 저장 조정자: `src/pdf/save.ts`에 `pickerOriginal`(복구 바이트)와 `{handle, picked:true}` 대상을 추가한다. `tests/pdf-save.test.mjs`에서 destructive picker·선행 복구 실패·쓰기/복원 실패·epoch/잠금을 RED→GREEN. 기존 폴더 경로는 UI 전환까지 유지. 관련 단위 시험 후 커밋.
-- [ ] 2. `PdfEditor.svelte`: 마지막 열기 이름/핸들로 선택기 옵션 구성, 새 경로 연결, 폼 제거, Ctrl+S 문구 갱신. `tests/pdf.integration.mjs`의 폴더 시험을 위 S1–S7로 바꾸어 RED→GREEN. `npm run check`, Svelte autofixer, build 및 PDF Chrome 시험 후 커밋.
+- [x] 2. `PdfEditor.svelte`: 마지막 열기 이름/핸들로 선택기 옵션 구성, 새 경로 연결, 폼 제거, Ctrl+S 문구 갱신. `tests/pdf.integration.mjs`의 폴더 시험을 위 S1–S7로 바꾸어 RED→GREEN. `npm run check`, Svelte autofixer, build 및 PDF Chrome 시험 후 커밋.
 - [ ] 3. 제거만 별도 커밋: 호출 없는 `newFile.ts`, saver 폴더 분기·allowOverwrite·isCurrent 및 전용 옛 시험 제거. PDF 단위/Chrome 동등 통과 확인.
 - [ ] 4. 독립 읽기 전용 리뷰, 필요한 수정과 시험, 검증 문서 커밋. 마지막 커밋에서 `gtimeout 1800 npm run verify` 한 번 실행하고 결과는 지정 scratchpad 보고서에만 기록. 프로세스 잔존 확인 후 herdr로 알림.
 
