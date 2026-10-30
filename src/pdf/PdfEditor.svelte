@@ -169,8 +169,8 @@
 
     /**
      * One save: the annotations are those of the click; the bytes it starts from are read when its turn comes
-     * (a save queued behind another starts from what that one wrote). If another document was opened in the
-     * meantime, nothing is written.
+     * (a save queued behind another starts from what that one wrote). A changed document cancels selection
+     * before the picker opens; an already chosen target must still be written.
      */
     async function run(pick: (start: Base) => Promise<SaveTarget | PickedTarget | null>) {
         const snapshot = annotations, saved = { ...history!.current, annotations: snapshot }, mine = { epoch, revision }, start = base!;
@@ -189,6 +189,11 @@
                     return pick(current());
                 },
             }));
+            if (reconstructed && outcome.epoch !== epoch && !outcome.ok && !outcome.cancelled) {
+                // The old picker may have emptied a file. Its write/recovery failure must remain visible,
+                // while finish() continues to protect the newly opened document's base and history.
+                error = `${start.name}에서 시작한 저장: ${outcome.reason}`;
+            }
             finish(outcome, saved);
         } finally { saving = false; }
     }

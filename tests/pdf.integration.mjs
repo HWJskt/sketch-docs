@@ -327,6 +327,7 @@ const scenarios = [
         }
     }],
     ['page saving: selected emptied original is written even after another pending open completes', async browser => {
+        for (const failure of ['none', 'write', 'both']) {
         const { page, errors } = await open(browser, '/pdf.html');
         await openPdf(page, 'e-image.pdf'); await editPages(page);
         const next = [...await fixture('a-basic.pdf')];
@@ -336,6 +337,15 @@ const scenarios = [
         }, next);
         await page.getByRole('button', { name: 'PDF 열기', exact: true }).click();
         await saveTarget(page, null, { opened: 'e-image.pdf' });
+        await page.evaluate(failure => {
+            if (failure === 'none') return;
+            const create = window.__saveTarget.createWritable; let calls = 0;
+            window.__saveTarget.createWritable = async (...args) => {
+                calls++; const stream = await create(...args);
+                if (calls === 1 || failure === 'both') stream.write = async () => { throw new Error('injected old-file write failure'); };
+                return stream;
+            };
+        }, failure);
         await page.evaluate(() => {
             const pick = window.showSaveFilePicker;
             let release; const wait = new Promise(resolve => { release = resolve; }); window.__releasePicker = release;
@@ -348,12 +358,18 @@ const scenarios = [
         await page.waitForFunction(() => document.querySelector('.pdf-editor .name')?.textContent === 'next.pdf');
         await page.evaluate(() => window.__releasePicker());
         await page.waitForFunction(() => !document.querySelector('.pdf-editor .saving'));
-        assert.equal(await page.evaluate(() => window.__writables), 1);
-        const { PDFDocument } = await import('@cantoo/pdf-lib');
-        assert.equal((await PDFDocument.load(new Uint8Array(await savedBytes(page)))).getPageCount(), 2);
+        assert.equal(await page.evaluate(() => window.__writables), failure === 'none' ? 1 : 2);
+        if (failure === 'none') {
+            const { PDFDocument } = await import('@cantoo/pdf-lib');
+            assert.equal((await PDFDocument.load(new Uint8Array(await savedBytes(page)))).getPageCount(), 2);
+        } else {
+            assert.deepEqual(await savedBytes(page), failure === 'both' ? [] : [...await fixture('e-image.pdf')]);
+            await page.getByRole('alert').filter({ hasText: 'e-image.pdf' }).filter({ hasText: failure === 'both' ? '되쓰기도 실패' : '원본 바이트로 되돌렸' }).waitFor({ timeout: 5000 });
+        }
         assert.equal(await page.locator('.product-document-dirty').count(), 0);
         assert.equal(await page.locator('.pdf-editor .name').textContent(), 'next.pdf');
         assert.deepEqual(errors, []); await page.close();
+        }
     }],
     ['page saving: document replacement before selection cancels backup and delayed activation prompts', async browser => {
         for (const phase of ['backup', 'activation', 'prompt']) {

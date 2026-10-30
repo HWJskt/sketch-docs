@@ -80,8 +80,8 @@ export function createSaver({ exporter, lock = webLock, recovery }: { exporter: 
                     try { await write(output); }
                     catch (error) {
                         try { await write(original); }
-                        catch (restoreError) { return refused(`PDF 저장에 실패했고 원본 바이트 되쓰기도 실패했습니다. ${message(error)} / ${message(restoreError)} 저장 전 원본 복원에서 보관한 사본을 복원하세요.`); }
-                        return refused(`PDF 저장에 실패하여 선택한 파일을 원본 바이트로 되돌렸습니다. ${message(error)}`);
+                        catch (restoreError) { return refused(`${handle.name}: PDF 저장에 실패했고 원본 바이트 되쓰기도 실패했습니다. ${message(error)} / ${message(restoreError)} 저장 전 원본 복원에서 보관한 사본을 복원하세요.`); }
+                        return refused(`${handle.name}: PDF 저장에 실패하여 선택한 파일을 원본 바이트로 되돌렸습니다. ${message(error)}`);
                     }
                     return { ok: true, epoch: job.epoch, revision: job.revision, bytes: result.bytes, hash, handle };
                 });
