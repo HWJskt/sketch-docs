@@ -149,7 +149,7 @@
     // A save picker needs a recent click. When the export took longer than that, one more click is asked for.
     const pdfTypes = [{ description: 'PDF 문서', accept: { 'application/pdf': ['.pdf'] } }];
     let pickPrompt = $state.raw<{ go: () => void; cancel: () => void } | null>(null);
-    async function chooseSaveFile(suggestedName: string, startIn?: FileSystemFileHandle | null): Promise<FileSystemFileHandle | null> {
+    async function chooseSaveFile(suggestedName: string, startIn?: FileSystemFileHandle | null, pageEpoch?: number): Promise<FileSystemFileHandle | null> {
         const open = () => pickers.showSaveFilePicker!({ suggestedName, types: pdfTypes, ...(startIn ? { startIn } : {}) });
         try { return await open(); }
         catch (reason) {
@@ -157,6 +157,8 @@
             if (kind === 'AbortError') return null;
             if (kind !== 'SecurityError' && kind !== 'NotAllowedError') throw reason;
         }
+        // A rejected picker has not selected/emptied a file. Do not resurrect an old page save prompt.
+        if (pageEpoch !== undefined && pageEpoch !== epoch) return null;
         return new Promise((resolve, reject) => {
             pickPrompt = {
                 go: () => { pickPrompt = null; open().then(resolve, reason => (reason as DOMException)?.name === 'AbortError' ? resolve(null) : reject(reason)); },
@@ -218,10 +220,10 @@
     async function saveAs() {
         if (!base || saving || paging || !imported || !canSaveAs) return;
         if (pageEdited || pageSaved) {
-            const source = opened!;
+            const source = opened!, pageEpoch = epoch;
             const suggestedName = source.name.replace(/\.pdf$/i, '') + '-편집.pdf';
             await run(async () => {
-                const handle = await chooseSaveFile(suggestedName, source.handle);
+                const handle = await chooseSaveFile(suggestedName, source.handle, pageEpoch);
                 return handle ? { handle, picked: true } : null;
             });
             return;

@@ -355,6 +355,67 @@ const scenarios = [
         assert.equal(await page.locator('.pdf-editor .name').textContent(), 'next.pdf');
         assert.deepEqual(errors, []); await page.close();
     }],
+    ['page saving: document replacement before selection cancels backup and delayed activation prompts', async browser => {
+        for (const phase of ['backup', 'activation', 'prompt']) {
+            const { page, errors } = await open(browser, '/pdf.html');
+            await openPdf(page, 'e-image.pdf'); await editPages(page);
+            const next = [...await fixture('a-basic.pdf')];
+            await page.evaluate(next => {
+                let release; const wait = new Promise(resolve => { release = resolve; }); window.__releaseOpen = release;
+                window.showOpenFilePicker = async () => [{ getFile: async () => { await wait; return new File([new Uint8Array(next)], 'next.pdf'); } }];
+            }, next);
+            await page.getByRole('button', { name: 'PDF 열기', exact: true }).click();
+            await saveTarget(page, null, { opened: 'e-image.pdf' });
+            await page.evaluate(phase => {
+                let release; const wait = new Promise(resolve => { release = resolve; }); window.__releasePreflight = release;
+                if (phase === 'backup') {
+                    const root = navigator.storage.getDirectory.bind(navigator.storage);
+                    navigator.storage.getDirectory = async () => { window.__preflightHeld = true; await wait; return root(); };
+                } else {
+                    window.showSaveFilePicker = async () => {
+                        window.__pickerCalls++; window.__preflightHeld = true;
+                        if (phase === 'activation') await wait;
+                        throw new DOMException('expired', 'SecurityError');
+                    };
+                }
+            }, phase);
+            await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+            await page.waitForFunction(() => window.__preflightHeld);
+            if (phase === 'prompt') await page.getByRole('button', { name: '저장할 위치 고르기' }).waitFor();
+            await page.evaluate(() => window.__releaseOpen());
+            await page.waitForFunction(() => document.querySelector('.pdf-editor .name')?.textContent === 'next.pdf');
+            await page.evaluate(() => window.__releasePreflight());
+            try { await page.waitForFunction(() => !document.querySelector('.pdf-editor .saving'), null, { timeout: 5000 }); }
+            catch (reason) { throw new Error(`${phase}: busy remained after document replacement; prompts=${await page.getByRole('button', { name: '저장할 위치 고르기' }).count()}`, { cause: reason }); }
+            assert.equal(await page.getByRole('button', { name: '저장할 위치 고르기' }).count(), 0);
+            assert.equal(await page.evaluate(() => window.__pickerCalls), phase === 'backup' ? 0 : 1);
+            assert.equal(await page.evaluate(() => window.__writables), 0);
+            assert.deepEqual(await savedBytes(page), [...await fixture('e-image.pdf')]);
+            assert.equal(await page.locator('.product-document-dirty').count(), 0);
+            assert.deepEqual(errors, []); await page.close();
+        }
+    }],
+    ['page saving: edits after the captured snapshot remain dirty with undo and redo intact', async browser => {
+        const { page, errors } = await open(browser, '/pdf.html');
+        await openPdf(page, 'e-image.pdf'); await editPages(page);
+        await saveTarget(page, 'snapshot-pages.pdf', { hold: true });
+        await page.getByRole('button', { name: '다른 이름으로 저장' }).click();
+        await page.waitForFunction(() => window.__writables === 1);
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '1');
+        await page.evaluate(() => window.__releaseWrite());
+        await page.getByRole('status').filter({ hasText: 'snapshot-pages.pdf에 저장했습니다' }).waitFor();
+        const { PDFDocument } = await import('@cantoo/pdf-lib');
+        assert.equal((await PDFDocument.load(new Uint8Array(await savedBytes(page)))).getPageCount(), 2);
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        await page.getByRole('button', { name: '다시 실행', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '2');
+        assert.equal(await page.locator('.product-document-dirty').count(), 0);
+        await page.getByRole('button', { name: '실행 취소', exact: true }).click();
+        await page.waitForFunction(() => document.querySelector('.pdf-editor')?.dataset.pages === '1');
+        assert.equal(await page.locator('.product-document-dirty').count(), 1);
+        assert.deepEqual(errors, []); await page.close();
+    }],
     ['page saving: actual losses are confirmed, saved pages and annotations reopen, Ctrl+S stays blocked', async browser => {
         const { page, errors } = await open(browser, '/pdf.html');
         const dialogs = []; page.on('dialog', dialog => dialogs.push(dialog.message()));
