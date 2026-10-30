@@ -24,6 +24,7 @@
 - 절차: `npm run verify` → 커밋을 `origin/main`에 push(pre-push 게이트가 각 ref의 끝 커밋에 대해 verify 보고를 확인하거나 임시 worktree에서 다시 검사, `npm run hooks:install` 필요. verify가 브라우저 시험을 영어 Chrome으로 한 번 더 돈다) → `gh run list --limit 3`으로 CI verify(가벼운 검사) 확인 → `npm run mirrors:check`(필요하면 `mirrors:pin`) → `npm run deploy`.
   - `deploy`는 다음을 모두 확인한 뒤에만 wrangler로 `dist/`를 올린다: 검증 보고와 커밋·코드·`dist` 해시 일치, 깨끗한 작업 트리, push된 커밋, 보존 fork의 고정 커밋 태그.
   - `deploy`는 `artifacts/verified.json`의 커밋이 HEAD와 같아야 한다. verify 뒤에 문서만 고친 커밋이 생겨도 다시 돌려야 한다(push 게이트의 worktree 재검사는 로컬 verified.json을 갱신하지 않는다, 2026-10-29). verify는 마지막 커밋에서 돌린다.
+  - 문서만 바꾼 커밋(`*.md`·`docs/`, `src`·`scripts`·`overlays`·`tests`·`public` 밖)은 push 게이트가 직전 검증 커밋의 보고로 통과시키고 CI verify도 돌지 않는다(`isDocPath`, 2026-10-30). Cloudflare는 원래 push로 빌드하지 않는다.
 - wrangler는 4.149.0(2026-10-14 업그레이드: 4.142의 undici·sharp·miniflare npm audit 권고 해결, `npm audit` 0건). 업그레이드 뒤 `wrangler whoami`·`wrangler pages project list`로 확인했다.
 - 배포 뒤 `npm run test:live`(기본 `https://docs.sketchps.app`, `LIVE_ORIGIN`으로 바꿈)로 실제 URL에서 브라우저 회귀 시험을 돌린다. 진입·로딩·주소만 본다(18건). 편집·저장 흐름은 다루지 않는다 — 새 기능은 사람이 직접 확인한다.
 - 프로젝트는 기존 Pages 방식이다. wrangler 4.142의 `pages project create`는 Workers로 넘기려다 실패해서 `--force`로 한 번 만들었다(2026-10-12). 이후 명령에는 `--force`를 쓰지 않는다. 첫 배포는 `Failed to publish your Function. Unknown internal error`로 실패했고, 같은 명령을 한 번 다시 실행해 성공했다.

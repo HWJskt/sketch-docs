@@ -2,11 +2,21 @@
 # browser. The full release gate (engine builds and Chrome regressions) runs locally before every push:
 # the pre-push hook (scripts/push-gate.mjs, npm run hooks:install) requires a passing npm run verify for
 # the tip of each pushed ref, and re-verifies it in a worktree, then once more as an English Chrome,
-# when the saved report does not cover it.
+# when the saved report does not cover it. A push that changes only documentation (Markdown or docs/,
+# outside the product directories — the same rule as isDocPath in scripts/push-gate.mjs) is not checked.
 name: verify
 on:
   push:
     branches: [main]
+    paths:
+      - '**'
+      - '!**.md'
+      - '!docs/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'overlays/**'
+      - 'tests/**'
+      - 'public/**'
   pull_request:
   workflow_dispatch:
 permissions:

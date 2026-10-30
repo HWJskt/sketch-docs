@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile, copyFile, chmod } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { commitsToCheck, reportCovers } from '../scripts/push-gate.mjs';
+import { commitsToCheck, reportCovers, isDocPath } from '../scripts/push-gate.mjs';
 import { BROWSER_TESTS, BROWSER_LOCALES } from '../scripts/verify.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -29,6 +29,11 @@ test('the saved report covers only the same commit, made clean, with the same pr
   assert.match(reportCovers(report, { ...here, head: b }).why, /not the clean checkout/);
   assert.match(reportCovers(report, { ...here, clean: false }).why, /not the clean checkout/);
   assert.match(reportCovers(report, { ...here, productHash: 'q' }).why, /changed after/);
+});
+
+test('documentation is Markdown or docs/ outside the product directories', () => {
+  for (const path of ['CLAUDE.md', 'README.md', 'docs/plans/x.md', 'docs/notes.txt']) assert.equal(isDocPath(path), true, path);
+  for (const path of ['src/pdf/x.md', 'scripts/a.md', 'overlays/b.md', 'tests/c.md', 'public/d.md', 'package.json', 'src/pdf.ts', '.github/workflows/verify.yml']) assert.equal(isDocPath(path), false, path);
 });
 
 test('verify runs every browser runner in this machine\'s language and again as en-US', () => {
@@ -137,6 +142,31 @@ test('an annotated tag on a verified commit passes on the saved report, and the 
     git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'more');
     assert.equal(push(repo, { STUB_VERIFY: '0' }, 'main').status, 0);
     assert.deepEqual(JSON.parse((await readFile(log + '.cache', 'utf8')).trim()), { cache: false, target: true });
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('a documentation-only commit after the verified one passes on its report; a product change still verifies', async () => {
+  const { base, repo, remote, log } = await fixture();
+  try {
+    const sha = git(repo, 'rev-parse', 'HEAD');
+    await mkdir(join(repo, 'artifacts'));
+    await writeFile(join(repo, 'artifacts/verified.json'), JSON.stringify({ passed: true, productHash: 'stub-product', revision: { commit: sha, dirty: false } }));
+    await mkdir(join(repo, 'docs'));
+    await writeFile(join(repo, 'CLAUDE.md'), 'notes');
+    await writeFile(join(repo, 'docs/plan.md'), 'plan');
+    git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'docs');
+    const result = push(repo, { STUB_VERIFY: '1' }, 'main');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout + result.stderr, /only documentation changed since verified/);
+    assert.equal(git(remote, 'rev-parse', 'main'), git(repo, 'rev-parse', 'HEAD'));
+    assert.deepEqual(await logged(log), []);
+    // Documentation together with a product file is verified, and a failing verify refuses it.
+    await writeFile(join(repo, 'docs/plan.md'), 'plan 2');
+    await writeFile(join(repo, 'tests/new.mjs'), '');
+    git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'docs and a test');
+    const result2 = push(repo, { STUB_VERIFY: '1' }, 'main');
+    assert.notEqual(result2.status, 0);
+    assert.deepEqual(await logged(log), ['verify']);
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 

@@ -34,11 +34,30 @@ export function reportCovers(report, { sha, head, clean, productHash }) {
   return { ok: true };
 }
 
+/** Whether a changed path is documentation only: Markdown or docs/, outside the product directories productHash reads. */
+export function isDocPath(path) {
+  if (/^(src|scripts|overlays|tests|public)\//.test(path)) return false;
+  return path.startsWith('docs/') || path.endsWith('.md');
+}
+
 const out = (cmd, args, options = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options }).trim();
 
 /** The commit a pushed object stands for (an annotated tag points at one); undefined for a tag on a tree or blob. */
 export function pushedCommit(root, sha) {
   try { return out('git', ['-C', root, 'rev-parse', '--verify', '--quiet', `${sha}^{commit}`]); } catch { return undefined; }
+}
+
+/**
+ * The verified commit when `sha` descends from it and every file changed since is documentation (isDocPath);
+ * otherwise undefined. Such a commit builds the same product, so the report still speaks for it. A deploy
+ * still needs verify on the exact commit (scripts/deploy.mjs), since the build records its commit.
+ */
+export function docsOnlyAfterReport(root, report, sha) {
+  const base = report?.passed && !report.revision?.dirty ? report.revision?.commit : undefined;
+  if (!base || base === sha) return undefined;
+  try { out('git', ['-C', root, 'merge-base', '--is-ancestor', base, sha]); } catch { return undefined; }
+  const changed = out('git', ['-C', root, 'diff', '--no-renames', '--name-only', base, sha]).split('\n').filter(Boolean);
+  return changed.length && changed.every(isDocPath) ? base : undefined;
 }
 
 // Children run asynchronously so an interrupt (Ctrl-C, a closed terminal) still reaches the cleanup below.
@@ -118,6 +137,8 @@ export async function gate({ root, stdin }) {
     seen.add(sha);
     const covered = reportCovers(report, { sha, head, clean, productHash: current });
     if (covered.ok) { console.log(`push gate: ${sha.slice(0, 12)} → ${remoteRef}: verified (artifacts/verified.json)`); continue; }
+    const docsAfter = docsOnlyAfterReport(root, report, sha);
+    if (docsAfter) { console.log(`push gate: ${sha.slice(0, 12)} → ${remoteRef}: only documentation changed since verified ${docsAfter.slice(0, 12)}`); continue; }
     console.log(`push gate: ${sha.slice(0, 12)} → ${remoteRef}: ${covered.why}; verifying it in a temporary worktree (npm run verify)`);
     await verifyInWorktree(root, sha);
     console.log(`push gate: ${sha.slice(0, 12)} passed`);
