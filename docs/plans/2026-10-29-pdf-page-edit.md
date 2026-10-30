@@ -108,7 +108,7 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 
 ### 변경 단계
 
-- [ ] 1. 저장 조정자: `src/pdf/save.ts`에 `pickerOriginal`(복구 바이트)와 `{handle, picked:true}` 대상을 추가한다. `tests/pdf-save.test.mjs`에서 destructive picker·선행 복구 실패·쓰기/복원 실패·epoch/잠금을 RED→GREEN. 기존 폴더 경로는 UI 전환까지 유지. 관련 단위 시험 후 커밋.
+- [x] 1. 저장 조정자: `src/pdf/save.ts`에 `pickerOriginal`(복구 바이트)와 `{handle, picked:true}` 대상을 추가한다. `tests/pdf-save.test.mjs`에서 destructive picker·선행 복구 실패·쓰기/복원 실패·epoch/잠금을 RED→GREEN. 기존 폴더 경로는 UI 전환까지 유지. 관련 단위 시험 후 커밋.
 - [ ] 2. `PdfEditor.svelte`: 마지막 열기 이름/핸들로 선택기 옵션 구성, 새 경로 연결, 폼 제거, Ctrl+S 문구 갱신. `tests/pdf.integration.mjs`의 폴더 시험을 위 S1–S7로 바꾸어 RED→GREEN. `npm run check`, Svelte autofixer, build 및 PDF Chrome 시험 후 커밋.
 - [ ] 3. 제거만 별도 커밋: 호출 없는 `newFile.ts`, saver 폴더 분기·allowOverwrite·isCurrent 및 전용 옛 시험 제거. PDF 단위/Chrome 동등 통과 확인.
 - [ ] 4. 독립 읽기 전용 리뷰, 필요한 수정과 시험, 검증 문서 커밋. 마지막 커밋에서 `gtimeout 1800 npm run verify` 한 번 실행하고 결과는 지정 scratchpad 보고서에만 기록. 프로세스 잔존 확인 후 herdr로 알림.

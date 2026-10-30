@@ -293,3 +293,62 @@ test('legacy Save As completes after its destructive picker even when the docume
     assert.equal(target.contents(), 'orig+n1');
     assert.deepEqual(kept.map(item => item.data), ['orig']);
 });
+
+const pickerJob = (file, extra = {}) => ({
+    epoch: 7, revision: 9, name: 'a.pdf', original: bytes('reconstructed'), pickerOriginal: bytes('original on disk'), annotations: [{ id: 'n1' }],
+    target: async () => { file.set(''); return { handle: file, picked: true }; }, ...extra,
+});
+test('page picker saves the disk original before selection and immediately writes reconstruction under the lock', async () => {
+    const file = handle('original on disk'), order = [];
+    let locked = false;
+    const saver = createSaver({ exporter: { async run(data) { order.push('export'); assert.equal(text(data), 'reconstructed'); return { ok: true, bytes: bytes('exported pages') }; } },
+        lock: async work => { locked = true; try { return await work(); } finally { locked = false; } },
+        recovery: { async keep(name, data, hash) { assert.equal(locked, true); order.push('keep'); assert.equal(text(data), 'original on disk'); assert.equal(hash, await hashOf(data)); } } });
+    const outcome = await saver.save(pickerJob(file, { confirm: async () => { order.push('confirm'); return true; }, target: async () => {
+        assert.equal(locked, true); order.push('pick'); file.set('');
+        file.getFile = () => { assert.fail('no post-picker validation'); };
+        return { handle: file, picked: true };
+    } }));
+    assert.equal(outcome.ok, true); assert.equal(file.contents(), 'exported pages');
+    assert.deepEqual(order, ['export', 'confirm', 'keep', 'pick']);
+    assert.deepEqual([outcome.epoch, outcome.revision], [7, 9]);
+});
+test('page picker never opens after recovery failure, loss refusal, or export refusal', async () => {
+    for (const scenario of ['recovery', 'loss', 'export']) {
+        const { saver, recovery, kept } = setup({ refuse: scenario === 'export' ? 'blocked' : undefined });
+        recovery.failing = scenario === 'recovery';
+        let picks = 0; const file = handle('original on disk');
+        const outcome = await saver.save(pickerJob(file, { confirm: async () => scenario !== 'loss', target: async () => { picks++; file.set(''); return { handle: file, picked: true }; } }));
+        assert.equal(outcome.ok, false); assert.equal(picks, 0); assert.equal(file.contents(), 'original on disk');
+        assert.deepEqual(file.log, []); assert.equal(kept.length, 0);
+    }
+});
+test('page picker cancellation keeps the disk original and saved snapshot identifiers', async () => {
+    const { saver, kept } = setup(); const file = handle('original on disk');
+    const outcome = await saver.save(pickerJob(file, { target: async () => null }));
+    assert.equal(outcome.cancelled, true); assert.deepEqual([outcome.epoch, outcome.revision], [7, 9]);
+    assert.equal(file.contents(), 'original on disk'); assert.equal(kept[0].data, 'original on disk');
+});
+test('page picker write failures retry the memory original and report recovery success or failure', async () => {
+    for (const phase of ['create', 'write', 'close']) for (const restoreFails of [false, true]) {
+        const { saver } = setup(); const file = handle('original on disk'); const create = file.createWritable;
+        let attempts = 0;
+        file.createWritable = async () => {
+            attempts++; const fail = attempts === 1 || restoreFails;
+            if (phase === 'create' && fail) throw new Error('injected create');
+            const stream = await create();
+            if (fail) stream[phase] = async () => { throw new Error(`injected ${phase}`); };
+            return stream;
+        };
+        const outcome = await saver.save(pickerJob(file));
+        assert.equal(outcome.ok, false); assert.equal(attempts, 2);
+        assert.match(outcome.reason, /injected/);
+        assert.match(outcome.reason, restoreFails ? /되쓰기도 실패/ : /원본 바이트로 되돌렸/);
+        assert.equal(file.contents(), restoreFails ? '' : 'original on disk');
+    }
+});
+test('page picker completes the selected target after document replacement', async () => {
+    const { saver } = setup(); const file = handle('original on disk'); let current = true;
+    const outcome = await saver.save(pickerJob(file, { isCurrent: () => current, target: async () => { file.set(''); current = false; return { handle: file, picked: true }; } }));
+    assert.equal(outcome.ok, true); assert.equal(file.contents(), 'reconstructed+n1');
+});
