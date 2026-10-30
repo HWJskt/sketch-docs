@@ -105,7 +105,12 @@ async function verifyInWorktree(root, sha) {
   const base = await realpath(await mkdtemp(join(tmpdir(), PREFIX)));
   const dir = join(base, 'tree');
   execFileSync('git', ['-C', root, 'worktree', 'add', '--detach', dir, sha], { stdio: 'inherit' });
-  const interrupted = signal => { current?.kill(signal); void removeWorktree(root, dir).finally(() => process.exit(130)); };
+  // One removal shared by the signal handler and the finally below: the interrupted child's exit also
+  // runs the finally, and two removals racing let either exit (130 or the refusal's 1) end the process
+  // before the worktree is gone.
+  let removal;
+  const cleanup = () => (removal ??= removeWorktree(root, dir));
+  const interrupted = signal => { current?.kill(signal); void cleanup().finally(() => process.exit(130)); };
   const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
   for (const signal of signals) process.on(signal, interrupted);
   try {
@@ -117,7 +122,7 @@ async function verifyInWorktree(root, sha) {
     await run(process.execPath, [join(dir, 'scripts/verify.mjs')], { cwd: dir });
   } finally {
     for (const signal of signals) process.off(signal, interrupted);
-    await removeWorktree(root, dir);
+    await cleanup();
   }
 }
 

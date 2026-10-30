@@ -173,13 +173,17 @@ test('a documentation-only commit after the verified one passes on its report; a
 test('an interrupted gate removes its worktree, and a leftover one is removed by the next run', async () => {
   const { base, repo, log } = await fixture();
   try {
-    const child = (await import('node:child_process')).spawn('git', ['-C', repo, 'push', '-q', 'origin', 'main'], { env: { ...env, STUB_SLEEP: '20000' }, stdio: 'ignore', detached: true });
+    const child = (await import('node:child_process')).spawn('git', ['-C', repo, 'push', '-q', 'origin', 'main'], { env: { ...env, STUB_SLEEP: '20000' }, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+    let stderr = '';
+    child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
     for (let i = 0; i < 100 && !(await logged(log)).includes('verify'); i++) await new Promise(done => setTimeout(done, 100));
     assert.equal(git(repo, 'worktree', 'list').split('\n').length, 2, 'the gate is verifying in a worktree');
     process.kill(-child.pid, 'SIGINT');
-    await new Promise(done => child.on('exit', done));
+    await new Promise(done => child.on('close', done));
     for (let i = 0; i < 50 && git(repo, 'worktree', 'list').split('\n').length > 1; i++) await new Promise(done => setTimeout(done, 100));
     assert.equal(git(repo, 'worktree', 'list').split('\n').length, 1, 'Ctrl-C cleans up');
+    // The signal handler and the finally share one removal; a second one finds no worktree (and racing, can let the gate exit before it is gone).
+    assert.doesNotMatch(stderr, /could not remove the worktree/);
     // A worktree left by a killed run (no chance to clean up) is removed before the next verification.
     const stale = join(await (await import('node:fs/promises')).realpath(tmpdir()), `sketch-docs-push-stale${process.pid}`, 'tree');
     git(repo, 'worktree', 'add', '-q', '--detach', stale, 'HEAD');
