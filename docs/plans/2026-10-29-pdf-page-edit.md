@@ -111,6 +111,7 @@ PDF 본문 편집·회전 UI·터치 드래그·다른 형식 변환·서명 검
 - [x] 1. 저장 조정자: `src/pdf/save.ts`에 `pickerOriginal`(복구 바이트)와 `{handle, picked:true}` 대상을 추가한다. `tests/pdf-save.test.mjs`에서 destructive picker·선행 복구 실패·쓰기/복원 실패·epoch/잠금을 RED→GREEN. 기존 폴더 경로는 UI 전환까지 유지. 관련 단위 시험 후 커밋.
 - [x] 2. `PdfEditor.svelte`: 마지막 열기 이름/핸들로 선택기 옵션 구성, 새 경로 연결, 폼 제거, Ctrl+S 문구 갱신. `tests/pdf.integration.mjs`의 폴더 시험을 위 S1–S7로 바꾸어 RED→GREEN. `npm run check`, Svelte autofixer, build 및 PDF Chrome 시험 후 커밋.
 - [x] 3. 제거만 별도 커밋: 호출 없는 `newFile.ts`, saver 폴더 분기·allowOverwrite·isCurrent 및 전용 옛 시험 제거. PDF 단위/Chrome 동등 통과 확인.
-- [ ] 4. 독립 읽기 전용 리뷰, 필요한 수정과 시험, 검증 문서 커밋. 마지막 커밋에서 `gtimeout 1800 npm run verify` 한 번 실행하고 결과는 지정 scratchpad 보고서에만 기록. 프로세스 잔존 확인 후 herdr로 알림.
+- [x] 4. 독립 읽기 전용 리뷰, 필요한 수정과 시험, 검증 문서 커밋. 리뷰 P1(문서 교체 후 쓰기 실패 안내 유실)·P2(늦은 활성화 오류의 옛 재시도 prompt)를 재현 시험으로 확인하고 수정.
+- 최종 실행: 마지막 커밋에서 `gtimeout 1800 npm run verify` 한 번 실행하고 결과는 지정 scratchpad `pdf-save-picker-report.md`에만 기록한다. 검증 뒤 추가 문서 커밋을 하지 않는다. 프로세스 잔존 확인 후 herdr로 알림.
 
 OS 대치 확인/실제 폴더 기억/실제 손 조작 및 외부 앱 재열기는 자동 fake picker 시험과 구별하여 미실행 여부를 보고한다. 외부 프로그램의 동시 쓰기·OPFS 소실·복원 재쓰기까지 실패하는 디스크 오류는 남은 위험이다.

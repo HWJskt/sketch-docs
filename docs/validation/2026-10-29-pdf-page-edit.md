@@ -75,3 +75,22 @@ Node 24.21.0, svelte-pdf-mini 0.9.1, @cantoo/pdf-lib 2.11.1.
 - 전체 실행은 최초 실패 1회와 수정 후 통과 1회. 첫 로그 및 실패 원인은 위에 보존. 재실행 중 제품·시험 파일을 변경하지 않았음.
 - 종료 후 `pgrep -af '[n]ode.*(tests/(integration|regressions|pdf|xlsx)|artifacts/pdf-page-edit|scripts/verify)'`: 출력 없음(0개). `pgrep -af '[p]laywright_chromiumdev_profile'`: 출력 없음(0개).
 - 로컬 커밋만 생성. push·배포하지 않음.
+
+
+## 2026-10-30 OS 저장 창 전환
+
+2026-10-29 폴더+새 이름 방식은 폐기했다. 현재 정책은 계획의 2026-10-30 절이며 앞의 검증은 당시 기록이다. Node 실행값 24.21.0. 설치 Chrome + playwright-core, runner가 finally에서 브라우저·preview를 닫는다.
+
+- 계획 `b44b4ab`, 저장 조정자 `6d97611`, UI 전환 `e5b0b05`, 죽은 폴더 코드 제거 `8b32b3d`, 문서 교체 경합 수정 `ec89d60`, 이전 문서 쓰기 오류 안내 `2f29ad7`.
+- `node --import ./tests/ts-resolve.mjs --test tests/pdf-save.test.mjs`: 신규 시험 RED 22 passed / 5 failed / 0 skipped. 저장+복구 시험 GREEN 33 / 0 / 0. 폴더 경로·폐기된 overwrite 금지·중복 단위 시험 제거 뒤 저장 시험 17 / 0 / 0. 문서 교체는 주석/페이지 모두 실제 Chrome pending open 시나리오에서 검증한다.
+- `PDF_TEST_FILTER='page saving: suggested' gtimeout 90 node tests/pdf.integration.mjs`: UI 변경 전 RED(이전 inline form에서 저장이 진행되지 않아 timeout). 변경 뒤 `PDF_TEST_FILTER='page saving:' gtimeout 300 node tests/pdf.integration.mjs`: 8 / 0 / 0. `gtimeout 300 node tests/pdf.integration.mjs`: 45 / 0 / 0.
+- 폴더 코드 제거 후 PDF 단위 110 / 0 / 0, 페이지 저장 Chrome 8 / 0 / 0. 이어 중복 단위 2개를 제거해 최종 PDF 단위 목록은 108개이며 최종 전체 실행 결과는 아래 보고서에 남긴다.
+- 제안 이름 `report.pdf`, `report.PDF`, `report` → `report-편집.pdf`, 핸들 유무 각각 시험. `startIn`은 마지막 열기 핸들, 파일 입력 경로는 생략. 두 번째 저장 뒤에도 last-open 핸들을 전달한다. 별도 `id`는 없으며 Chrome 기본 기억을 쓴다([표준 §3.2.2](https://wicg.github.io/file-system-access/#api-filepickeroptions-startin)).
+- 선택 순간 기존 파일을 비우는 fake picker로 원본 대치 2쪽 출력, 선택기 전에 OPFS 사본이 원본과 바이트 단위 동일, 원본 복원 뒤 정확한 바이트와 1쪽 재열기를 확인했다. 바이트 동일은 SHA-256 동일보다 강한 단언이며 OPFS의 실제 해시 검증은 기존 recovery 코드와 단위 시험을 함께 사용한다.
+- 복구 저장 실패·사본 readback 손상은 picker 0회. 손실 확인 취소도 picker 0회. 저장 취소·write 실패·되쓰기 실패 후 dirty/undo/redo 유지. 단위에서는 createWritable/write/close 각 실패와 되쓰기 성공/실패를 교차 시험한다.
+- 별도 읽기 전용 리뷰: P1(문서 교체 시 저장 실패 안내 유실), P2(지연 SecurityError 뒤 옛 prompt 생성). P2 재현 RED는 `activation: busy remained after document replacement; prompts=1`. `pageEpoch`를 선택기 실패 후 확인하여 미선택 작업을 취소한다. prompt가 이미 있던 경우는 load에서 취소한다. 선택 대상이 이미 반환됐다면 epoch와 무관하게 쓰기를 끝낸다.
+- P2 수정 뒤 페이지 저장 Chrome 10 / 0 / 0. 추가 시나리오는 복구 대기·활성화 응답 대기·두 번째 클릭 대기 중 문서 교체, 그리고 저장 snapshot 뒤 undo → 저장 완료 때 dirty 유지 → redo 때 clean → undo 때 dirty이다.
+- P1 재현 RED: 문서 교체 뒤 원본 되쓰기는 성공했으나 오류 안내 locator timeout. 수정 뒤 성공/첫 쓰기 실패/쓰기+되쓰기 실패의 세 분기 모두 통과(`PDF_TEST_FILTER='page saving: selected emptied' gtimeout 90 node tests/pdf.integration.mjs`: 1 / 0 / 0). 새 문서 base/history는 바꾸지 않고 이전 파일 이름과 결과를 표시한다.
+- 각 변경의 `npm run check`: 오류 0·경고 0. `npx vite build`: exit 0 (기존 큰 청크 안내). `npx @sveltejs/mcp svelte-autofixer ./src/pdf/PdfEditor.svelte --svelte-version 5.57.1`: issues 0, 기존 onState/getState effect·bind:this 권고는 유지.
+- 최종 전체 검증은 **이 문서를 포함한 마지막 커밋에서** `gtimeout 1800 npm run verify`를 한 번 실행한다. 실행 결과·exit code·verified.json commit은 `/private/tmp/claude-501/-Users-hwjung-Coding-edentext-word-hwp/e4292c5c-5234-4b0f-886e-6c56def4338e/scratchpad/pdf-save-picker-report.md`에 기록한다. 검증 뒤 문서 수정 커밋은 만들지 않는다.
+- 미실행: 실제 OS 저장 창/대치 확인/폴더 기억의 수동 조작, 외부 PDF 앱 재열기, 대용량 성능, 실제 디스크 고장·외부 프로그램 동시 수정. 자동 시험은 synthetic OPFS 파일만 쓴다. 사용자 파일·backups·source 변경 없음, 새 의존성·패치·overlay·push·배포 없음.
